@@ -228,6 +228,8 @@ async def main() -> None:
             )
 
         async def _startup_folder_scan() -> None:
+            # Delay so startup folder refresh + welcome baseline aren't piled on.
+            await asyncio.sleep(90)
             try:
                 n_added = await scan_and_add_missing(client, config, scope=scope)
                 if n_added:
@@ -290,14 +292,25 @@ async def main() -> None:
             )
 
         if config.workflow_form_logo_poll_enabled:
-            if config.workflow_google_form_url:
-                await run_form_dispatch_once(client, config, scope)
-                asyncio.create_task(form_dispatch_loop(client, config, scope))
-            if config.workflow_logo_fill_enabled:
-                await run_logo_fill_once(config)
-                asyncio.create_task(logo_fill_loop(config))
+            # Prefer webhook + live-status watch. Polling rebuilds title maps for
+            # every folder chat and floods GetChatsRequest as groups grow.
+            logger.warning(
+                "workflow.form_logo_poll_enabled=true is expensive with large "
+                "folders; prefer live webhook / live_status_watch / mark-live"
+            )
+
+            async def _delayed_form_logo_poll() -> None:
+                await asyncio.sleep(120)
+                if config.workflow_google_form_url:
+                    await run_form_dispatch_once(client, config, scope)
+                    asyncio.create_task(form_dispatch_loop(client, config, scope))
+                if config.workflow_logo_fill_enabled:
+                    await run_logo_fill_once(config)
+                    asyncio.create_task(logo_fill_loop(config))
+
+            asyncio.create_task(_delayed_form_logo_poll())
             logger.info(
-                "Workflow form/logo POLL enabled (interval=%dm) — "
+                "Workflow form/logo POLL enabled (interval=%dm, first run +120s) — "
                 "prefer webhook + mark-live instead",
                 config.workflow_poll_interval_minutes,
             )
@@ -317,10 +330,16 @@ async def main() -> None:
             config.workflow_logo_fill_enabled,
         )
         if config.workflow_wallet_notify_enabled:
-            await run_wallet_notify_once(client, config, scope)
-            asyncio.create_task(wallet_notify_loop(client, config, scope))
+
+            async def _delayed_wallet_notify() -> None:
+                await asyncio.sleep(150)
+                await run_wallet_notify_once(client, config, scope)
+                asyncio.create_task(wallet_notify_loop(client, config, scope))
+
+            asyncio.create_task(_delayed_wallet_notify())
             logger.info(
-                "Workflow wallet-notify enabled (table=%s, chats=%s, titles=%s)",
+                "Workflow wallet-notify enabled (table=%s, chats=%s, titles=%s; "
+                "first run +150s)",
                 config.workflow_wallet_table_id,
                 config.workflow_notify_chat_ids,
                 config.workflow_notify_group_titles,

@@ -549,6 +549,14 @@ async def baseline_existing_project_groups(
         except Exception:  # noqa: BLE001
             continue
 
+        if title:
+            try:
+                from bot.workflow_form_dispatch import remember_chat_title
+
+                remember_chat_title(chat_id, title)
+            except Exception:  # noqa: BLE001
+                pass
+
         if config.pilot_enabled and is_pilot_chat(config, chat_id):
             skipped_pilot += 1
             continue

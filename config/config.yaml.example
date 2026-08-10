@@ -98,6 +98,8 @@ workflow:
   enabled: false
   poll_interval_minutes: 5
   # Form + logo: webhook + status-watch (poll off). See scripts/LARK_LIVE_WEBHOOK.md
+  # Keep false when folders are large — each poll may resolve all chat titles.
+  # Prefer live_webhook + live_status_watch + mark-live instead.
   form_logo_poll_enabled: false
   live_webhook_enabled: true
   live_webhook_host: "0.0.0.0"

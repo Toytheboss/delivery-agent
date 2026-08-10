@@ -186,26 +186,33 @@ async def _allocate_folder_id(client: TelegramClient) -> int:
 async def _folder_peer_ids(
     client: TelegramClient, folder_item: object
 ) -> tuple[set[int], list[Any], list[Any]]:
+    """Collect peer IDs without GetChatsRequest when peers are already InputPeer*."""
+    from bot.tg_rate_limit import paced_get_entity
+
     pinned_raw = list(getattr(folder_item, "pinned_peers", []) or [])
     include_raw = list(getattr(folder_item, "include_peers", []) or [])
     chat_ids: set[int] = set()
     pinned_peers: list[Any] = []
     include_peers: list[Any] = []
 
+    async def _absorb(peer: object, dest: list[Any]) -> None:
+        try:
+            chat_ids.add(utils.get_peer_id(peer))
+            dest.append(peer)
+            return
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            entity = await paced_get_entity(client, peer)
+            chat_ids.add(utils.get_peer_id(entity))
+            dest.append(await client.get_input_entity(entity))
+        except Exception:  # noqa: BLE001
+            return
+
     for peer in pinned_raw:
-        try:
-            entity = await client.get_entity(peer)
-            chat_ids.add(utils.get_peer_id(entity))
-            pinned_peers.append(await client.get_input_entity(entity))
-        except Exception:  # noqa: BLE001
-            continue
+        await _absorb(peer, pinned_peers)
     for peer in include_raw:
-        try:
-            entity = await client.get_entity(peer)
-            chat_ids.add(utils.get_peer_id(entity))
-            include_peers.append(await client.get_input_entity(entity))
-        except Exception:  # noqa: BLE001
-            continue
+        await _absorb(peer, include_peers)
     return chat_ids, pinned_peers, include_peers
 
 
@@ -304,6 +311,14 @@ async def ensure_chat_in_folders(
     except Exception:
         logger.exception("folder_auto_add: cannot resolve chat %r", chat_title)
         return None
+
+    if chat_title:
+        try:
+            from bot.workflow_form_dispatch import remember_chat_title
+
+            remember_chat_title(chat_id, chat_title)
+        except Exception:  # noqa: BLE001
+            pass
 
     max_per = max(int(config.folder_max_chats or DEFAULT_MAX_PER_FOLDER), 1)
     prefix = (config.folder_name_prefix or "Delivery").strip() or "Delivery"
@@ -409,21 +424,31 @@ async def scan_and_add_missing(
     if not config.folder_auto_add_enabled:
         return 0
 
+    from bot.tg_rate_limit import tg_heavy_section
+    from bot.workflow_form_dispatch import remember_chat_title
+
     keywords = config.folder_auto_add_keywords or config.welcome_name_keywords
     added = 0
-    async for dialog in client.iter_dialogs():
-        entity = dialog.entity
-        if not _is_group_or_channel(entity):
-            continue
-        title = getattr(entity, "title", None) or ""
-        if not title_matches_project(title, keywords):
-            continue
-        name = await ensure_chat_in_folders(
-            client, config, entity, scope=None, title=title
-        )
-        if name:
-            added += 1
-            await asyncio.sleep(0.35)
+    async with tg_heavy_section():
+        async for dialog in client.iter_dialogs():
+            entity = dialog.entity
+            if not _is_group_or_channel(entity):
+                continue
+            title = getattr(entity, "title", None) or ""
+            if not title_matches_project(title, keywords):
+                continue
+            try:
+                chat_id = utils.get_peer_id(entity)
+                if title:
+                    remember_chat_title(chat_id, title)
+            except Exception:  # noqa: BLE001
+                pass
+            name = await ensure_chat_in_folders(
+                client, config, entity, scope=None, title=title
+            )
+            if name:
+                added += 1
+                await asyncio.sleep(0.35)
 
     if added and scope is not None:
         try:

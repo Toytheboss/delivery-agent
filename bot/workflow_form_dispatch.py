@@ -140,18 +140,116 @@ def match_project_to_chat(
 async def build_folder_title_map(
     client: TelegramClient,
     chat_ids: set[int],
+    *,
+    force_refresh: bool = False,
 ) -> dict[int, str]:
-    title_by_chat: dict[int, str] = {}
-    for chat_id in chat_ids:
+    """Map chat_id → title with disk+memory cache.
+
+    Avoids resolving ~N groups on every form/wallet poll (main flood source).
+    Missing IDs are paced via get_entity; known titles are reused.
+    """
+    import json
+    import time
+    from pathlib import Path
+
+    from bot.tg_rate_limit import paced_get_entity, tg_heavy_section
+
+    root = Path(__file__).resolve().parent.parent
+    cache_path = root / "data" / "folder_title_cache.json"
+    ttl_s = 6 * 3600  # 6h — titles rarely change
+    now = time.time()
+
+    cache: dict[str, dict] = {}
+    if cache_path.exists() and not force_refresh:
         try:
-            entity = await client.get_entity(chat_id)
-        except Exception as exc:  # noqa: BLE001
-            logger.warning("Could not resolve chat_id=%s: %s", chat_id, exc)
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                cache = raw.get("titles") if isinstance(raw.get("titles"), dict) else raw
+        except (OSError, json.JSONDecodeError):
+            cache = {}
+
+    title_by_chat: dict[int, str] = {}
+    missing: list[int] = []
+    for chat_id in chat_ids:
+        key = str(chat_id)
+        entry = cache.get(key)
+        if isinstance(entry, dict):
+            title = str(entry.get("title") or "").strip()
+            ts = float(entry.get("ts") or 0)
+            if title and (force_refresh is False) and (now - ts) < ttl_s:
+                title_by_chat[chat_id] = title
+                continue
+        elif isinstance(entry, str) and entry.strip():
+            title_by_chat[chat_id] = entry.strip()
             continue
-        title = getattr(entity, "title", None)
-        if title:
-            title_by_chat[chat_id] = str(title)
+        missing.append(chat_id)
+
+    if missing:
+        logger.info(
+            "Title cache: resolve %d/%d chat(s) via get_entity",
+            len(missing),
+            len(chat_ids),
+        )
+        async with tg_heavy_section():
+            for chat_id in missing:
+                try:
+                    entity = await paced_get_entity(client, chat_id)
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning("Could not resolve chat_id=%s: %s", chat_id, exc)
+                    continue
+                title = getattr(entity, "title", None)
+                if title:
+                    title_by_chat[chat_id] = str(title)
+                    cache[str(chat_id)] = {"title": str(title), "ts": now}
+
+        try:
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            # Drop entries not in current folder set to keep file small
+            keep = {str(cid) for cid in chat_ids}
+            pruned = {k: v for k, v in cache.items() if k in keep}
+            # merge freshly resolved
+            for cid, title in title_by_chat.items():
+                pruned[str(cid)] = {"title": title, "ts": now}
+            cache_path.write_text(
+                json.dumps({"titles": pruned}, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        except OSError:
+            logger.exception("Failed to persist folder title cache")
+
     return title_by_chat
+
+
+def remember_chat_title(chat_id: int, title: str) -> None:
+    """Update title cache when we already know the title (join / auto-add)."""
+    import json
+    import time
+    from pathlib import Path
+
+    title = (title or "").strip()
+    if not title:
+        return
+    root = Path(__file__).resolve().parent.parent
+    cache_path = root / "data" / "folder_title_cache.json"
+    cache: dict[str, dict] = {}
+    if cache_path.exists():
+        try:
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                cache = raw.get("titles") if isinstance(raw.get("titles"), dict) else {}
+                if not isinstance(cache, dict):
+                    cache = {}
+        except (OSError, json.JSONDecodeError):
+            cache = {}
+    cache[str(chat_id)] = {"title": title, "ts": time.time()}
+    try:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_text(
+            json.dumps({"titles": cache}, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.exception("Failed to update folder title cache")
 
 
 def is_manual_form_command(text: str, commands: list[str]) -> bool:

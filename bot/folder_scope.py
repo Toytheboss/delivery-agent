@@ -61,7 +61,13 @@ async def fetch_folder_chat_ids(
     *,
     prefix: str = "Delivery",
 ) -> set[int]:
-    """Return chat IDs for groups/channels in configured / discovered Delivery folders."""
+    """Return chat IDs for groups/channels in configured / discovered folders.
+
+    Prefer ``utils.get_peer_id(peer)`` (no network). Only call get_entity when
+    the peer cannot be converted locally — critical as folder size grows.
+    """
+    from bot.tg_rate_limit import paced_get_entity, tg_heavy_section
+
     names = await resolve_folder_names(client, folder_names, prefix=prefix)
     if not names:
         return set()
@@ -85,27 +91,43 @@ async def fetch_folder_chat_ids(
         return set()
 
     chat_ids: set[int] = set()
-    for folder_name, target in targets:
-        peer_lists: list = []
-        if isinstance(target, (DialogFilter, DialogFilterChatlist)):
-            peer_lists.extend(getattr(target, "include_peers", []) or [])
-            peer_lists.extend(getattr(target, "pinned_peers", []) or [])
+    resolve_needed = 0
+    async with tg_heavy_section():
+        for folder_name, target in targets:
+            peer_lists: list = []
+            if isinstance(target, (DialogFilter, DialogFilterChatlist)):
+                peer_lists.extend(getattr(target, "include_peers", []) or [])
+                peer_lists.extend(getattr(target, "pinned_peers", []) or [])
 
-        before = len(chat_ids)
-        for peer in peer_lists:
-            try:
-                entity = await client.get_entity(peer)
-                chat_ids.add(utils.get_peer_id(entity))
-            except Exception as exc:  # noqa: BLE001 - log and continue
-                logger.warning(
-                    "Could not resolve peer in folder %r: %s", folder_name, exc
-                )
+            before = len(chat_ids)
+            for peer in peer_lists:
+                cid: int | None = None
+                try:
+                    cid = utils.get_peer_id(peer)
+                except Exception:
+                    cid = None
+                if cid is not None:
+                    chat_ids.add(cid)
+                    continue
+                resolve_needed += 1
+                try:
+                    entity = await paced_get_entity(client, peer)
+                    chat_ids.add(utils.get_peer_id(entity))
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Could not resolve peer in folder %r: %s", folder_name, exc
+                    )
+            logger.info(
+                "Folder %r contributes %d chat(s)",
+                folder_name,
+                len(chat_ids) - before,
+            )
+
+    if resolve_needed:
         logger.info(
-            "Folder %r contributes %d chat(s)",
-            folder_name,
-            len(chat_ids) - before,
+            "Folder peer resolve used get_entity for %d peer(s); rest were local",
+            resolve_needed,
         )
-
     logger.info(
         "Folders %s contain %d unique chat(s)",
         names,
