@@ -1,0 +1,6 @@
+# 不自动回复的群（仍在 Delivery 文件夹内，但 bot 忽略）
+# chat_id 最可靠；仅填 title 时 bot 启动会自动解析
+
+ignored_groups:
+  # - title: "某项目群"
+  #   chat_id: -1234567890

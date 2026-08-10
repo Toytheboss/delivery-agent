@@ -1,0 +1,211 @@
+# Delivery Agent 配置（复制为 config/config.yaml 后修改）
+
+scope:
+  # Telegram 左侧分组（可多个；每个 folder 约最多 100 个群）
+  folder_names:
+    - "Projects #1"
+    - "Projects #2"
+    - "Projects #3"
+  folder_name: "Projects #1"  # 兼容旧字段；实际以 folder_names 为准
+  # 新群标题含关键词时立刻加入尚有空位的 folder（每夹约最多 100）
+  auto_add_enabled: true
+  # folder 满了后自动新建 Delivery #4 / #5 ...
+  auto_create_folders: true
+  folder_name_prefix: "Projects"
+  auto_add_keywords:
+    - "projects"
+    - "partner"
+  max_chats_per_folder: 100
+  # Backup catch-up only; join still uses ChatAction for instant folder add
+  auto_add_scan_minutes: 15
+  refresh_interval_minutes: 30
+  # 是否在 Delivery 分组内的项目群自动回复（测试阶段建议 false）
+  group_replies_enabled: false
+  # 试点：true 时仅下列群会自动回复 / 欢迎语
+  pilot_enabled: false
+  pilot_groups:
+    # - title: "Project X <> Delivery"
+    # - chat_id: -100xxxxxxxxxx
+
+trigger:
+  # @你 或 像提问的消息，满足任一即可
+  require_mention_or_question: true
+  hint_keywords:
+    - "报价"
+    - "pricing"
+    - "quote"
+    - "deadline"
+
+reply:
+  rate_limit_seconds: 60
+  reply_delay_seconds: 10
+  bubble_gap_seconds: 30
+  # 低于此值保持静默；宁可不答，勿答非所问
+  min_relevance_score: 0.35
+  language: auto
+  # FAQ auto-reply footer (not used for welcome / mark-live / form workflows)
+  footer_enabled: false
+  footer_zh: ""
+  footer_en: ""
+
+rules:
+  - "严格跟随提问语言：中文问中文答，英文问英文答"
+  - "只能依据资料库回答，不得编造；依据不足或资料跑题时只输出 NEEDS_HUMAN"
+  - "禁止答非所问：主题必须对上；相关度不够或答不上就保持沉默，绝不硬答"
+  - "宁可沉默，也不要用擦边资料凑一篇看似相关的回复"
+  - "资料里有相关文档/帮助中心/表单等链接时，回复必须带上；勿编造链接"
+  - "口吻像群里同事 Roy：口语、短、自然；少套话，别说「作为AI」「根据资料」「希望有帮助」"
+  - "不要编造报价、合同、排期、上币承诺；优先 1–3 条短消息，用单独一行 --- 分隔"
+  - "禁止反问澄清：不要「要哪家/需要我再发吗」；有多选项一次列全（带链接）；答不上就 NEEDS_HUMAN 沉默，不拉同事"
+
+learn:
+  enabled: true
+  trigger_word: "学习"
+  subdirectory: "learned"
+  min_chars: 5
+  scopes:
+    qa_test_groups: true
+    qa_testers: true
+    project_folder: true
+  # absorb/学习成功后 upsert 到 Lark「Agent 词条库」
+  agent_kb:
+    enabled: true
+    app_token: "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
+    table_id: "tblP28CyWdY5ml8r"
+    # view_id 仅便于人工打开表格，写入 API 不需要：vew2pHKxps
+
+safety:
+  blocked_topics:
+    - "报价"
+    - "价格"
+    - "合同"
+    - "pricing"
+
+knowledge:
+  directory: "knowledge"
+  chunk_size: 800
+  chunk_overlap: 100
+  top_k: 8
+
+# Lark Wiki 自动同步（凭证在 .env 的 LARK_* 变量）
+lark:
+  enabled: false
+  sync_on_startup: true
+  sync_interval_minutes: 60
+
+# 工作流：主网上线→发表单；表单→Lark（Apps Script）；钱包齐全→通知部门
+workflow:
+  enabled: false
+  poll_interval_minutes: 5
+  # Form + logo: webhook + status-watch (poll off). See scripts/LARK_LIVE_WEBHOOK.md
+  form_logo_poll_enabled: false
+  live_webhook_enabled: true
+  live_webhook_host: "0.0.0.0"
+  live_webhook_port: 8787
+  live_webhook_path: "/workflow/live"
+  live_webhook_secret: ""
+  live_startup_scan: false
+  # Backup when Feishu automation HTTP is missing: detect NEW live status only
+  live_status_watch_enabled: true
+  live_status_watch_seconds: 60
+  live_watch_state_file: "data/live_status_watch_state.json"
+  # Track enter/leave 主网部署中 / 测试网部署 for 交付日报
+  # When live_status_watch is on, piggybacks on the same Lark poll (no extra request).
+  deploy_status_watch_enabled: true
+  deploy_status_watch_seconds: 60
+  deploy_status_watch_state_file: "data/deploy_status_watch_state.json"
+  base_app_token: "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
+  progress_table_id: "tbl5wXOwCptng06w"
+  status_field: "项目状态"
+  trigger_status: "Mainnet Live"
+  tg_chat_id_field: ""
+  project_name_field: "项目名称 Project Name"
+  form_sent_field: ""
+  google_form_url: ""
+  baseline_existing_live: true
+  mark_live_commands:
+    - "项目已上线"
+    - "/mark_live"
+    - "mark live"
+    - "上线完成"
+  operators:
+    - username: "Josh_0zh"
+  mark_live_also_send_form: true
+  manual_commands:
+    - "/send_form"
+    - "发送上线表单"
+    - "send form"
+  message_template: |
+    Congrats! {project_name} is live on Mainnet. We can now go ahead and push the PR announcement. It'll be great if you can tweet about this integration — we'll mention it on our official social media channels and also share an announcement in our community channels.
+
+    At the same time, could you please fill in this form for follow-up onboarding? We are collecting the project's address for future gas return and potential grant provision. Thank you. ⬇️
+    {form_url}
+  state_file: "data/form_dispatch_state.json"
+  # On Lark live (poll) OR TG mark-live: fetch site logo into 项目logo (no retry on fail)
+  logo_fill_enabled: true
+  logo_field: "项目logo"
+  live_link_field: "已上线链接🔗"
+  project_link_field: "项目链接"
+  logo_state_file: "data/logo_fill_state.json"
+  # Off by default: form data only syncs to Lark wallet table via Apps Script (no TG broadcast).
+  wallet_notify_enabled: false
+  wallet_table_id: "tblj0FdKPrlc7PrM"
+  wallet_required_fields:
+    - "Project name"
+    - "Contract Addresss/主网合约"
+    - "Treasury Address"
+  wallet_notify_state_file: "data/wallet_notify_state.json"
+  notify_chat_ids: []
+  notify_group_titles: []
+  lark_digest_enabled: true
+  lark_digest_chat_id: "oc_74ee8d69f6c00ff153bd78c301545a7f"
+  lark_digest_hour: 0
+  lark_digest_state_file: "data/lark_wallet_digest_state.json"
+
+llm:
+  provider: "deepseek"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  temperature: 0.2
+  max_tokens: 800
+
+telegram:
+  session_name: "delivery_session"
+
+# 交付自动化可量化指标；默认开启
+# 命令：/stats|交付统计（明细）；/report|交付周报|交付报告（向上短版）
+# 日报：交付日报|/daily|今日:交付日报:（主网上线/部署存量/新群/钱包/Logo）
+metrics:
+  enabled: true
+  state_file: "data/delivery_metrics.json"
+
+welcome:
+  enabled: true
+  name_keywords:
+    - "projects"
+    - "partner"
+  # 0 = greet immediately on join (sample recent msgs → lang; else title; else EN)
+  # >0 = wait until N non-bot messages before greeting
+  min_messages_before_welcome: 0
+  # Backup catch-up only; join still greets via ChatAction
+  scan_interval_minutes: 15
+  state_file: "data/group_welcome_state.json"
+  # delay_seconds = seconds from sequence start
+  sequence_zh:
+    - delay_seconds: 0
+      text: "大家好，我是 Delivery Agent Roy，很高兴和大家对接 👋"
+    - delay_seconds: 30
+      text: |
+        这是Delivery集成的一些相关资料，比较详细，可以看一下：
+        https://docs.google.com/document/d/1xYzdfJlD08UOV9CKE3nV7NTSQg6lPz9B17aIW2NF5Wg/edit?tab=t.0#heading=h.av76fiyd7yav
+    - delay_seconds: 60
+      text: "其他任何相关的问题，随时在群里问我。"
+  sequence_en:
+    - delay_seconds: 0
+      text: "Hi everyone — I'm Roy from Delivery Agent. Glad to connect with you 👋"
+    - delay_seconds: 30
+      text: |
+        Here are some detailed Delivery integration docs — feel free to check them out:
+        https://docs.google.com/document/d/1xYzdfJlD08UOV9CKE3nV7NTSQg6lPz9B17aIW2NF5Wg/edit?tab=t.0#heading=h.av76fiyd7yav
+    - delay_seconds: 60
+      text: "For any other related questions, feel free to ask me in the group anytime."

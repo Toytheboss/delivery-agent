@@ -1,0 +1,224 @@
+"""Workflow: status → live → fetch site logo once into 项目logo (no retry on fail)."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+import os
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+from bot.lark_bitable import get_tenant_access_token, list_records
+from bot.project_logo import fill_logo_for_record, pick_site_url
+from bot.workflow_form_dispatch import _field_text
+
+if TYPE_CHECKING:
+    from bot.config_loader import AppConfig
+
+logger = logging.getLogger(__name__)
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_state(path: Path) -> tuple[set[str], dict[str, str]]:
+    if not path.exists():
+        return set(), {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set(), {}
+    processed = {str(x) for x in (raw.get("processed_record_ids") or [])}
+    results = {str(k): str(v) for k, v in (raw.get("results") or {}).items()}
+    return processed, results
+
+
+def _save_state(path: Path, processed: set[str], results: dict[str, str]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "processed_record_ids": sorted(processed),
+                "results": results,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _mark_processed(
+    path: Path,
+    processed: set[str],
+    results: dict[str, str],
+    record_id: str,
+    status: str,
+) -> None:
+    processed.add(record_id)
+    results[record_id] = status
+    _save_state(path, processed, results)
+
+
+async def fill_logo_for_fields(
+    config: AppConfig,
+    token: str,
+    record_id: str,
+    fields: dict[str, Any],
+    *,
+    state_path: Path | None = None,
+    processed: set[str] | None = None,
+    results: dict[str, str] | None = None,
+) -> str:
+    """One-shot logo fill for a live record. Marks state even on failure."""
+    if not getattr(config, "workflow_logo_fill_enabled", True):
+        return "disabled"
+
+    path = state_path or (ROOT / config.workflow_logo_state_file)
+    if processed is None or results is None:
+        processed, results = _load_state(path)
+
+    if record_id in processed:
+        return results.get(record_id, "already_processed")
+
+    if fields.get(config.workflow_logo_field):
+        _mark_processed(path, processed, results, record_id, "already_has_logo")
+        try:
+            from bot.metrics import record_logo_outcome
+
+            record_logo_outcome("already_has_logo")
+        except Exception:  # noqa: BLE001
+            pass
+        return "already_has_logo"
+
+    site = pick_site_url(
+        fields,
+        config.workflow_live_link_field,
+        config.workflow_project_link_field,
+    )
+    project_name = _field_text(fields, config.workflow_project_name_field) or record_id
+    if not site:
+        _mark_processed(path, processed, results, record_id, "no_url")
+        try:
+            from bot.metrics import record_logo_outcome
+
+            record_logo_outcome("no_url")
+        except Exception:  # noqa: BLE001
+            pass
+        logger.warning("logo-fill skip %r (%s): no project URL", project_name, record_id)
+        return "no_url"
+
+    loop = asyncio.get_running_loop()
+    try:
+        status = await loop.run_in_executor(
+            None,
+            fill_logo_for_record,
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
+            record_id,
+            project_name,
+            site,
+            config.workflow_logo_field,
+        )
+    except Exception as exc:  # noqa: BLE001
+        status = f"err:{exc}"
+        logger.exception("logo-fill failed for %r (%s)", project_name, record_id)
+
+    # Success or fail: never retry
+    _mark_processed(path, processed, results, record_id, status)
+    try:
+        from bot.metrics import record_logo_outcome
+
+        record_logo_outcome(status)
+    except Exception:  # noqa: BLE001
+        pass
+    if status.startswith("ok"):
+        logger.info("logo-fill OK %r (%s) %s", project_name, record_id, status)
+    else:
+        logger.warning(
+            "logo-fill FAIL %r (%s) %s — will not retry",
+            project_name,
+            record_id,
+            status,
+        )
+    return status
+
+
+async def run_logo_fill_once(config: AppConfig) -> int:
+    """Scan live rows missing logo; process each at most once. Returns ok count."""
+    if not config.workflow_enabled:
+        return 0
+    if not getattr(config, "workflow_logo_fill_enabled", True):
+        return 0
+
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        logger.warning("logo-fill skipped: missing LARK_APP_ID / LARK_APP_SECRET")
+        return 0
+
+    loop = asyncio.get_running_loop()
+    token = await loop.run_in_executor(None, get_tenant_access_token, app_id, app_secret)
+    records = await loop.run_in_executor(
+        None,
+        list_records,
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+    )
+
+    state_path = ROOT / config.workflow_logo_state_file
+    processed, results = _load_state(state_path)
+
+    # First run: only baseline live rows that already have a logo.
+    # Rows still missing logo are processed once below (success or fail, no retry).
+    if config.workflow_baseline_existing_live and not state_path.exists():
+        for record in records:
+            record_id = str(record.get("record_id") or "")
+            fields = record.get("fields") or {}
+            status = _field_text(fields, config.workflow_status_field)
+            if not record_id or status != config.workflow_trigger_status:
+                continue
+            if fields.get(config.workflow_logo_field):
+                processed.add(record_id)
+                results[record_id] = "baseline_has_logo"
+        _save_state(state_path, processed, results)
+        logger.info(
+            "logo-fill baseline: marked %d live project(s) that already have logo",
+            len(processed),
+        )
+
+    ok_count = 0
+    for record in records:
+        record_id = str(record.get("record_id") or "")
+        if not record_id or record_id in processed:
+            continue
+        fields = record.get("fields") or {}
+        status = _field_text(fields, config.workflow_status_field)
+        if status != config.workflow_trigger_status:
+            continue
+        result = await fill_logo_for_fields(
+            config,
+            token,
+            record_id,
+            fields,
+            state_path=state_path,
+            processed=processed,
+            results=results,
+        )
+        if result.startswith("ok"):
+            ok_count += 1
+    return ok_count
+
+
+async def logo_fill_loop(config: AppConfig) -> None:
+    interval = max(int(config.workflow_poll_interval_minutes or 5), 1) * 60
+    while True:
+        try:
+            from bot.metrics import inc
+
+            inc("poll_cycles_run")
+            await run_logo_fill_once(config)
+        except Exception:  # noqa: BLE001
+            logger.exception("logo-fill loop error")
+        await asyncio.sleep(interval)

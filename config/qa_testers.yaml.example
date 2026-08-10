@@ -1,0 +1,13 @@
+# QA 测试账号与测试群（复制为 config/qa_testers.yaml 后填写）
+#
+# QA 测试账号私聊主号，或在 qa_test_groups 里的群发言，可绕过 @ 触发与部分限流
+# user_id 最可靠；仅填 username 时 bot 启动会自动解析
+
+qa_testers:
+  # - user_id: 1234567890
+  #   username: "your_test_account"
+  #   name: "QA tester"
+
+qa_test_groups:
+  # - title: "bot test"
+  #   name: "Bot 测试群"

@@ -1,0 +1,11 @@
+# BD / 内部账号黑名单：列表中的人在群里发消息，bot 一律不自动回复
+# （FAQ / 学习 / 工作流关键词回应等；欢迎语仍可用 BD 消息做语言检测）
+# 复制为 config/whitelist.yaml 后填写
+#
+# user_id 最可靠；username 可选（不含 @）
+# 获取 user_id：查看 bot 日志里的 sender_id，或从「允许拉群」接龙名单同步
+
+ignore_users:
+  # - user_id: 123456789
+  #   name: "BD teammate"
+  #   username: "teammate_username"

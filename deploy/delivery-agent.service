@@ -1,0 +1,21 @@
+[Unit]
+Description=Delivery Agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=botuser
+Group=botuser
+WorkingDirectory=/opt/delivery-agent
+# Secrets live here — never commit this file
+EnvironmentFile=/opt/delivery-agent/.env
+ExecStart=/opt/delivery-agent/.venv/bin/python -m bot.main
+Restart=always
+RestartSec=10
+# Optional hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

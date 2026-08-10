@@ -1,0 +1,41 @@
+# Secrets & local runtime
+.env
+*.session
+*.session-journal
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# Local config (use *.example templates)
+config/config.yaml
+config/whitelist.yaml
+config/qa_testers.yaml
+config/ignored_groups.yaml
+
+# Runtime state / logs
+data/
+logs/
+
+# Optional local knowledge packs & learnings (keep private)
+knowledge/private/
+knowledge/learned/learned_*.md
+knowledge/*.csv
+knowledge/lark_*.md
+
+# Local tooling / caches / build artifacts
+.wrangler/
+.cursor/
+cloudflare-dist*/
+*.html
+!docs/*.md
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/
