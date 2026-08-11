@@ -1,0 +1,36 @@
+---
+description: Keep README.md Features inventory in sync whenever the bot gains, changes, or removes user-facing capability.
+alwaysApply: true
+---
+
+# README feature sync (required)
+
+Whenever you **add**, **change**, or **remove** a Delivery Agent capability that operators or partners can observe, update `README.md` in the **same change set** (same PR / same commit series). Do not ship code without the doc update.
+
+## What counts as a feature
+
+Update the README for:
+
+- New modules, workflows, ops commands / aliases, reports, timers, or auto-behaviors
+- Behavior changes that alter when the bot replies, stays silent, or sends reminders
+- New config knobs that operators must know about (document in Features and/or Config cheat sheet)
+- New env vars needed to run a feature (Env vars table)
+- Removed or deprecated capabilities (delete or mark clearly in README)
+
+Do **not** pad the README for pure refactors, typo fixes, or internal-only cleanups with no behavior change.
+
+## Where to edit
+
+1. Primary: `README.md` → **Features (full list)** — add/update the matching subsection table row(s), or a new numbered subsection if it is a distinct product area.
+2. Also update if affected: architecture sketch, Config cheat sheet, Env vars, Ops commands, Project layout.
+3. Keep the top blurb accurate if the product scope changed.
+
+## Definition of done
+
+A feature task is incomplete until README reflects:
+
+- What it does (one clear sentence)
+- Trigger / who can use it (if not obvious)
+- Key limits or safety behavior (silent, once-only, allowlists, etc.) when relevant
+
+If the user asks to commit/push, include the README update in that commit (or an immediately following doc commit on the same branch).

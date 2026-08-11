@@ -7,6 +7,8 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 > This is a **Userbot** (Telethon personal account), **not** a BotFather bot.  
 > Secrets stay local: `.env`, `*.session`, and real `config/*.yaml` are **never** committed.
 
+> **Maintaining this doc:** every new / changed / removed bot capability must be reflected in **Features** (and Config / Env / Ops tables if needed) in the same change set. See `.cursor/rules/readme-feature-sync.mdc`.
+
 ---
 
 ## Features (full list)

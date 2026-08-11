@@ -30,7 +30,9 @@ knowledge/lark_*.md
 
 # Local tooling / caches / build artifacts
 .wrangler/
-.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
 cloudflare-dist*/
 *.html
 !docs/*.md
