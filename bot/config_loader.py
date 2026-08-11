@@ -113,6 +113,15 @@ class AppConfig:
     workflow_wallet_table_id: str
     workflow_wallet_required_fields: list[str]
     workflow_wallet_notify_state_file: str
+    # After form sent: if wallet table still incomplete after N hours, remind in TG
+    workflow_form_chase_enabled: bool
+    workflow_form_chase_after_hours: float
+    workflow_form_chase_scan_minutes: int
+    workflow_form_chase_min_filled: int
+    workflow_form_chase_max_reminders: int
+    workflow_form_chase_fields: list[str]
+    workflow_form_chase_state_file: str
+    workflow_form_chase_message_template: str
     workflow_notify_chat_ids: list[int]
     workflow_notify_group_titles: list[str]
     workflow_lark_digest_enabled: bool
@@ -137,6 +146,10 @@ class AppConfig:
     welcome_min_messages_before_welcome: int
     metrics_enabled: bool
     metrics_state_file: str
+    metrics_message_log_enabled: bool
+    metrics_message_log_dir: str
+    metrics_message_log_retain_days: int
+    metrics_message_log_text_max: int
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -607,6 +620,48 @@ def load_config() -> AppConfig:
         workflow_wallet_table_id=str(
             workflow.get("wallet_table_id", "tblj0FdKPrlc7PrM")
         ),
+        workflow_form_chase_enabled=bool(
+            workflow.get("form_chase_enabled", True)
+        ),
+        workflow_form_chase_after_hours=float(
+            workflow.get("form_chase_after_hours", 24) or 24
+        ),
+        workflow_form_chase_scan_minutes=int(
+            workflow.get("form_chase_scan_minutes", 60) or 60
+        ),
+        workflow_form_chase_min_filled=int(
+            workflow.get("form_chase_min_filled", 4) or 4
+        ),
+        workflow_form_chase_max_reminders=int(
+            workflow.get("form_chase_max_reminders", 1) or 1
+        ),
+        workflow_form_chase_fields=[
+            str(x).strip()
+            for x in (
+                workflow.get("form_chase_fields")
+                or [
+                    "Project name",
+                    "Project logo",
+                    "Contract Addresss/主网合约",
+                    "Treasury Address",
+                    "Fee Collector / Revenue Wallet Address",
+                ]
+            )
+            if str(x).strip()
+        ],
+        workflow_form_chase_state_file=str(
+            workflow.get("form_chase_state_file", "data/form_chase_state.json")
+        ),
+        workflow_form_chase_message_template=str(
+            workflow.get("form_chase_message_template")
+            or (
+                "Hi {project_name} team — friendly reminder to complete the "
+                "onboarding form. We are still missing:\n"
+                "{missing_fields}\n\n"
+                "Please fill these in when you can. Thank you! ⬇️\n"
+                "{form_url}"
+            )
+        ),
         workflow_wallet_required_fields=[
             str(x)
             for x in (
@@ -733,5 +788,20 @@ def load_config() -> AppConfig:
                 "state_file",
                 "data/delivery_metrics.json",
             )
+        ),
+        metrics_message_log_enabled=bool(
+            (cfg.get("metrics") or {}).get("message_log_enabled", True)
+        ),
+        metrics_message_log_dir=str(
+            (cfg.get("metrics") or {}).get(
+                "message_log_dir",
+                "data/message_logs",
+            )
+        ),
+        metrics_message_log_retain_days=int(
+            (cfg.get("metrics") or {}).get("message_log_retain_days", 90) or 90
+        ),
+        metrics_message_log_text_max=int(
+            (cfg.get("metrics") or {}).get("message_log_text_max", 500) or 500
         ),
     )

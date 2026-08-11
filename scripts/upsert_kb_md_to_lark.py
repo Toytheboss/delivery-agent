@@ -7,7 +7,6 @@ Does not wipe the table — create/update by 编号 (entry_id).
 from __future__ import annotations
 
 import argparse
-import hashlib
 import os
 import re
 import sys
@@ -54,19 +53,20 @@ def _parse_file(path: Path, id_prefix: str | None = None) -> list[AgentKbEntry]:
             continue
         fields = {m.group(1): m.group(2).strip() for m in FIELD_RE.finditer(part)}
         raw_q = (fields.get("相关问题") or "").strip()
-        parts_q = re.split(r"\s+/\s+(?=[A-Z\"'])", raw_q, maxsplit=1)
-        q = (parts_q[1] if len(parts_q) == 2 else parts_q[0]).strip()
+        # Keep the FULL bilingual question string for Lark「问题」.
+        # Do NOT split on internal "A / B" style slashes — that used to drop
+        # Chinese and leave EN-only titles unlike BDQA rows.
+        q = re.sub(r"\s+", " ", raw_q).strip()
         zh = (fields.get("参考回答-中文") or "").strip()
         en = (fields.get("参考回答-英文") or "").strip()
         if not q or (not zh and not en):
             continue
         answer = f"{zh}\n\n[EN]\n{en}" if zh and en else (zh or en)
         n += 1
-        # Stable id from question hash so re-runs update same row
-        digest = hashlib.sha1(q.encode("utf-8")).hexdigest()[:8].upper()
+        # Stable sequential id (no content hash) so re-upserts update the same row.
         out.append(
             AgentKbEntry(
-                entry_id=f"{prefix}-{n:03d}-{digest}",
+                entry_id=f"{prefix}-{n:03d}",
                 category="Learned / 学习入库",
                 question=q,
                 answer=answer,

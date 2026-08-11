@@ -72,10 +72,21 @@ _SOURCE_LINE_RE = re.compile(
     re.I,
 )
 
+# Never surface these in FAQ replies / related-link backfill.
+_BLOCKED_URL_SUBSTR = (
+    "botchain.notion.site/botchain-ecosystem-support-program",
+    "docs.google.com/document/d/1ijhL3V5EZi6T8DIz4v9BCj13C2SpcgfYcyiI7f9l7fI",
+)
+
 
 def _normalize_url(url: str) -> str:
     # Strip common trailing punctuation (incl. CJK) that often follows links in KB text
     return (url or "").strip().rstrip(".,;:)）。、】》\"'")
+
+
+def _is_blocked_url(url: str) -> bool:
+    lowered = (url or "").lower()
+    return any(part in lowered for part in _BLOCKED_URL_SUBSTR)
 
 
 def _extract_urls(text: str) -> list[str]:
@@ -84,11 +95,26 @@ def _extract_urls(text: str) -> list[str]:
     out: list[str] = []
     for raw in _URL_RE.findall(text or ""):
         url = _normalize_url(raw)
-        if not url or url in seen:
+        if not url or url in seen or _is_blocked_url(url):
             continue
         seen.add(url)
         out.append(url)
     return out
+
+
+def _scrub_blocked_urls(text: str) -> str:
+    """Remove blocked URLs from model output (and tidy leftover blank lines)."""
+    if not text:
+        return text
+
+    def _repl(match: re.Match[str]) -> str:
+        url = _normalize_url(match.group(0))
+        return "" if _is_blocked_url(url) else match.group(0)
+
+    cleaned = _URL_RE.sub(_repl, text)
+    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
+    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return cleaned.strip()
 
 
 def _source_urls_from_chunk(chunk_text: str) -> list[str]:
@@ -429,9 +455,12 @@ def _fallback_compose(
         if labeled:
             body = _clean_fallback_answer(labeled)
     body = _append_missing_links(body, hits)
+    body = _scrub_blocked_urls(body)
     # Keep fallback short — no long preamble
     if len(body) > 500:
         body = body[:500].rstrip() + "…"
+    if not body:
+        return _silent_decision("blocked-url scrub emptied fallback", best.score)
     return ReplyDecision(True, body, "retrieval fallback", best.score, language=lang)
 
 
@@ -720,6 +749,11 @@ async def generate_reply(
         return _silent_decision("answer not grounded", best_score, language=lang)
 
     answer = _append_missing_links(answer, hits)
+    answer = _scrub_blocked_urls(answer)
+    if not answer:
+        return _silent_decision(
+            "blocked-url scrub emptied answer", best_score, language=lang
+        )
     return ReplyDecision(
         True, answer, f"llm:{creds.provider}:{lang}", best_score, language=lang
     )

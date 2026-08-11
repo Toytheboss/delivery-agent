@@ -182,6 +182,18 @@ async def process_live_project(
                     _save_state(state_path, sent)
                     loop = asyncio.get_running_loop()
                     await _mark_sent_in_lark(loop, token, config, rid)
+                    try:
+                        from bot.workflow_form_chase import note_form_sent
+
+                        note_form_sent(
+                            config,
+                            record_id=rid,
+                            project_name=name,
+                            chat_id=chat_id,
+                            source=source or "live_trigger",
+                        )
+                    except Exception:  # noqa: BLE001
+                        logger.exception("form-chase note failed for %r", name)
                     result["form"] = "sent"
                     result["chat_id"] = chat_id
                     result["chat_title"] = titles.get(chat_id)

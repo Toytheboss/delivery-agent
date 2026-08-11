@@ -22,6 +22,7 @@ from bot.metrics import (
     snapshot,
     write_report_file,
 )
+from bot.message_log import log_message_event
 from bot.rag import generate_reply, split_reply_bubbles
 from bot.triggers import (
     is_qa_tester,
@@ -380,14 +381,40 @@ class MessageHandler:
                 if sender_id is not None:
                     self._mark_replied(chat_id, sender_id)
                 try:
+                    inc("messages_processed")
                     inc("social_chitchat_replies")
                 except Exception:  # noqa: BLE001
                     pass
+                log_message_event(
+                    kind="social",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    sender_username=sender_username or "",
+                    message_id=msg_id,
+                    text=text,
+                    reply_text=reply,
+                    qa=qa_mode,
+                    qa_group=in_qa_group,
+                    outcome="replied",
+                    reason="social_chitchat",
+                )
                 logger.info(
                     "Social chitchat reply in chat %s: %r", chat_id, reply
                 )
             except Exception:
                 logger.exception("Social chitchat reply failed in chat %s", chat_id)
+                log_message_event(
+                    kind="social",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    sender_username=sender_username or "",
+                    message_id=msg_id,
+                    text=text,
+                    qa=qa_mode,
+                    qa_group=in_qa_group,
+                    outcome="error",
+                    reason="social_reply_failed",
+                )
             finally:
                 self._processing.discard(msg_id)
             return
@@ -421,6 +448,10 @@ class MessageHandler:
             in_qa_group,
             question[:120],
         )
+        try:
+            inc("messages_processed")
+        except Exception:  # noqa: BLE001
+            pass
 
         started_at = time.time()
         try:
@@ -443,6 +474,20 @@ class MessageHandler:
                         inc("social_chitchat_replies")
                     except Exception:  # noqa: BLE001
                         pass
+                    log_message_event(
+                        kind="faq",
+                        chat_id=chat_id,
+                        sender_id=sender_id,
+                        sender_username=sender_username or "",
+                        message_id=msg_id,
+                        text=question,
+                        reply_text=reply,
+                        qa=qa_tester,
+                        qa_group=in_qa_group,
+                        outcome="replied",
+                        reason=f"social_fallback:{decision.reason}",
+                        score=decision.best_score,
+                    )
                     logger.info(
                         "Social fallback after FAQ silence (%s) in chat %s: %r",
                         decision.reason,
@@ -450,6 +495,19 @@ class MessageHandler:
                         reply,
                     )
                     return
+                log_message_event(
+                    kind="faq",
+                    chat_id=chat_id,
+                    sender_id=sender_id,
+                    sender_username=sender_username or "",
+                    message_id=msg_id,
+                    text=question,
+                    qa=qa_tester,
+                    qa_group=in_qa_group,
+                    outcome="silent",
+                    reason=decision.reason,
+                    score=decision.best_score,
+                )
                 logger.info(
                     "No reply: %s (score=%.2f)", decision.reason, decision.best_score
                 )
@@ -504,6 +562,27 @@ class MessageHandler:
                 inc("faq_bubbles_sent", len(bubbles))
             if footer:
                 inc("faq_footer_sent")
+            reply_joined = "\n---\n".join(bubbles) if bubbles else ""
+            if footer:
+                reply_joined = (
+                    f"{reply_joined}\n---\n{footer}" if reply_joined else footer
+                )
+            log_message_event(
+                kind="faq",
+                chat_id=chat_id,
+                sender_id=sender_id,
+                sender_username=sender_username or "",
+                message_id=msg_id,
+                text=question,
+                reply_text=reply_joined,
+                qa=qa_tester,
+                qa_group=in_qa_group,
+                outcome="replied",
+                reason=decision.reason,
+                score=decision.best_score,
+                bubbles=len(bubbles),
+                extra={"footer": bool(footer)},
+            )
             logger.info(
                 "Replied in chat %s (%s, %d bubble(s)%s)",
                 chat_id,
@@ -513,6 +592,18 @@ class MessageHandler:
             )
         except Exception:
             logger.exception("Failed to handle message in chat %s", chat_id)
+            log_message_event(
+                kind="faq",
+                chat_id=chat_id,
+                sender_id=sender_id,
+                sender_username=sender_username or "",
+                message_id=msg_id,
+                text=question,
+                qa=qa_tester,
+                qa_group=in_qa_group,
+                outcome="error",
+                reason="handler_exception",
+            )
         finally:
             self._processing.discard(msg_id)
 

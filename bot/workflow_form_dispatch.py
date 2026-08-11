@@ -421,6 +421,18 @@ async def run_form_dispatch_once(
             record_form_outcome("sent")
         except Exception:  # noqa: BLE001
             pass
+        try:
+            from bot.workflow_form_chase import note_form_sent
+
+            note_form_sent(
+                config,
+                record_id=record_id,
+                project_name=project_name,
+                chat_id=chat_id,
+                source="form_dispatch",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("form-chase note failed for %r", project_name)
         logger.info(
             "Sent Google Form to chat_id=%s project=%r record=%s via %s",
             chat_id,
@@ -493,6 +505,18 @@ async def send_form_manual(
         matched_id = record_id
         sent.add(record_id)
         await _mark_sent_in_lark(loop, token, config, record_id)
+        try:
+            from bot.workflow_form_chase import note_form_sent
+
+            note_form_sent(
+                config,
+                record_id=record_id,
+                project_name=project_name,
+                chat_id=chat_id,
+                source="manual",
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("form-chase note failed for manual %r", project_name)
         logger.info(
             "Manual form linked to Lark record=%s project=%r (%s, status=%r)",
             record_id,

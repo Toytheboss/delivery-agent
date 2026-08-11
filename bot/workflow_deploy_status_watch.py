@@ -133,10 +133,66 @@ def events_for_day(config: "AppConfig", day: str | None = None) -> list[dict[str
     return out
 
 
+def events_since(config: "AppConfig", since: datetime) -> list[dict[str, Any]]:
+    """Return deploy-related events with ts >= since (rolling window)."""
+    state = _load_state(_state_path(config))
+    out: list[dict[str, Any]] = []
+    for e in state.get("events") or []:
+        ts = _parse_event_ts(e.get("ts"))
+        if ts is None:
+            # Fallback: calendar day still inside the window's date coverage
+            day = str(e.get("date") or "")
+            if day and day >= since.strftime("%Y-%m-%d"):
+                out.append(e)
+            continue
+        if ts >= since:
+            out.append(e)
+    out.sort(key=lambda e: (str(e.get("ts") or ""), str(e.get("name") or "")))
+    return out
+
+
+def _parse_event_ts(value: Any) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=TZ)
+    return dt.astimezone(TZ)
+
+
 def summarize_day(config: "AppConfig", day: str | None = None) -> dict[str, Any]:
     """Group today's transitions for the daily report."""
     day = day or _today()
-    events = events_for_day(config, day)
+    return _summarize_events(config, events_for_day(config, day), date_label=day)
+
+
+def summarize_window(
+    config: "AppConfig",
+    *,
+    since: datetime | None = None,
+    hours: int = 24,
+) -> dict[str, Any]:
+    """Group transitions in a rolling time window (default past 24 hours)."""
+    since = since or (datetime.now(TZ) - timedelta(hours=max(int(hours), 1)))
+    return _summarize_events(
+        config,
+        events_since(config, since),
+        date_label=f"{since.isoformat(timespec='seconds')}~now",
+        since=since,
+    )
+
+
+def _summarize_events(
+    config: "AppConfig",
+    events: list[dict[str, Any]],
+    *,
+    date_label: str,
+    since: datetime | None = None,
+) -> dict[str, Any]:
     entered_live: list[str] = []
     entered_main: list[str] = []
     left_main: list[str] = []
@@ -160,7 +216,8 @@ def summarize_day(config: "AppConfig", day: str | None = None) -> dict[str, Any]
         if old_k == STATUS_KIND_TEST_DEPLOY and new_k != STATUS_KIND_TEST_DEPLOY:
             left_test.append(name)
     return {
-        "date": day,
+        "date": date_label,
+        "since": since.isoformat(timespec="seconds") if since else None,
         "total": len(events),
         "events": events,
         "lines": lines,

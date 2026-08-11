@@ -43,6 +43,7 @@ from bot.workflow_live_watch import live_status_watch_loop
 from bot.workflow_live_trigger import startup_live_catchup
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loop
+from bot.workflow_form_chase import form_chase_loop
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -143,10 +144,17 @@ async def main() -> None:
 
     config = load_config()
     from bot.metrics import configure as configure_metrics
+    from bot.message_log import configure as configure_message_log
 
     configure_metrics(
         enabled=config.metrics_enabled,
         state_file=config.metrics_state_file,
+    )
+    configure_message_log(
+        enabled=getattr(config, "metrics_message_log_enabled", True),
+        log_dir=getattr(config, "metrics_message_log_dir", "data/message_logs"),
+        retain_days=getattr(config, "metrics_message_log_retain_days", 90),
+        text_max=getattr(config, "metrics_message_log_text_max", 500),
     )
     session_path = str(ROOT / config.session_name)
     proxy = _telegram_proxy()
@@ -343,6 +351,17 @@ async def main() -> None:
                 config.workflow_wallet_table_id,
                 config.workflow_notify_chat_ids,
                 config.workflow_notify_group_titles,
+            )
+        if getattr(config, "workflow_form_chase_enabled", False):
+            asyncio.create_task(form_chase_loop(client, config, scope))
+            logger.info(
+                "Workflow form-chase enabled (after=%sh, min_filled=%d/%d, "
+                "max_reminders=%d, scan=%dm)",
+                getattr(config, "workflow_form_chase_after_hours", 24),
+                getattr(config, "workflow_form_chase_min_filled", 4),
+                len(getattr(config, "workflow_form_chase_fields", []) or []),
+                getattr(config, "workflow_form_chase_max_reminders", 1),
+                getattr(config, "workflow_form_chase_scan_minutes", 60),
             )
         if config.workflow_lark_digest_enabled:
             await sync_wallet_first_seen(config)

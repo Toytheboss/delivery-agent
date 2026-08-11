@@ -46,7 +46,19 @@ class AgentKbEntry:
     updated_at: str = ""
 
     def to_lark_fields(self) -> dict[str, Any]:
-        title = f"{self.entry_id} | {self.question}".strip(" |")
+        # Primary「文本」: prefer Chinese side before the EN question separator,
+        # matching BDQA style ("BDQA-001 | BOT Chain 是什么？").
+        q_title = self.question.strip()
+        m = re.search(
+            r"\s+/\s+(?=(?:What|How|Is|Are|Can|Do|Does|Which|Why|When|Where|Who|"
+            r"Will|Should|Could|Would)\b)",
+            q_title,
+        )
+        if m:
+            left = q_title[: m.start()].strip()
+            if left:
+                q_title = left
+        title = f"{self.entry_id} | {q_title}".strip(" |")
         if len(title) > 200:
             title = title[:197] + "…"
         answer = self.answer.strip()

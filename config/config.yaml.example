@@ -157,6 +157,25 @@ workflow:
     - "Contract Addresss/主网合约"
     - "Treasury Address"
   wallet_notify_state_file: "data/wallet_notify_state.json"
+  # 表单发出后：钱包表 5 项里不足 4 项时，满 24h 自动催收再发一次
+  form_chase_enabled: true
+  form_chase_after_hours: 24
+  form_chase_scan_minutes: 60
+  form_chase_min_filled: 4
+  form_chase_max_reminders: 1
+  form_chase_fields:
+    - "Project name"
+    - "Project logo"
+    - "Contract Addresss/主网合约"
+    - "Treasury Address"
+    - "Fee Collector / Revenue Wallet Address"
+  form_chase_state_file: "data/form_chase_state.json"
+  form_chase_message_template: |
+    Hi {project_name} team — friendly reminder to complete the onboarding form. We are still missing:
+    {missing_fields}
+
+    Please fill these in when you can. Thank you! ⬇️
+    {form_url}
   notify_chat_ids: []
   notify_group_titles: []
   lark_digest_enabled: true
@@ -180,6 +199,11 @@ telegram:
 metrics:
   enabled: true
   state_file: "data/delivery_metrics.json"
+  # Per-message JSONL detail (FAQ/social Processing path); cheap append-only
+  message_log_enabled: true
+  message_log_dir: "data/message_logs"
+  message_log_retain_days: 90
+  message_log_text_max: 500
 
 welcome:
   enabled: true
