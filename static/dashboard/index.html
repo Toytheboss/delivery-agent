@@ -94,24 +94,46 @@
           <div class="chart" id="chartWorkflowArea"></div>
         </div>
       </div>
-      <div class="grid">
-        <div class="panel">
-          <h2>已回答（近期）</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>时间</th><th>群</th><th>问题</th><th>回答</th><th>原因</th></tr></thead>
-              <tbody id="tbl-answered"></tbody>
-            </table>
+      <div class="panel qa-panel">
+        <div class="qa-head">
+          <h2>问答明细</h2>
+          <div class="qa-tabs" id="qa-tabs" role="tablist">
+            <button type="button" class="active" data-qa-tab="answered" role="tab" aria-selected="true">
+              已回答 <span class="qa-count" id="qa-count-answered">0</span>
+            </button>
+            <button type="button" data-qa-tab="silent" role="tab" aria-selected="false">
+              沉默 <span class="qa-count" id="qa-count-silent">0</span>
+            </button>
           </div>
         </div>
-        <div class="panel">
-          <h2>沉默（近期）</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>时间</th><th>群</th><th>问题</th><th>原因</th><th>分</th></tr></thead>
-              <tbody id="tbl-silent"></tbody>
-            </table>
-          </div>
+        <p class="day-hint" id="qa-hint">近窗口列表；选日历日期后显示该日明细。</p>
+        <div class="table-wrap qa-table-wrap" data-qa-pane="answered">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-time">时间</th>
+                <th class="col-chat">群</th>
+                <th class="col-q">问题</th>
+                <th class="col-a">回答</th>
+                <th class="col-reason">原因</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-answered"></tbody>
+          </table>
+        </div>
+        <div class="table-wrap qa-table-wrap hidden" data-qa-pane="silent">
+          <table>
+            <thead>
+              <tr>
+                <th class="col-time">时间</th>
+                <th class="col-chat">群</th>
+                <th class="col-q">问题</th>
+                <th class="col-reason">原因</th>
+                <th class="col-score">分</th>
+              </tr>
+            </thead>
+            <tbody id="tbl-silent"></tbody>
+          </table>
         </div>
       </div>
     </section>
@@ -197,22 +219,37 @@
     function renderTables(qa) {
       const ans = (qa.answered || []).slice(0, 80);
       const sil = (qa.silent || []).slice(0, 80);
+      const answeredEl = document.getElementById("qa-count-answered");
+      const silentEl = document.getElementById("qa-count-silent");
+      if (answeredEl) answeredEl.textContent = String(qa.counts?.replied ?? ans.length);
+      if (silentEl) silentEl.textContent = String(qa.counts?.silent ?? sil.length);
       document.getElementById("tbl-answered").innerHTML = ans.map(r => `
         <tr>
-          <td class="mono">${esc((r.ts || "").slice(5, 16))}</td>
-          <td>${esc(r.chat_title)}</td>
+          <td class="mono col-time">${esc((r.ts || "").replace("T", " ").slice(5, 16))}</td>
+          <td class="col-chat">${esc(r.chat_title)}</td>
           <td class="q">${esc(r.text)}</td>
           <td class="a">${esc(r.reply_text)}</td>
-          <td class="mono">${esc(r.reason)}</td>
-        </tr>`).join("") || `<tr><td colspan="5">暂无</td></tr>`;
+          <td class="mono col-reason">${esc(r.reason)}</td>
+        </tr>`).join("") || `<tr><td colspan="5" class="empty">暂无已回答记录</td></tr>`;
       document.getElementById("tbl-silent").innerHTML = sil.map(r => `
         <tr>
-          <td class="mono">${esc((r.ts || "").slice(5, 16))}</td>
-          <td>${esc(r.chat_title)}</td>
+          <td class="mono col-time">${esc((r.ts || "").replace("T", " ").slice(5, 16))}</td>
+          <td class="col-chat">${esc(r.chat_title)}</td>
           <td class="q">${esc(r.text)}</td>
-          <td class="mono">${esc(r.reason)}</td>
-          <td class="mono">${r.score ?? ""}</td>
-        </tr>`).join("") || `<tr><td colspan="5">暂无</td></tr>`;
+          <td class="mono col-reason">${esc(r.reason)}</td>
+          <td class="mono col-score">${r.score ?? ""}</td>
+        </tr>`).join("") || `<tr><td colspan="5" class="empty">暂无沉默记录</td></tr>`;
+    }
+
+    function setQaTab(name) {
+      document.querySelectorAll("#qa-tabs button").forEach(btn => {
+        const on = btn.dataset.qaTab === name;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      document.querySelectorAll("[data-qa-pane]").forEach(pane => {
+        pane.classList.toggle("hidden", pane.dataset.qaPane !== name);
+      });
     }
 
     function buildCalendar(data) {
@@ -448,6 +485,8 @@
       const lc = logos.counts || {};
       document.getElementById("day-status").textContent =
         `复查 ${detail.date} · 回答 ${c.replied || 0} · 沉默 ${c.silent || 0} · Logo ${lc.success || 0}/${lc.fail || 0}/${lc.no_logo || 0} · 钱包新项目 ${wallets.new_projects || 0}`;
+      const qaHint = document.getElementById("qa-hint");
+      if (qaHint) qaHint.textContent = `${detail.date} 当日问答明细（最多展示列表上限条）。`;
       const dayKpis = document.getElementById("day-kpis");
       dayKpis.classList.remove("hidden");
       renderKpis(dayKpis, [
@@ -559,6 +598,8 @@
       document.getElementById("day-status").textContent = "未选择日期（显示近窗口总览）";
       document.getElementById("day-kpis").classList.add("hidden");
       document.getElementById("day-workflow").classList.add("hidden");
+      const qaHint = document.getElementById("qa-hint");
+      if (qaHint) qaHint.textContent = "近窗口列表；选日历日期后显示该日明细。";
       if (snapshotData) {
         renderTables(snapshotData.qa || {});
         buildCharts(snapshotData);
@@ -581,6 +622,12 @@
         err.classList.remove("hidden");
       }
     }
+
+    document.getElementById("qa-tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-qa-tab]");
+      if (!btn) return;
+      setQaTab(btn.dataset.qaTab);
+    });
 
     document.getElementById("btn-day").addEventListener("click", () => {
       const day = document.getElementById("day-picker").value;
