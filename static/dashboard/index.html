@@ -37,7 +37,7 @@
 
       <div class="panel" style="margin-bottom:16px">
         <h2>60 天日历复查</h2>
-        <p class="day-hint">颜色=当日消息活跃度（回答+沉默）。点击格子或选日期，可复查该日问答与指标（日志保留窗口内）。</p>
+        <p class="day-hint">颜色=当日消息活跃度（回答+沉默）。点击格子或选日期，可复查该日问答、Logo 抓取（含项目名）、钱包类型与地址。</p>
         <div class="day-bar">
           <input type="date" id="day-picker" />
           <button type="button" class="btn primary" id="btn-day">复查当日</button>
@@ -48,6 +48,31 @@
       </div>
 
       <div class="kpis hidden" id="day-kpis"></div>
+
+      <div id="day-workflow" class="hidden">
+        <div class="grid">
+          <div class="panel">
+            <h2>当日 Logo 抓取</h2>
+            <p class="day-hint" id="day-logo-summary">—</p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>时间</th><th>项目</th><th>结果</th></tr></thead>
+                <tbody id="tbl-day-logo"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="panel">
+            <h2>当日钱包</h2>
+            <p class="day-hint" id="day-wallet-summary">—</p>
+            <div class="table-wrap">
+              <table>
+                <thead><tr><th>项目</th><th>类型</th><th>地址</th></tr></thead>
+                <tbody id="tbl-day-wallet"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
 
       <div class="grid">
         <div class="panel">
@@ -418,8 +443,11 @@
       const m = detail.metrics || {};
       const q = detail.qa || {};
       const c = q.counts || {};
+      const logos = detail.logos || {};
+      const wallets = detail.wallets || {};
+      const lc = logos.counts || {};
       document.getElementById("day-status").textContent =
-        `复查 ${detail.date} · 回答 ${c.replied || 0} · 沉默 ${c.silent || 0} · 日志行 ${c.lines || 0}`;
+        `复查 ${detail.date} · 回答 ${c.replied || 0} · 沉默 ${c.silent || 0} · Logo ${lc.success || 0}/${lc.fail || 0}/${lc.no_logo || 0} · 钱包新项目 ${wallets.new_projects || 0}`;
       const dayKpis = document.getElementById("day-kpis");
       dayKpis.classList.remove("hidden");
       renderKpis(dayKpis, [
@@ -427,11 +455,48 @@
         ["当日处理消息", m.messages_processed ?? 0],
         ["当日回答", c.replied ?? 0],
         ["当日沉默", c.silent ?? 0],
-        ["当日表单成功", m.form_dispatch_success ?? 0],
-        ["当日 Logo 成功", m.logo_fill_success ?? 0],
-        ["当日欢迎", m.welcome_sequences_started ?? 0],
-        ["当日学习", m.absorb_learn_success ?? 0],
+        ["当日 Logo 成功", lc.success ?? m.logo_fill_success ?? 0],
+        ["当日 Logo 失败/无图", `${lc.fail ?? 0} / ${lc.no_logo ?? 0}`],
+        ["当日新钱包项目", wallets.new_projects ?? 0],
+        ["当日钱包地址填写", wallets.address_fields_filled ?? 0],
       ]);
+
+      const dayWf = document.getElementById("day-workflow");
+      dayWf.classList.remove("hidden");
+      const logoNote = logos.note ? ` · ${logos.note}` : "";
+      document.getElementById("day-logo-summary").textContent =
+        `成功 ${lc.success || 0} · 失败 ${lc.fail || 0} · 无图 ${lc.no_logo || 0} · 明细 ${logos.item_count || (logos.items || []).length || 0} 条${logoNote}`;
+      const logoRows = (logos.items || []).map(r => `<tr>
+        <td>${esc((r.ts || "").replace("T", " ").slice(0, 19))}</td>
+        <td>${esc(r.project_name || r.record_id || "—")}</td>
+        <td>${esc(r.status || r.bucket || "—")}</td>
+      </tr>`).join("") || `<tr><td colspan="3">当日暂无带项目名的 Logo 记录</td></tr>`;
+      document.getElementById("tbl-day-logo").innerHTML = logoRows;
+
+      const byType = wallets.by_type || {};
+      const typeBits = Object.entries(byType).filter(([, n]) => n > 0).map(([k, v]) => `${k} ${v}`).join(" · ");
+      const walletErr = wallets.error ? ` · ${wallets.error}` : "";
+      document.getElementById("day-wallet-summary").textContent =
+        `新项目 ${wallets.new_projects || 0} · 地址填写 ${wallets.address_fields_filled || 0}${typeBits ? " · " + typeBits : ""}${walletErr}`;
+      const walletRows = [];
+      for (const p of (wallets.items || [])) {
+        const name = esc(p.project_name || p.record_id || "—");
+        const ws = p.wallets || [];
+        if (!ws.length) {
+          walletRows.push(`<tr><td>${name}</td><td colspan="2">（尚未填写地址字段）</td></tr>`);
+          continue;
+        }
+        ws.forEach((w, i) => {
+          walletRows.push(`<tr>
+            <td>${i === 0 ? name : ""}</td>
+            <td>${esc(w.type || w.field || "—")}</td>
+            <td><code>${esc(w.value || "")}</code></td>
+          </tr>`);
+        });
+      }
+      document.getElementById("tbl-day-wallet").innerHTML =
+        walletRows.join("") || `<tr><td colspan="3">当日无新增钱包项目</td></tr>`;
+
       renderTables(q);
       // update silence charts for selected day
       const reasons = q.silence_reasons || {};
@@ -493,6 +558,7 @@
       selectedDay = null;
       document.getElementById("day-status").textContent = "未选择日期（显示近窗口总览）";
       document.getElementById("day-kpis").classList.add("hidden");
+      document.getElementById("day-workflow").classList.add("hidden");
       if (snapshotData) {
         renderTables(snapshotData.qa || {});
         buildCharts(snapshotData);

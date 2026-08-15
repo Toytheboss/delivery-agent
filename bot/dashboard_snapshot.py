@@ -258,6 +258,204 @@ def build_calendar_activity(config: Any, *, days: int = 60) -> dict[str, Any]:
     }
 
 
+def _logo_events_path(config: Any) -> Path:
+    raw = getattr(config, "workflow_logo_events_file", "data/logo_fill_events.jsonl")
+    path = Path(str(raw))
+    return path if path.is_absolute() else ROOT / path
+
+
+def _logo_status_bucket(status: str) -> str:
+    s = str(status or "")
+    if s.startswith("ok"):
+        return "success"
+    if s in {"no_logo", "no_url"}:
+        return "no_logo"
+    if s.startswith("err") or s.startswith("fail"):
+        return "fail"
+    if s in {"already_has_logo", "baseline_has_logo", "disabled", "already_processed"}:
+        return "skip"
+    return "other"
+
+
+def _day_logo_detail(config: Any, day: str, series: dict[str, Any]) -> dict[str, Any]:
+    """Logo fetch outcomes for one day: metric counts + named event rows."""
+    counts = {
+        "success": int((series.get("logo_fill_success") or {}).get("by_day", {}).get(day) or 0),
+        "fail": int((series.get("logo_fill_fail") or {}).get("by_day", {}).get(day) or 0),
+        "no_logo": int((series.get("logo_fill_no_logo") or {}).get("by_day", {}).get(day) or 0),
+    }
+    items: list[dict[str, Any]] = []
+    path = _logo_events_path(config)
+    if path.is_file():
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("day") or "") != day:
+                        continue
+                    status = str(row.get("status") or "")
+                    items.append(
+                        {
+                            "ts": row.get("ts") or "",
+                            "record_id": row.get("record_id") or "",
+                            "project_name": (row.get("project_name") or "")[:120]
+                            or (row.get("record_id") or ""),
+                            "status": status[:200],
+                            "bucket": _logo_status_bucket(status),
+                        }
+                    )
+        except OSError:
+            logger.exception("dashboard: failed reading logo events %s", path)
+    items.sort(key=lambda x: str(x.get("ts") or ""), reverse=True)
+    by_bucket: Counter[str] = Counter(str(x.get("bucket") or "other") for x in items)
+    return {
+        "counts": counts,
+        "items": items[:200],
+        "item_count": len(items),
+        "by_bucket": dict(by_bucket),
+        "note": (
+            None
+            if items or (counts["success"] + counts["fail"] + counts["no_logo"]) == 0
+            else "当日有埋点计数，但尚无带项目名的事件日志（新抓取后会写入）。"
+        ),
+    }
+
+
+_WALLET_TYPE_LABELS = {
+    "Contract Addresss/主网合约": "主网合约",
+    "Treasury Address": "Treasury",
+    "Fee Collector / Revenue Wallet Address": "Fee Collector",
+    "Grant Receiving Wallet (Optional)": "Grant",
+    "MM / LP Wallet （Optional）": "MM/LP",
+    "Bridge Pool / Relayer Wallet (Optional)": "Bridge/Relayer",
+}
+_ADDRESS_FIELDS = list(_WALLET_TYPE_LABELS.keys())
+
+
+def _day_wallet_detail(config: Any, day: str) -> dict[str, Any]:
+    """New wallet projects first-seen on this day, with type → address + project name."""
+    digest_path = ROOT / str(
+        getattr(
+            config,
+            "workflow_lark_digest_state_file",
+            "data/lark_wallet_digest_state.json",
+        )
+    )
+    first_seen: dict[str, str] = {}
+    if digest_path.is_file():
+        try:
+            raw = json.loads(digest_path.read_text(encoding="utf-8"))
+            if isinstance(raw, dict):
+                first_seen = {
+                    str(k): str(v)
+                    for k, v in (raw.get("first_seen") or {}).items()
+                    if k and str(v) not in {"", "baseline"}
+                }
+        except (OSError, json.JSONDecodeError):
+            first_seen = {}
+
+    day_ids = {rid for rid, seen in first_seen.items() if seen == day}
+    out: dict[str, Any] = {
+        "new_projects": len(day_ids),
+        "address_fields_filled": 0,
+        "by_type": {label: 0 for label in _WALLET_TYPE_LABELS.values()},
+        "items": [],
+        "error": None,
+    }
+    if not day_ids:
+        return out
+
+    import os
+
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        out["error"] = "missing LARK credentials"
+        out["items"] = [
+            {
+                "record_id": rid,
+                "project_name": rid,
+                "address_count": 0,
+                "wallets": [],
+            }
+            for rid in sorted(day_ids)
+        ]
+        return out
+
+    try:
+        from bot.lark_bitable import get_tenant_access_token, list_records
+        from bot.workflow_form_dispatch import _field_text
+
+        token = get_tenant_access_token(app_id, app_secret)
+        records = list_records(
+            token,
+            str(getattr(config, "workflow_base_app_token", "")),
+            str(getattr(config, "workflow_wallet_table_id", "")),
+        )
+        items: list[dict[str, Any]] = []
+        addr_total = 0
+        by_type: Counter[str] = Counter()
+        seen_left = set(day_ids)
+        for record in records:
+            rid = str(record.get("record_id") or "")
+            if rid not in day_ids:
+                continue
+            fields = record.get("fields") or {}
+            name = _field_text(fields, "Project name") or rid
+            wallets: list[dict[str, str]] = []
+            for fname in _ADDRESS_FIELDS:
+                val = _field_text(fields, fname)
+                if not val:
+                    continue
+                label = _WALLET_TYPE_LABELS.get(fname, fname)
+                wallets.append(
+                    {
+                        "type": label,
+                        "field": fname,
+                        "value": val[:80],
+                    }
+                )
+                by_type[label] += 1
+                addr_total += 1
+            items.append(
+                {
+                    "record_id": rid,
+                    "project_name": name[:120],
+                    "address_count": len(wallets),
+                    "wallets": wallets,
+                }
+            )
+            seen_left.discard(rid)
+        for rid in sorted(seen_left):
+            items.append(
+                {
+                    "record_id": rid,
+                    "project_name": rid,
+                    "address_count": 0,
+                    "wallets": [],
+                }
+            )
+        items.sort(key=lambda x: (-int(x.get("address_count") or 0), str(x.get("project_name") or "")))
+        out["items"] = items
+        out["new_projects"] = len(items)
+        out["address_fields_filled"] = addr_total
+        out["by_type"] = {
+            label: int(by_type.get(label, 0)) for label in _WALLET_TYPE_LABELS.values()
+        }
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("dashboard: day wallet detail failed: %s", exc)
+        out["error"] = str(exc)
+    return out
+
+
 def build_day_detail(config: Any, day: str, *, list_limit: int | None = None) -> dict[str, Any]:
     """Full revisit payload for one Asia/Shanghai calendar day."""
     day = str(day or "").strip()
@@ -289,12 +487,17 @@ def build_day_detail(config: Any, day: str, *, list_limit: int | None = None) ->
             "welcome_messages_sent",
             "form_dispatch_success",
             "logo_fill_success",
+            "logo_fill_fail",
+            "logo_fill_no_logo",
             "mark_live_triggers",
             "absorb_learn_success",
             "webhook_live_received",
             "webhook_live_processed",
+            "wallet_digest_new_projects",
         )
     }
+    logos = _day_logo_detail(config, day, series)
+    wallets = _day_wallet_detail(config, day)
     return {
         "generated_at": _now_iso(),
         "timezone": "Asia/Shanghai",
@@ -302,6 +505,8 @@ def build_day_detail(config: Any, day: str, *, list_limit: int | None = None) ->
         "retain_days": retain,
         "metrics": metrics_day,
         "qa": qa,
+        "logos": logos,
+        "wallets": wallets,
     }
 
 
