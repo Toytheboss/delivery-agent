@@ -23,10 +23,6 @@
         <a class="active" href="#" id="link-data">数据</a>
         <a href="#" id="link-settings">设置</a>
       </nav>
-      <div class="toggle" id="view-toggle">
-        <button type="button" class="active" data-view="ops">运营</button>
-        <button type="button" data-view="exec">管理层</button>
-      </div>
     </header>
 
     <div id="err" class="err hidden"></div>
@@ -43,7 +39,7 @@
 
       <div class="panel" style="margin-bottom:16px">
         <h2>60 天日历复查</h2>
-        <p class="day-hint">颜色=当日消息活跃度（回答+沉默）。点击格子或选日期，可复查该日问答、Logo 抓取（含项目名）、钱包类型与地址。</p>
+        <p class="day-hint">颜色=当日消息活跃度（有日志用回答+沉默；无日志用当日处理消息）。色阶按近端分位，避免单日尖峰把其它天冲淡。点击格子可复查。</p>
         <div class="day-bar">
           <input type="date" id="day-picker" />
           <button type="button" class="btn primary" id="btn-day">复查当日</button>
@@ -143,20 +139,6 @@
         </div>
       </div>
     </section>
-
-    <section id="view-exec" class="hidden">
-      <div class="kpis" id="exec-kpis"></div>
-      <div class="grid">
-        <div class="panel">
-          <h2>过去 24 小时 · 消息构成（柱状）</h2>
-          <div class="chart" id="chartDailyMix"></div>
-        </div>
-        <div class="panel">
-          <h2>存量摘要</h2>
-          <div id="exec-stock" class="meta"></div>
-        </div>
-      </div>
-    </section>
   </div>
   <script>
     const params = new URLSearchParams(location.search);
@@ -241,6 +223,10 @@
       const el = document.getElementById("daily-report");
       const win = document.getElementById("daily-window");
       if (!el || !win) return;
+      if (charts.chartDailyMix) {
+        try { charts.chartDailyMix.dispose(); } catch (_) {}
+        delete charts.chartDailyMix;
+      }
       if (!daily || daily.error) {
         win.textContent = "日报数据不可用";
         el.innerHTML = `<p class="daily-empty">${esc(daily?.error || "无数据")}</p>`;
@@ -287,6 +273,7 @@
             <li>回复消息 <strong>${esc(daily.messages_replied_24h ?? bot.replied ?? 0)}</strong></li>
           </ul>
           <p class="day-hint">含 FAQ 气泡 ${esc(bot.faq_bubbles ?? 0)}、页脚 ${esc(bot.faq_footer ?? 0)}、社交寒暄 ${esc(bot.social ?? 0)}、欢迎 ${esc(bot.welcome ?? 0)}、表单 ${esc(bot.form ?? 0)}</p>
+          <div class="chart mix" id="chartDailyMix"></div>
         </div>
       `;
     }
@@ -351,6 +338,13 @@
       picker.max = end;
       if (!picker.value) picker.value = end;
 
+      const positives = heat.map(x => Number(x[1] || 0)).filter(v => v > 0).sort((a, b) => a - b);
+      let vmax = 1;
+      if (positives.length) {
+        const p90 = positives[Math.min(positives.length - 1, Math.floor((positives.length - 1) * 0.9))];
+        const median = positives[Math.floor((positives.length - 1) / 2)];
+        vmax = Math.max(1, p90, median * 3);
+      }
       const chart = ensureChart("chartCalendar");
       if (!chart) return;
       chart.setOption({
@@ -359,12 +353,13 @@
             const d = (p.data || [])[0];
             const v = (p.data || [])[1] || 0;
             const row = (cal.days || []).find(x => x.date === d) || {};
-            return `${d}<br/>活跃 ${v}<br/>回答 ${row.replied || 0} · 沉默 ${row.silent || 0}<br/>FAQ ${row.faq_sessions || 0} · 处理 ${row.messages_processed || 0}`;
+            return `${d}<br/>活跃 ${v}<br/>回答 ${row.replied || 0} · 沉默 ${row.silent || 0}<br/>处理 ${row.messages_processed || 0} · FAQ ${row.faq_sessions || 0}`;
           },
         },
         visualMap: {
           min: 0,
-          max: Math.max(1, ...heat.map(x => x[1] || 0)),
+          max: vmax,
+          calculable: true,
           orient: "horizontal",
           left: "center",
           bottom: 0,
@@ -534,33 +529,15 @@
       renderDailyReport(daily);
 
       renderKpis(document.getElementById("ops-kpis"), [
-        ["FAQ sessions", cTriple(c, "faq_reply_sessions").total],
-        ["过去24h FAQ", cTriple(c, "faq_reply_sessions").today],
-        ["表单成功", cTriple(c, "form_dispatch_success").total],
-        ["Logo 成功", cTriple(c, "logo_fill_success").total],
-        ["欢迎序列", cTriple(c, "welcome_sequences_started").total],
-        ["Mark live", cTriple(c, "mark_live_triggers").total],
-        ["Webhook 收/处", `${cTriple(c, "webhook_live_received").total}/${cTriple(c, "webhook_live_processed").total}`],
-        ["学习写入", cTriple(c, "absorb_learn_success").total],
-      ]);
-
-      renderKpis(document.getElementById("exec-kpis"), [
         ["24h 主网上线", daily.progress?.today_mainnet_live ?? "—"],
-        ["24h 测试网部署", (daily.deploy_changes?.entered_testnet_deploy || []).length],
-        ["24h 主网部署中", (daily.deploy_changes?.entered_mainnet_deploy || []).length],
         ["24h 新群", daily.folder_new_groups_today ?? "—"],
-        ["24h 新钱包项目", daily.wallet?.today_new_projects ?? "—"],
         ["24h Logo", daily.logo_fill_today ?? "—"],
+        ["24h 新钱包", daily.wallet?.today_new_projects ?? "—"],
         ["24h 处理消息", daily.messages_processed_24h ?? "—"],
         ["24h 回复消息", daily.messages_replied_24h ?? "—"],
+        ["FAQ sessions 累计", cTriple(c, "faq_reply_sessions").total],
+        ["表单成功 累计", cTriple(c, "form_dispatch_success").total],
       ]);
-
-      const logo = d.logo_fill_state || {};
-      document.getElementById("exec-stock").innerHTML = `
-        <div>Logo：成功 ${logo.success || 0} / 无图 ${logo.no_logo || 0} / 失败 ${logo.fail || 0}</div>
-        <div>钱包 digest 今日新见：${d.wallet_digest_new_today_from_state || 0} · 上次 ${esc(d.wallet_digest_last_date || "—")}</div>
-        <div>Lark 钱包覆盖：${esc(JSON.stringify(snap.wallet_lark || {}).slice(0, 180))}</div>
-      `;
 
       renderTables(data.qa || {});
       buildCalendar(data);
@@ -728,16 +705,6 @@
     document.getElementById("btn-day-clear").addEventListener("click", clearDay);
     document.getElementById("day-picker").addEventListener("change", (ev) => {
       if (ev.target.value) loadDay(ev.target.value);
-    });
-
-    document.getElementById("view-toggle").addEventListener("click", (ev) => {
-      const btn = ev.target.closest("button[data-view]");
-      if (!btn) return;
-      document.querySelectorAll("#view-toggle button").forEach(b => b.classList.toggle("active", b === btn));
-      const view = btn.dataset.view;
-      document.getElementById("view-ops").classList.toggle("hidden", view !== "ops");
-      document.getElementById("view-exec").classList.toggle("hidden", view !== "exec");
-      setTimeout(() => Object.values(charts).forEach(c => c && c.resize()), 50);
     });
 
     window.addEventListener("resize", () => Object.values(charts).forEach(c => c && c.resize()));

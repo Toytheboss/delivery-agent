@@ -223,10 +223,11 @@ def build_calendar_activity(config: Any, *, days: int = 60) -> dict[str, Any]:
         processed = int((series.get("messages_processed") or {}).get("by_day", {}).get(day) or 0)
         form_ok = int((series.get("form_dispatch_success") or {}).get("by_day", {}).get(day) or 0)
         logo_ok = int((series.get("logo_fill_success") or {}).get("by_day", {}).get(day) or 0)
-        # Heat prefers message outcomes; fall back to metrics if no log file
+        # Heat: prefer Q&A log outcomes; without logs use processed messages only
+        # (do not fall back to faq_reply_sessions — one spike washes out the calendar).
         activity = replied + silent
         if activity == 0:
-            activity = processed or faq
+            activity = processed
         heat.append([day, activity])
         per_day.append(
             {

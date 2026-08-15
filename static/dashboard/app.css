@@ -153,8 +153,9 @@ button.btn:focus-visible, .toggle button:focus-visible, .nav a:focus-visible, in
   width: 100%;
   height: 280px;
 }
-.panel .chart.calendar {
-  height: 220px;
+.panel .chart.mix {
+  height: 180px;
+  margin-top: 10px;
 }
 .panel canvas { max-height: 260px; }
 
