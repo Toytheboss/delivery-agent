@@ -38,11 +38,13 @@
       </div>
 
       <div class="panel" style="margin-bottom:16px">
-        <h2>60 天日历复查</h2>
-        <p class="day-hint">颜色=当日消息活跃度（有日志用回答+沉默；无日志用当日处理消息）。色阶按近端分位，避免单日尖峰把其它天冲淡。点击格子可复查。</p>
+        <h2>30 天日历复查</h2>
+        <p class="day-hint">颜色=当日消息活跃度（有日志用回答+沉默；无日志用当日处理消息）。可点格子查单日，或汇总近 7 / 30 天。</p>
         <div class="day-bar">
           <input type="date" id="day-picker" />
           <button type="button" class="btn primary" id="btn-day">复查当日</button>
+          <button type="button" class="btn" id="btn-range-7">复查过去7天</button>
+          <button type="button" class="btn" id="btn-range-30">复查过去30天</button>
           <button type="button" class="btn" id="btn-day-clear">回到总览列表</button>
           <span class="day-hint" id="day-status">未选择日期</span>
         </div>
@@ -54,7 +56,7 @@
       <div id="day-workflow" class="hidden">
         <div class="grid">
           <div class="panel">
-            <h2>当日 Logo 抓取</h2>
+            <h2 id="day-logo-title">当日 Logo 抓取</h2>
             <p class="day-hint" id="day-logo-summary">—</p>
             <div class="table-wrap">
               <table>
@@ -64,7 +66,7 @@
             </div>
           </div>
           <div class="panel">
-            <h2>当日钱包</h2>
+            <h2 id="day-wallet-title">当日钱包</h2>
             <p class="day-hint" id="day-wallet-summary">—</p>
             <div class="table-wrap">
               <table>
@@ -88,8 +90,8 @@
       </div>
       <div class="grid">
         <div class="panel">
-          <h2>沉默原因排行（条形）</h2>
-          <div class="chart" id="chartSilenceBar"></div>
+          <h2>近 14 日工作流构成</h2>
+          <div class="chart" id="chartWorkflowMix"></div>
         </div>
         <div class="panel">
           <h2>工作流日增量（面积）</h2>
@@ -169,6 +171,7 @@
     const charts = {};
     let snapshotData = null;
     let selectedDay = null;
+    let selectedRange = null;
     let apiBase = "/dashboard";
 
     function esc(s) {
@@ -444,9 +447,17 @@
         }],
       }, true);
 
-      // 3) Horizontal bar — silence reason ranking (clearer for long labels)
-      const topReasons = rEntries.slice(0, 8).reverse();
-      ensureChart("chartSilenceBar")?.setOption({
+      // 3) Bar — 14d workflow mix totals (replaces duplicate silence ranking)
+      const mixLabels = ["表单", "Logo", "欢迎", "Mark live", "新进群", "新钱包"];
+      const mixVals = [
+        form.reduce((a, b) => a + b, 0),
+        logo.reduce((a, b) => a + b, 0),
+        welcome.reduce((a, b) => a + b, 0),
+        markLive.reduce((a, b) => a + b, 0),
+        folder.reduce((a, b) => a + b, 0),
+        walletNew.reduce((a, b) => a + b, 0),
+      ];
+      ensureChart("chartWorkflowMix")?.setOption({
         color: [GREEN.primary],
         textStyle: baseTextStyle(),
         tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
@@ -454,13 +465,13 @@
         xAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
         yAxis: {
           type: "category",
-          data: topReasons.map(([n]) => n.length > 28 ? n.slice(0, 26) + "…" : n),
+          data: mixLabels,
           axisLabel: { color: GREEN.ink, fontSize: 11 },
         },
         series: [{
           type: "bar",
-          data: topReasons.map(([, v]) => v),
-          barWidth: 14,
+          data: mixVals,
+          barWidth: 16,
           itemStyle: { borderRadius: [0, 8, 8, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
             { offset: 0, color: GREEN.deep },
             { offset: 1, color: GREEN.mint },
@@ -519,9 +530,7 @@
     }
 
     function render(data) {
-      const snap = data.snapshot || {};
-      const c = snap.counters || {};
-      const d = snap.derived || {};
+      const c = (data.snapshot || {}).counters || {};
       const daily = data.daily || {};
       document.getElementById("meta").textContent =
         `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 14} 天`;
@@ -544,8 +553,27 @@
       buildCharts(data);
     }
 
+    function applySilencePie(reasons) {
+      const rEntries = Object.entries(reasons || {}).sort((a, b) => b[1] - a[1]);
+      ensureChart("chartSilence")?.setOption({
+        color: GREEN.palette,
+        textStyle: baseTextStyle(),
+        tooltip: { trigger: "item", formatter: "{b}<br/>{c} ({d}%)" },
+        legend: { type: "scroll", bottom: 0, textStyle: { color: GREEN.muted, fontSize: 11 } },
+        series: [{
+          type: "pie",
+          radius: ["42%", "68%"],
+          center: ["50%", "44%"],
+          itemStyle: { borderRadius: 6, borderColor: "#fff", borderWidth: 2 },
+          label: { color: GREEN.ink, formatter: "{d}%" },
+          data: rEntries.map(([name, value]) => ({ name, value })),
+        }],
+      }, true);
+    }
+
     function applyDayDetail(detail) {
       selectedDay = detail.date;
+      selectedRange = null;
       const m = detail.metrics || {};
       const q = detail.qa || {};
       const c = q.counts || {};
@@ -571,6 +599,8 @@
 
       const dayWf = document.getElementById("day-workflow");
       dayWf.classList.remove("hidden");
+      document.getElementById("day-logo-title").textContent = "当日 Logo 抓取";
+      document.getElementById("day-wallet-title").textContent = "当日钱包";
       const logoNote = logos.note ? ` · ${logos.note}` : "";
       document.getElementById("day-logo-summary").textContent =
         `成功 ${lc.success || 0} · 失败 ${lc.fail || 0} · 无图 ${lc.no_logo || 0} · 明细 ${logos.item_count || (logos.items || []).length || 0} 条${logoNote}`;
@@ -606,46 +636,61 @@
         walletRows.join("") || `<tr><td colspan="3">当日无新增钱包项目</td></tr>`;
 
       renderTables(q);
-      // update silence charts for selected day
-      const reasons = q.silence_reasons || {};
-      const rEntries = Object.entries(reasons).sort((a, b) => b[1] - a[1]);
-      ensureChart("chartSilence")?.setOption({
-        color: GREEN.palette,
-        textStyle: baseTextStyle(),
-        tooltip: { trigger: "item", formatter: "{b}<br/>{c} ({d}%)" },
-        legend: { type: "scroll", bottom: 0, textStyle: { color: GREEN.muted, fontSize: 11 } },
-        series: [{
-          type: "pie",
-          radius: ["42%", "68%"],
-          center: ["50%", "44%"],
-          itemStyle: { borderRadius: 6, borderColor: "#fff", borderWidth: 2 },
-          label: { color: GREEN.ink, formatter: "{d}%" },
-          data: rEntries.map(([name, value]) => ({ name, value })),
-        }],
-      }, true);
-      const topReasons = rEntries.slice(0, 8).reverse();
-      ensureChart("chartSilenceBar")?.setOption({
-        color: [GREEN.primary],
-        textStyle: baseTextStyle(),
-        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-        grid: { left: 12, right: 24, top: 12, bottom: 12, containLabel: true },
-        xAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
-        yAxis: {
-          type: "category",
-          data: topReasons.map(([n]) => n.length > 28 ? n.slice(0, 26) + "…" : n),
-          axisLabel: { color: GREEN.ink, fontSize: 11 },
-        },
-        series: [{
-          type: "bar",
-          data: topReasons.map(([, v]) => v),
-          barWidth: 14,
-          itemStyle: { borderRadius: [0, 8, 8, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-            { offset: 0, color: GREEN.deep },
-            { offset: 1, color: GREEN.mint },
-          ]) },
-          label: { show: true, position: "right", color: GREEN.muted },
-        }],
-      }, true);
+      applySilencePie(q.silence_reasons || {});
+    }
+
+    function applyRangeSummary(days) {
+      const key = String(days);
+      const detail = (snapshotData?.ranges || {})[key];
+      if (!detail) {
+        document.getElementById("err").textContent = `暂无近 ${days} 天汇总，请刷新页面`;
+        document.getElementById("err").classList.remove("hidden");
+        return;
+      }
+      selectedDay = null;
+      selectedRange = days;
+      const m = detail.metrics || {};
+      const q = detail.qa || {};
+      const c = q.counts || {};
+      const logos = detail.logos || {};
+      const wallets = detail.wallets || {};
+      const lc = logos.counts || {};
+      document.getElementById("day-status").textContent =
+        `复查过去 ${days} 天（${detail.start} ~ ${detail.end}）· 回答 ${c.replied || 0} · 沉默 ${c.silent || 0} · Logo ${lc.success || 0} · 新钱包 ${wallets.new_projects || 0}`;
+      const qaHint = document.getElementById("qa-hint");
+      if (qaHint) qaHint.textContent = `过去 ${days} 天问答明细（${detail.start} ~ ${detail.end}）。`;
+      const dayKpis = document.getElementById("day-kpis");
+      dayKpis.classList.remove("hidden");
+      renderKpis(dayKpis, [
+        [`${days}日 FAQ sessions`, m.faq_reply_sessions ?? 0],
+        [`${days}日处理消息`, m.messages_processed ?? 0],
+        [`${days}日回答`, c.replied ?? 0],
+        [`${days}日沉默`, c.silent ?? 0],
+        [`${days}日 Logo 成功`, lc.success ?? 0],
+        [`${days}日表单成功`, m.form_dispatch_success ?? 0],
+        [`${days}日新进群`, m.folder_auto_add_success ?? 0],
+        [`${days}日新钱包项目`, wallets.new_projects ?? 0],
+      ]);
+
+      const dayWf = document.getElementById("day-workflow");
+      dayWf.classList.remove("hidden");
+      document.getElementById("day-logo-title").textContent = `近 ${days} 日 Logo 抓取`;
+      document.getElementById("day-wallet-title").textContent = `近 ${days} 日钱包`;
+      document.getElementById("day-logo-summary").textContent =
+        `成功 ${lc.success || 0} · 失败 ${lc.fail || 0} · 无图 ${lc.no_logo || 0} · 明细 ${logos.item_count || (logos.items || []).length || 0} 条`;
+      const logoRows = (logos.items || []).map(r => `<tr>
+        <td>${esc((r.ts || "").replace("T", " ").slice(0, 19))}</td>
+        <td>${esc(r.project_name || r.record_id || "—")}</td>
+        <td>${esc(r.status || r.bucket || "—")}</td>
+      </tr>`).join("") || `<tr><td colspan="3">该窗口暂无带项目名的 Logo 记录</td></tr>`;
+      document.getElementById("tbl-day-logo").innerHTML = logoRows;
+      document.getElementById("day-wallet-summary").textContent =
+        `新项目 ${wallets.new_projects || 0}（来自 digest first_seen）`;
+      document.getElementById("tbl-day-wallet").innerHTML =
+        `<tr><td colspan="3">区间汇总仅显示新项目数；点单日可看各钱包类型与地址。</td></tr>`;
+
+      renderTables(q);
+      applySilencePie(q.silence_reasons || {});
     }
 
     async function loadDay(day) {
@@ -664,11 +709,12 @@
 
     function clearDay() {
       selectedDay = null;
+      selectedRange = null;
       document.getElementById("day-status").textContent = "未选择日期（显示近窗口总览）";
       document.getElementById("day-kpis").classList.add("hidden");
       document.getElementById("day-workflow").classList.add("hidden");
       const qaHint = document.getElementById("qa-hint");
-      if (qaHint) qaHint.textContent = "近窗口列表；选日历日期后显示该日明细。";
+      if (qaHint) qaHint.textContent = "近窗口列表；选日历日期或 7/30 天汇总后显示明细。";
       if (snapshotData) {
         renderTables(snapshotData.qa || {});
         buildCharts(snapshotData);
@@ -686,6 +732,7 @@
         err.classList.add("hidden");
         render(data);
         if (selectedDay) await loadDay(selectedDay);
+        else if (selectedRange) applyRangeSummary(selectedRange);
       } catch (e) {
         err.textContent = `加载失败：${e.message || e}（请确认 token）`;
         err.classList.remove("hidden");
@@ -702,6 +749,8 @@
       const day = document.getElementById("day-picker").value;
       if (day) loadDay(day);
     });
+    document.getElementById("btn-range-7").addEventListener("click", () => applyRangeSummary(7));
+    document.getElementById("btn-range-30").addEventListener("click", () => applyRangeSummary(30));
     document.getElementById("btn-day-clear").addEventListener("click", clearDay);
     document.getElementById("day-picker").addEventListener("change", (ev) => {
       if (ev.target.value) loadDay(ev.target.value);

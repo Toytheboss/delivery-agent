@@ -155,6 +155,7 @@ class AppConfig:
     dashboard_refresh_minutes: int
     dashboard_qa_lookback_days: int
     dashboard_list_limit: int
+    dashboard_calendar_days: int
     dashboard_path_prefix: str
     dashboard_snapshot_file: str
 
@@ -843,6 +844,9 @@ def load_config() -> AppConfig:
         ),
         dashboard_list_limit=int(
             (cfg.get("dashboard") or {}).get("list_limit", 150) or 150
+        ),
+        dashboard_calendar_days=int(
+            (cfg.get("dashboard") or {}).get("calendar_days", 30) or 30
         ),
         dashboard_path_prefix=str(
             (cfg.get("dashboard") or {}).get("path_prefix", "/dashboard") or "/dashboard"

@@ -52,6 +52,7 @@ def _scan_message_logs(
     reasons: Counter[str] = Counter()
     scanned_files = 0
     scanned_lines = 0
+    replied_n = silent_n = other_n = 0
 
     for day in days:
         path = log_dir / f"messages-{day}.jsonl"
@@ -83,10 +84,14 @@ def _scan_message_logs(
                         "kind": row.get("kind") or "",
                     }
                     if outcome == "replied":
+                        replied_n += 1
                         answered.append(item)
                     elif outcome == "silent":
+                        silent_n += 1
                         silent.append(item)
                         reasons[reason] += 1
+                    else:
+                        other_n += 1
         except OSError:
             logger.exception("dashboard: failed reading %s", path)
 
@@ -94,6 +99,12 @@ def _scan_message_logs(
         "answered": list(reversed(answered)),
         "silent": list(reversed(silent)),
         "silence_reasons": dict(reasons.most_common(40)),
+        "counts": {
+            "replied": replied_n,
+            "silent": silent_n,
+            "other": other_n,
+            "lines": scanned_lines,
+        },
         "scanned_files": scanned_files,
         "scanned_lines": scanned_lines,
         "lookback_days": lookback_days,
@@ -187,7 +198,7 @@ def _counter_series(config: Any) -> dict[str, Any]:
     return get_counter_series(list(COUNTER_KEYS))
 
 
-def build_calendar_activity(config: Any, *, days: int = 60) -> dict[str, Any]:
+def build_calendar_activity(config: Any, *, days: int = 30) -> dict[str, Any]:
     """Count-only scan of last N day logs for calendar heatmap (cheap)."""
     days_n = max(min(int(days), 90), 1)
     log_dir = _message_log_dir(config)
@@ -506,6 +517,125 @@ def build_day_detail(config: Any, day: str, *, list_limit: int | None = None) ->
     }
 
 
+def build_range_summary(
+    config: Any,
+    days: int,
+    *,
+    series: dict[str, Any] | None = None,
+    list_limit: int | None = None,
+) -> dict[str, Any]:
+    """Aggregate QA + workflow metrics over the last N Asia/Shanghai days."""
+    days_n = max(min(int(days), 90), 1)
+    day_list = _day_list(days_n)
+    limit = int(
+        list_limit
+        if list_limit is not None
+        else getattr(config, "dashboard_list_limit", 150) or 150
+    )
+    series = series if series is not None else _counter_series(config)
+    qa = _scan_message_logs(config, lookback_days=days_n, list_limit=limit)
+
+    metric_keys = (
+        "faq_reply_sessions",
+        "messages_processed",
+        "form_dispatch_success",
+        "logo_fill_success",
+        "logo_fill_fail",
+        "logo_fill_no_logo",
+        "welcome_sequences_started",
+        "mark_live_triggers",
+        "folder_auto_add_success",
+        "wallet_digest_new_projects",
+        "absorb_learn_success",
+    )
+    metrics: dict[str, int] = {}
+    for key in metric_keys:
+        by_day = (series.get(key) or {}).get("by_day") or {}
+        metrics[key] = sum(int(by_day.get(d) or 0) for d in day_list)
+
+    # Logo named rows across range
+    logo_items: list[dict[str, Any]] = []
+    logo_path = _logo_events_path(config)
+    day_set = set(day_list)
+    if logo_path.is_file():
+        try:
+            with logo_path.open("r", encoding="utf-8") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    if not isinstance(row, dict):
+                        continue
+                    if str(row.get("day") or "") not in day_set:
+                        continue
+                    status = str(row.get("status") or "")
+                    logo_items.append(
+                        {
+                            "ts": row.get("ts") or "",
+                            "record_id": row.get("record_id") or "",
+                            "project_name": (row.get("project_name") or "")[:120]
+                            or (row.get("record_id") or ""),
+                            "status": status[:200],
+                            "bucket": _logo_status_bucket(status),
+                        }
+                    )
+        except OSError:
+            logger.exception("dashboard: failed reading logo events for range")
+    logo_items.sort(key=lambda x: str(x.get("ts") or ""), reverse=True)
+    logo_by = Counter(str(x.get("bucket") or "other") for x in logo_items)
+
+    digest_path = ROOT / str(
+        getattr(
+            config,
+            "workflow_lark_digest_state_file",
+            "data/lark_wallet_digest_state.json",
+        )
+    )
+    wallet_new = 0
+    if digest_path.is_file():
+        try:
+            raw = json.loads(digest_path.read_text(encoding="utf-8"))
+            first_seen = (raw.get("first_seen") or {}) if isinstance(raw, dict) else {}
+            wallet_new = sum(
+                1
+                for day in first_seen.values()
+                if str(day) in day_set and str(day) not in {"", "baseline"}
+            )
+        except (OSError, json.JSONDecodeError):
+            wallet_new = 0
+
+    return {
+        "days": days_n,
+        "start": day_list[0],
+        "end": day_list[-1],
+        "metrics": metrics,
+        "qa": {
+            "counts": qa.get("counts") or {},
+            "silence_reasons": qa.get("silence_reasons") or {},
+            "answered": qa.get("answered") or [],
+            "silent": qa.get("silent") or [],
+            "list_limit": limit,
+        },
+        "logos": {
+            "counts": {
+                "success": int(metrics.get("logo_fill_success") or 0),
+                "fail": int(metrics.get("logo_fill_fail") or 0),
+                "no_logo": int(metrics.get("logo_fill_no_logo") or 0),
+            },
+            "items": logo_items[:100],
+            "item_count": len(logo_items),
+            "by_bucket": dict(logo_by),
+        },
+        "wallets": {
+            "new_projects": wallet_new,
+        },
+    }
+
+
 def build_dashboard_snapshot(
     config: Any,
     *,
@@ -523,11 +653,8 @@ def build_dashboard_snapshot(
         if list_limit is not None
         else getattr(config, "dashboard_list_limit", 150) or 150
     )
-    calendar_days = int(
-        getattr(config, "metrics_message_log_retain_days", 60)
-        or getattr(config, "dashboard_calendar_days", 60)
-        or 60
-    )
+    calendar_days = int(getattr(config, "dashboard_calendar_days", 30) or 30)
+    calendar_days = max(min(calendar_days, 90), 7)
 
     from bot.metrics import build_daily_report, snapshot
 
@@ -542,6 +669,10 @@ def build_dashboard_snapshot(
     qa = _scan_message_logs(config, lookback_days=lookback, list_limit=limit)
     series = _counter_series(config)
     calendar = build_calendar_activity(config, days=calendar_days)
+    ranges = {
+        "7": build_range_summary(config, 7, series=series, list_limit=limit),
+        "30": build_range_summary(config, 30, series=series, list_limit=limit),
+    }
 
     return {
         "generated_at": _now_iso(),
@@ -557,6 +688,7 @@ def build_dashboard_snapshot(
         "counters_series": series,
         "qa": qa,
         "calendar": calendar,
+        "ranges": ranges,
     }
 
 
