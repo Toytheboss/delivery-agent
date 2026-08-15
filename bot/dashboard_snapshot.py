@@ -538,6 +538,7 @@ def build_range_summary(
     metric_keys = (
         "faq_reply_sessions",
         "messages_processed",
+        "messages_sent",
         "form_dispatch_success",
         "logo_fill_success",
         "logo_fill_fail",

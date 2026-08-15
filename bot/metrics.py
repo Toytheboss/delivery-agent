@@ -517,10 +517,9 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
         f"过去7天窗口：{week_start} ~ {week_end}",
         f"过去24小时：{snap.get('window_24h_since') or '—'} ~ {snap.get('window_until') or '—'}",
         "",
-        "【发出消息估算】FAQ气泡+页脚+欢迎+表单成功",
-        f"· 合计：{_fmt_triple(o)}",
-        "",
-        "【FAQ】会话=一次完整回答；气泡=拆开的短消息",
+        "【发出消息】交付号全部出站（含手动）；括号内为自动链路合计",
+        f"· 全部出站：{pair('messages_sent')}",
+        f"· 自动合计（FAQ气泡+页脚+欢迎+表单+社交）：{_fmt_triple({'total': o.get('auto_total', 0), 'week': o.get('auto_week', 0), 'today': o.get('auto_today', 0)})}",
         f"· FAQ 答疑会话：{pair('faq_reply_sessions')}",
         f"· FAQ 气泡条数：{pair('faq_bubbles_sent')}",
         f"· FAQ footer：{pair('faq_footer_sent')}",
@@ -1057,7 +1056,8 @@ def format_report_zh(snap: dict[str, Any]) -> str:
             f"3. 欢迎语：过去7天启动 {welcome_seq['week']} 次；"
             f"存量已问候群 {d.get('welcome_greeted_count', '—')} 个"
         ),
-        f"4. Agent 对外发出消息（估算）：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}",
+        f"4. Agent 对外发出消息：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}"
+        f"（自动合计 {o.get('auto_total', 0)} / {o.get('auto_week', 0)} / {o.get('auto_today', 0)}）",
         "",
         "二、上线交付（表单 / Logo）",
         f"1. 上线表单发出成功：累计 {form_ok['total']}，过去7天 {form_ok['week']}，过去24小时 {form_ok['today']}",
