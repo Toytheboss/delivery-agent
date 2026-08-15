@@ -840,7 +840,7 @@ def load_config() -> AppConfig:
             (cfg.get("dashboard") or {}).get("refresh_minutes", 60) or 60
         ),
         dashboard_qa_lookback_days=int(
-            (cfg.get("dashboard") or {}).get("qa_lookback_days", 14) or 14
+            (cfg.get("dashboard") or {}).get("qa_lookback_days", 30) or 30
         ),
         dashboard_list_limit=int(
             (cfg.get("dashboard") or {}).get("list_limit", 150) or 150

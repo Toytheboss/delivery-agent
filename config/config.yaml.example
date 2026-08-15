@@ -210,7 +210,7 @@ dashboard:
   enabled: true
   token: ""
   refresh_minutes: 60
-  qa_lookback_days: 14
+  qa_lookback_days: 30
   calendar_days: 30
   list_limit: 150
   path_prefix: "/dashboard"

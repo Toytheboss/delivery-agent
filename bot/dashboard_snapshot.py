@@ -646,7 +646,7 @@ def build_dashboard_snapshot(
     lookback = int(
         lookback_days
         if lookback_days is not None
-        else getattr(config, "dashboard_qa_lookback_days", 14) or 14
+        else getattr(config, "dashboard_qa_lookback_days", 30) or 30
     )
     limit = int(
         list_limit

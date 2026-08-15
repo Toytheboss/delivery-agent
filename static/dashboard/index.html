@@ -587,7 +587,7 @@
       const c = (data.snapshot || {}).counters || {};
       const daily24 = (data.period_reports || {}).["24h"] || data.daily || {};
       document.getElementById("meta").textContent =
-        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 14} 天 · 日历 ${data.window?.calendar_days || 30} 天`;
+        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 30} 天 · 日历 ${data.window?.calendar_days || 30} 天`;
 
       document.querySelectorAll("#daily-tabs button").forEach(btn => {
         const on = btn.dataset.daily === selectedDailyPeriod;
