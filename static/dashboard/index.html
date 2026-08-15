@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Botchain Delivery · 数据看板</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="static/app.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <header class="top">
+      <div class="brand">
+        <div>
+          <h1>Botchain Delivery</h1>
+          <p>数据看板 · 每小时刷新</p>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="active" href="#" id="link-data">数据</a>
+        <a href="#" id="link-settings">设置</a>
+      </nav>
+      <div class="toggle" id="view-toggle">
+        <button type="button" class="active" data-view="ops">运营</button>
+        <button type="button" data-view="exec">管理层</button>
+      </div>
+    </header>
+
+    <div id="err" class="err hidden"></div>
+    <div class="meta" id="meta">加载中…</div>
+
+    <section id="view-ops">
+      <div class="kpis" id="ops-kpis"></div>
+      <div class="grid">
+        <div class="panel">
+          <h2>近 14 日趋势</h2>
+          <canvas id="chartTrend"></canvas>
+        </div>
+        <div class="panel">
+          <h2>沉默原因</h2>
+          <canvas id="chartSilence"></canvas>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="panel">
+          <h2>已回答（近期）</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>群</th><th>问题</th><th>回答</th><th>原因</th></tr></thead>
+              <tbody id="tbl-answered"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <h2>沉默（近期）</h2>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>群</th><th>问题</th><th>原因</th><th>分</th></tr></thead>
+              <tbody id="tbl-silent"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-exec" class="hidden">
+      <div class="kpis" id="exec-kpis"></div>
+      <div class="grid">
+        <div class="panel">
+          <h2>过去 24 小时 · 消息构成</h2>
+          <canvas id="chartDailyMix"></canvas>
+        </div>
+        <div class="panel">
+          <h2>存量摘要</h2>
+          <div id="exec-stock" class="meta"></div>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+    const params = new URLSearchParams(location.search);
+    const token = params.get("token") || localStorage.getItem("dashboard_token") || "";
+    if (params.get("token")) localStorage.setItem("dashboard_token", token);
+
+    function withToken(path) {
+      const u = new URL(path, location.origin);
+      if (token) u.searchParams.set("token", token);
+      // Keep relative path under /dashboard
+      const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
+      if (path.startsWith("static/")) return `${base}/${path}?token=${encodeURIComponent(token)}`;
+      if (path.startsWith("api/")) return `${base}/${path}${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+      return path;
+    }
+
+    // Fix CSS href once we know base
+    (function fixCss() {
+      const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
+      const link = document.querySelector('link[rel="stylesheet"]');
+      if (link) link.href = `${base}/static/app.css?token=${encodeURIComponent(token)}`;
+      document.getElementById("link-settings").href = `${base}/settings?token=${encodeURIComponent(token)}`;
+      document.getElementById("link-data").href = `${base}?token=${encodeURIComponent(token)}`;
+    })();
+
+    let trendChart, silenceChart, mixChart;
+
+    function esc(s) {
+      return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
+    }
+
+    function cTriple(counters, key) {
+      const x = (counters || {})[key] || {};
+      return { total: x.total || 0, week: x.week || 0, today: x.today || 0 };
+    }
+
+    function renderKpis(el, items) {
+      el.innerHTML = items.map(([label, value]) =>
+        `<div class="kpi"><div class="label">${esc(label)}</div><div class="value">${esc(value)}</div></div>`
+      ).join("");
+    }
+
+    function daysFromSeries(series, key, n = 14) {
+      const by = ((series || {})[key] || {}).by_day || {};
+      const days = Object.keys(by).sort();
+      return days.slice(-n);
+    }
+
+    function renderTables(qa) {
+      const ans = (qa.answered || []).slice(0, 80);
+      const sil = (qa.silent || []).slice(0, 80);
+      document.getElementById("tbl-answered").innerHTML = ans.map(r => `
+        <tr>
+          <td class="mono">${esc((r.ts || "").slice(5, 16))}</td>
+          <td>${esc(r.chat_title)}</td>
+          <td class="q">${esc(r.text)}</td>
+          <td class="a">${esc(r.reply_text)}</td>
+          <td class="mono">${esc(r.reason)}</td>
+        </tr>`).join("") || `<tr><td colspan="5">暂无</td></tr>`;
+      document.getElementById("tbl-silent").innerHTML = sil.map(r => `
+        <tr>
+          <td class="mono">${esc((r.ts || "").slice(5, 16))}</td>
+          <td>${esc(r.chat_title)}</td>
+          <td class="q">${esc(r.text)}</td>
+          <td class="mono">${esc(r.reason)}</td>
+          <td class="mono">${r.score ?? ""}</td>
+        </tr>`).join("") || `<tr><td colspan="5">暂无</td></tr>`;
+    }
+
+    function buildCharts(data) {
+      const series = data.counters_series || {};
+      const days = daysFromSeries(series, "messages_processed", 14);
+      const faq = days.map(d => (series.faq_reply_sessions?.by_day?.[d] || 0));
+      const silentProxy = days.map(d => (series.messages_processed?.by_day?.[d] || 0));
+      const form = days.map(d => (series.form_dispatch_success?.by_day?.[d] || 0));
+      const logo = days.map(d => (series.logo_fill_success?.by_day?.[d] || 0));
+
+      if (trendChart) trendChart.destroy();
+      trendChart = new Chart(document.getElementById("chartTrend"), {
+        type: "line",
+        data: {
+          labels: days.map(d => d.slice(5)),
+          datasets: [
+            { label: "FAQ sessions", data: faq, borderColor: "#059669", tension: 0.25 },
+            { label: "Processed", data: silentProxy, borderColor: "#10b981", tension: 0.25 },
+            { label: "Form sent", data: form, borderColor: "#047857", tension: 0.25 },
+            { label: "Logo ok", data: logo, borderColor: "#79ffb8", tension: 0.25 },
+          ],
+        },
+        options: { responsive: true, plugins: { legend: { position: "bottom" } } },
+      });
+
+      const reasons = data.qa?.silence_reasons || {};
+      const rKeys = Object.keys(reasons);
+      if (silenceChart) silenceChart.destroy();
+      silenceChart = new Chart(document.getElementById("chartSilence"), {
+        type: "doughnut",
+        data: {
+          labels: rKeys,
+          datasets: [{
+            data: rKeys.map(k => reasons[k]),
+            backgroundColor: ["#059669","#10b981","#34d399","#6ee7b7","#a7f3d0","#fbbf24","#f59e0b","#dc2626","#047857","#064e3b"],
+          }],
+        },
+        options: { responsive: true, plugins: { legend: { position: "bottom", labels: { boxWidth: 10 } } } },
+      });
+
+      const bot = data.daily?.bot_messages || {};
+      if (mixChart) mixChart.destroy();
+      mixChart = new Chart(document.getElementById("chartDailyMix"), {
+        type: "bar",
+        data: {
+          labels: ["FAQ气泡", "页脚", "寒暄", "欢迎", "表单"],
+          datasets: [{
+            data: [bot.faq_bubbles||0, bot.faq_footer||0, bot.social||0, bot.welcome||0, bot.form||0],
+            backgroundColor: "#059669",
+          }],
+        },
+        options: { plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } },
+      });
+    }
+
+    function render(data) {
+      const snap = data.snapshot || {};
+      const c = snap.counters || {};
+      const d = snap.derived || {};
+      const daily = data.daily || {};
+      document.getElementById("meta").textContent =
+        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 7} 天`;
+
+      renderKpis(document.getElementById("ops-kpis"), [
+        ["FAQ sessions", cTriple(c,"faq_reply_sessions").total],
+        ["过去24h FAQ", cTriple(c,"faq_reply_sessions").today],
+        ["表单成功", cTriple(c,"form_dispatch_success").total],
+        ["Logo 成功", cTriple(c,"logo_fill_success").total],
+        ["欢迎序列", cTriple(c,"welcome_sequences_started").total],
+        ["Mark live", cTriple(c,"mark_live_triggers").total],
+        ["Webhook 收/处", `${cTriple(c,"webhook_live_received").total}/${cTriple(c,"webhook_live_processed").total}`],
+        ["学习写入", cTriple(c,"absorb_learn_success").total],
+      ]);
+
+      renderKpis(document.getElementById("exec-kpis"), [
+        ["24h 新群", daily.folder_new_groups_today ?? "—"],
+        ["24h Logo", daily.logo_fill_today ?? "—"],
+        ["24h 处理消息", daily.messages_processed_24h ?? "—"],
+        ["24h 回复消息", daily.messages_replied_24h ?? "—"],
+        ["主网上线(窗)", daily.progress?.today_mainnet_live ?? "—"],
+        ["学习笔记存量", d.learned_md_count ?? "—"],
+        ["表单已发存量", d.form_dispatch_processed ?? "—"],
+        ["欢迎已完成", d.welcome_greeted_count ?? "—"],
+      ]);
+
+      const logo = d.logo_fill_state || {};
+      document.getElementById("exec-stock").innerHTML = `
+        <div>Logo：成功 ${logo.success||0} / 无图 ${logo.no_logo||0} / 失败 ${logo.fail||0}</div>
+        <div>钱包 digest 今日新见：${d.wallet_digest_new_today_from_state||0} · 上次 ${esc(d.wallet_digest_last_date||"—")}</div>
+        <div>Lark 钱包覆盖：${esc(JSON.stringify(snap.wallet_lark || {}).slice(0, 180))}</div>
+      `;
+
+      renderTables(data.qa || {});
+      buildCharts(data);
+    }
+
+    async function load() {
+      const err = document.getElementById("err");
+      try {
+        const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
+        const res = await fetch(`${base}/api/snapshot?token=${encodeURIComponent(token)}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        err.classList.add("hidden");
+        render(data);
+      } catch (e) {
+        err.textContent = `加载失败：${e.message || e}（请确认 token）`;
+        err.classList.remove("hidden");
+      }
+    }
+
+    document.getElementById("view-toggle").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-view]");
+      if (!btn) return;
+      document.querySelectorAll("#view-toggle button").forEach(b => b.classList.toggle("active", b === btn));
+      const view = btn.dataset.view;
+      document.getElementById("view-ops").classList.toggle("hidden", view !== "ops");
+      document.getElementById("view-exec").classList.toggle("hidden", view !== "exec");
+    });
+
+    load();
+    setInterval(load, 60 * 60 * 1000);
+  </script>
+</body>
+</html>

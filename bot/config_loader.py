@@ -150,6 +150,13 @@ class AppConfig:
     metrics_message_log_dir: str
     metrics_message_log_retain_days: int
     metrics_message_log_text_max: int
+    dashboard_enabled: bool
+    dashboard_token: str
+    dashboard_refresh_minutes: int
+    dashboard_qa_lookback_days: int
+    dashboard_list_limit: int
+    dashboard_path_prefix: str
+    dashboard_snapshot_file: str
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -157,6 +164,27 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return {}
     with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
+
+
+def _deep_merge_dict(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
+    out = dict(base)
+    for k, v in (overlay or {}).items():
+        if isinstance(v, dict) and isinstance(out.get(k), dict):
+            out[k] = _deep_merge_dict(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+
+def _load_runtime_overrides() -> dict[str, Any]:
+    path = ROOT / "data" / "runtime_overrides.yaml"
+    if not path.exists():
+        return {}
+    try:
+        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return raw if isinstance(raw, dict) else {}
+    except Exception:  # noqa: BLE001
+        return {}
 
 
 _DEFAULT_DOCS_URL = (
@@ -382,6 +410,7 @@ async def resolve_workflow_operator_ids(client, config: AppConfig) -> None:
 
 def load_config() -> AppConfig:
     cfg = _load_yaml(CONFIG_DIR / "config.yaml")
+    cfg = _deep_merge_dict(cfg, _load_runtime_overrides())
     wl = _load_yaml(CONFIG_DIR / "whitelist.yaml")
     qa = _load_yaml(CONFIG_DIR / "qa_testers.yaml")
     ig = _load_yaml(CONFIG_DIR / "ignored_groups.yaml")
@@ -799,9 +828,30 @@ def load_config() -> AppConfig:
             )
         ),
         metrics_message_log_retain_days=int(
-            (cfg.get("metrics") or {}).get("message_log_retain_days", 90) or 90
+            (cfg.get("metrics") or {}).get("message_log_retain_days", 60) or 60
         ),
         metrics_message_log_text_max=int(
             (cfg.get("metrics") or {}).get("message_log_text_max", 500) or 500
+        ),
+        dashboard_enabled=bool((cfg.get("dashboard") or {}).get("enabled", True)),
+        dashboard_token=str((cfg.get("dashboard") or {}).get("token", "") or "").strip(),
+        dashboard_refresh_minutes=int(
+            (cfg.get("dashboard") or {}).get("refresh_minutes", 60) or 60
+        ),
+        dashboard_qa_lookback_days=int(
+            (cfg.get("dashboard") or {}).get("qa_lookback_days", 7) or 7
+        ),
+        dashboard_list_limit=int(
+            (cfg.get("dashboard") or {}).get("list_limit", 150) or 150
+        ),
+        dashboard_path_prefix=str(
+            (cfg.get("dashboard") or {}).get("path_prefix", "/dashboard") or "/dashboard"
+        ),
+        dashboard_snapshot_file=str(
+            (cfg.get("dashboard") or {}).get(
+                "snapshot_file",
+                "data/dashboard_snapshot.json",
+            )
+            or "data/dashboard_snapshot.json"
         ),
     )

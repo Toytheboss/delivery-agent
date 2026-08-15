@@ -35,6 +35,8 @@ knowledge/lark_*.md
 !.cursor/rules/**
 cloudflare-dist*/
 *.html
+!docs/**/*.html
+!static/**/*.html
 !docs/*.md
 
 # OS / IDE

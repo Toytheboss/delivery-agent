@@ -124,7 +124,9 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Stats (detail)** | Full Chinese ops breakdown. |
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
 | **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix (processed / replied / FAQ / social / welcome / form). |
-| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default 90). |
+| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default **60**). |
+| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops / exec views, answered + silent Q&A). Token via `DASHBOARD_TOKEN`. |
+| **Settings panel** | Same host `/dashboard/settings`: allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |
 
 **Report command aliases:**
 
@@ -279,6 +281,7 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | See last 24h ops | `交付日报` / `/daily` |
 | See last 7 days summary | `交付周报` / `/report` |
 | Full counters | `交付统计` / `/stats` |
+| Web dashboard / settings | `http://HOST:8787/dashboard?token=…` and `/dashboard/settings?token=…` |
 | Teach the bot a fact | QA tester: `学习 …` (or configured trigger) |
 | Audit ask/reply text | Read `data/message_logs/messages-YYYY-MM-DD.jsonl` on the server |
 

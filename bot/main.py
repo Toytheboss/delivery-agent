@@ -274,7 +274,7 @@ async def main() -> None:
                 "form dispatch will not send until URL is set"
             )
 
-        await start_live_webhook_server(client, config, scope)
+        await start_live_webhook_server(client, config, scope, kb=kb)
         if config.workflow_live_startup_scan:
             asyncio.create_task(startup_live_catchup(client, config, scope))
 
@@ -371,6 +371,21 @@ async def main() -> None:
                 config.workflow_lark_digest_chat_id,
                 config.workflow_lark_digest_hour,
             )
+    else:
+        # Dashboard/settings still need HTTP when workflow is off.
+        await start_live_webhook_server(client, config, scope, kb=kb)
+
+    try:
+        from bot.dashboard_http import dashboard_enabled, dashboard_snapshot_loop, dashboard_token
+
+        if dashboard_enabled(config) and dashboard_token(config):
+            asyncio.create_task(dashboard_snapshot_loop(config))
+            logger.info(
+                "Dashboard snapshot loop enabled (every %dm)",
+                getattr(config, "dashboard_refresh_minutes", 60),
+            )
+    except Exception:  # noqa: BLE001
+        logger.exception("Dashboard loop failed to start")
 
     logger.info(
         "Bot running. Folders=%s, group_replies=%s, chats=%d, qa_test_groups=%s, "
