@@ -35,6 +35,12 @@
     <section id="view-ops">
       <div class="kpis" id="ops-kpis"></div>
 
+      <div class="panel daily-panel" id="daily-panel">
+        <h2>过去 24 小时日报</h2>
+        <p class="day-hint" id="daily-window">加载中…</p>
+        <div class="daily-grid" id="daily-report"></div>
+      </div>
+
       <div class="panel" style="margin-bottom:16px">
         <h2>60 天日历复查</h2>
         <p class="day-hint">颜色=当日消息活跃度（回答+沉默）。点击格子或选日期，可复查该日问答、Logo 抓取（含项目名）、钱包类型与地址。</p>
@@ -198,10 +204,91 @@
       ).join("");
     }
 
+    function lastNDays(n = 14) {
+      const out = [];
+      const d = new Date();
+      // Asia/Shanghai calendar day labels via locale offset +08
+      const fmt = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Shanghai",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      });
+      for (let i = n - 1; i >= 0; i--) {
+        const t = new Date(d.getTime() - i * 86400000);
+        out.push(fmt.format(t));
+      }
+      return out;
+    }
+
     function daysFromSeries(series, key, n = 14) {
+      // Always plot a full calendar window (zeros for missing days).
+      return lastNDays(n);
+    }
+
+    function seriesVals(series, key, days) {
       const by = ((series || {})[key] || {}).by_day || {};
-      const days = Object.keys(by).sort();
-      return days.slice(-n);
+      return days.map(d => Number(by[d] || 0));
+    }
+
+    function nameListHtml(names) {
+      const list = (names || []).map(n => String(n || "").trim()).filter(Boolean);
+      if (!list.length) return `<p class="daily-empty">（暂无）</p>`;
+      return `<ol class="daily-names">${list.map(n => `<li>${esc(n)}</li>`).join("")}</ol>`;
+    }
+
+    function renderDailyReport(daily) {
+      const el = document.getElementById("daily-report");
+      const win = document.getElementById("daily-window");
+      if (!el || !win) return;
+      if (!daily || daily.error) {
+        win.textContent = "日报数据不可用";
+        el.innerHTML = `<p class="daily-empty">${esc(daily?.error || "无数据")}</p>`;
+        return;
+      }
+      const p = daily.progress || {};
+      const w = daily.wallet || {};
+      const dc = daily.deploy_changes || {};
+      const bot = daily.bot_messages || {};
+      const enteredTest = dc.entered_testnet_deploy || [];
+      const enteredMain = dc.entered_mainnet_deploy || [];
+      const liveNames = p.today_mainnet_live_names || [];
+      win.textContent =
+        `窗口 ${daily.window_since || "—"} ~ ${daily.window_until || "—"} · 生成日 ${daily.today || "—"}`;
+
+      el.innerHTML = `
+        <div class="daily-card">
+          <h3>一、上线与部署</h3>
+          <div class="daily-block">
+            <div class="daily-label">主网上线 <strong>${esc(p.today_mainnet_live ?? liveNames.length)}</strong></div>
+            ${nameListHtml(liveNames)}
+          </div>
+          <div class="daily-block">
+            <div class="daily-label">新进测试网部署 <strong>${esc(enteredTest.length)}</strong></div>
+            ${nameListHtml(enteredTest)}
+          </div>
+          <div class="daily-block">
+            <div class="daily-label">新进主网部署中 <strong>${esc(enteredMain.length)}</strong></div>
+            ${nameListHtml(enteredMain)}
+          </div>
+        </div>
+        <div class="daily-card">
+          <h3>二、对接与物料</h3>
+          <ul class="daily-stats">
+            <li>新进项目方群 <strong>${esc(daily.folder_new_groups_today ?? 0)}</strong>（Folder 自动归集）</li>
+            <li>新收集钱包项目 <strong>${esc(w.today_new_projects ?? 0)}</strong>（新增地址字段 ${esc(w.today_new_address_fields ?? 0)}）</li>
+            <li>收集 Logo <strong>${esc(daily.logo_fill_today ?? 0)}</strong></li>
+          </ul>
+        </div>
+        <div class="daily-card">
+          <h3>三、Bot 消息</h3>
+          <ul class="daily-stats">
+            <li>处理消息 <strong>${esc(daily.messages_processed_24h ?? bot.processed ?? 0)}</strong></li>
+            <li>回复消息 <strong>${esc(daily.messages_replied_24h ?? bot.replied ?? 0)}</strong></li>
+          </ul>
+          <p class="day-hint">含 FAQ 气泡 ${esc(bot.faq_bubbles ?? 0)}、页脚 ${esc(bot.faq_footer ?? 0)}、社交寒暄 ${esc(bot.social ?? 0)}、欢迎 ${esc(bot.welcome ?? 0)}、表单 ${esc(bot.form ?? 0)}</p>
+        </div>
+      `;
     }
 
     function ensureChart(id) {
@@ -316,14 +403,16 @@
 
     function buildCharts(data) {
       const series = data.counters_series || {};
-      const days = daysFromSeries(series, "messages_processed", 14);
+      const days = lastNDays(14);
       const labels = days.map(d => d.slice(5));
-      const faq = days.map(d => (series.faq_reply_sessions?.by_day?.[d] || 0));
-      const processed = days.map(d => (series.messages_processed?.by_day?.[d] || 0));
-      const form = days.map(d => (series.form_dispatch_success?.by_day?.[d] || 0));
-      const logo = days.map(d => (series.logo_fill_success?.by_day?.[d] || 0));
-      const welcome = days.map(d => (series.welcome_sequences_started?.by_day?.[d] || 0));
-      const markLive = days.map(d => (series.mark_live_triggers?.by_day?.[d] || 0));
+      const faq = seriesVals(series, "faq_reply_sessions", days);
+      const processed = seriesVals(series, "messages_processed", days);
+      const form = seriesVals(series, "form_dispatch_success", days);
+      const logo = seriesVals(series, "logo_fill_success", days);
+      const welcome = seriesVals(series, "welcome_sequences_started", days);
+      const markLive = seriesVals(series, "mark_live_triggers", days);
+      const folder = seriesVals(series, "folder_auto_add_success", days);
+      const walletNew = seriesVals(series, "wallet_digest_new_projects", days);
 
       // 1) Multi-series smooth line — ops volume trends
       ensureChart("chartTrend")?.setOption({
@@ -335,10 +424,10 @@
         xAxis: { type: "category", data: labels, boundaryGap: false, axisLabel: { color: GREEN.muted } },
         yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
         series: [
-          { name: "FAQ sessions", type: "line", smooth: true, showSymbol: false, data: faq },
-          { name: "Processed", type: "line", smooth: true, showSymbol: false, data: processed },
-          { name: "Form sent", type: "line", smooth: true, showSymbol: false, data: form },
-          { name: "Logo ok", type: "line", smooth: true, showSymbol: false, data: logo },
+          { name: "处理消息", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: processed },
+          { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: faq },
+          { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: folder },
+          { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: logo },
         ],
       }, true);
 
@@ -387,7 +476,7 @@
 
       // 4) Stacked area — workflow daily increments
       ensureChart("chartWorkflowArea")?.setOption({
-        color: [GREEN.primary, GREEN.mid, GREEN.warn],
+        color: [GREEN.primary, GREEN.mid, GREEN.warn, GREEN.deep, GREEN.mint],
         textStyle: baseTextStyle(),
         tooltip: { trigger: "axis" },
         legend: { bottom: 0, textStyle: { color: GREEN.muted } },
@@ -395,10 +484,11 @@
         xAxis: { type: "category", boundaryGap: false, data: labels, axisLabel: { color: GREEN.muted } },
         yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
         series: [
-          { name: "Form", type: "line", stack: "wf", areaStyle: { opacity: 0.35 }, smooth: true, showSymbol: false, data: form },
+          { name: "表单", type: "line", stack: "wf", areaStyle: { opacity: 0.35 }, smooth: true, showSymbol: false, data: form },
           { name: "Logo", type: "line", stack: "wf", areaStyle: { opacity: 0.35 }, smooth: true, showSymbol: false, data: logo },
-          { name: "Welcome", type: "line", stack: "wf", areaStyle: { opacity: 0.25 }, smooth: true, showSymbol: false, data: welcome },
+          { name: "欢迎", type: "line", stack: "wf", areaStyle: { opacity: 0.25 }, smooth: true, showSymbol: false, data: welcome },
           { name: "Mark live", type: "line", stack: "wf", areaStyle: { opacity: 0.2 }, smooth: true, showSymbol: false, data: markLive },
+          { name: "新钱包项目", type: "line", stack: "wf", areaStyle: { opacity: 0.2 }, smooth: true, showSymbol: false, data: walletNew },
         ],
       }, true);
 
@@ -439,7 +529,9 @@
       const d = snap.derived || {};
       const daily = data.daily || {};
       document.getElementById("meta").textContent =
-        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 7} 天`;
+        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 14} 天`;
+
+      renderDailyReport(daily);
 
       renderKpis(document.getElementById("ops-kpis"), [
         ["FAQ sessions", cTriple(c, "faq_reply_sessions").total],
@@ -453,14 +545,14 @@
       ]);
 
       renderKpis(document.getElementById("exec-kpis"), [
+        ["24h 主网上线", daily.progress?.today_mainnet_live ?? "—"],
+        ["24h 测试网部署", (daily.deploy_changes?.entered_testnet_deploy || []).length],
+        ["24h 主网部署中", (daily.deploy_changes?.entered_mainnet_deploy || []).length],
         ["24h 新群", daily.folder_new_groups_today ?? "—"],
+        ["24h 新钱包项目", daily.wallet?.today_new_projects ?? "—"],
         ["24h Logo", daily.logo_fill_today ?? "—"],
         ["24h 处理消息", daily.messages_processed_24h ?? "—"],
         ["24h 回复消息", daily.messages_replied_24h ?? "—"],
-        ["主网上线(窗)", daily.progress?.today_mainnet_live ?? "—"],
-        ["学习笔记存量", d.learned_md_count ?? "—"],
-        ["表单已发存量", d.form_dispatch_processed ?? "—"],
-        ["欢迎已完成", d.welcome_greeted_count ?? "—"],
       ]);
 
       const logo = d.logo_fill_state || {};

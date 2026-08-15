@@ -235,6 +235,26 @@ def get_counter(key: str) -> dict[str, int]:
         }
 
 
+def get_counter_series(keys: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
+    """Return {key: {total, by_day}} for chart series (includes full by_day maps)."""
+    want = tuple(keys) if keys is not None else COUNTER_KEYS
+    out: dict[str, Any] = {}
+    with _lock:
+        data = _ensure_loaded()
+        for key in want:
+            c = data["counters"].get(key) or _empty_counter()
+            by_day = {
+                str(d): int(n or 0)
+                for d, n in (c.get("by_day") or {}).items()
+                if d
+            }
+            out[str(key)] = {
+                "total": int(c.get("total") or 0),
+                "by_day": by_day,
+            }
+    return out
+
+
 def _sum_days(by_day: dict[str, Any] | None, days: list[str]) -> int:
     raw = by_day or {}
     return sum(int(raw.get(d) or 0) for d in days)

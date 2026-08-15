@@ -180,16 +180,11 @@ def _scan_one_day(
 
 
 def _counter_series(config: Any) -> dict[str, Any]:
-    from bot.metrics import COUNTER_KEYS, get_counter
+    """Per-counter totals + by_day maps (padded empty days omitted; UI fills range)."""
+    del config
+    from bot.metrics import COUNTER_KEYS, get_counter_series
 
-    out: dict[str, Any] = {}
-    for key in COUNTER_KEYS:
-        c = get_counter(key)
-        out[key] = {
-            "total": int(c.get("total") or 0),
-            "by_day": dict(c.get("by_day") or {}),
-        }
-    return out
+    return get_counter_series(list(COUNTER_KEYS))
 
 
 def build_calendar_activity(config: Any, *, days: int = 60) -> dict[str, Any]:
@@ -520,7 +515,7 @@ def build_dashboard_snapshot(
     lookback = int(
         lookback_days
         if lookback_days is not None
-        else getattr(config, "dashboard_qa_lookback_days", 7) or 7
+        else getattr(config, "dashboard_qa_lookback_days", 14) or 14
     )
     limit = int(
         list_limit
