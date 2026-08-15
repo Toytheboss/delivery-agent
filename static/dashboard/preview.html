@@ -7,7 +7,259 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="static/app.css" />
+  <style>:root {
+  --bg: #ecfdf5;
+  --surface: #ffffff;
+  --surface-2: #d1fae5;
+  --text: #064e3b;
+  --muted: #047857;
+  --primary: #059669;
+  --primary-2: #10b981;
+  --mint: #79ffb8;
+  --warn: #fbbf24;
+  --danger: #dc2626;
+  --border: #a7f3d0;
+  --shadow: 0 8px 24px rgba(6, 78, 59, 0.08);
+  --radius: 14px;
+  --font: "Fira Sans", system-ui, sans-serif;
+  --mono: "Fira Code", ui-monospace, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body {
+  margin: 0;
+  min-height: 100%;
+  background:
+    radial-gradient(900px 420px at 10% -10%, rgba(121, 255, 184, 0.35), transparent 60%),
+    radial-gradient(700px 380px at 100% 0%, rgba(16, 185, 129, 0.18), transparent 55%),
+    var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.wrap { max-width: 1240px; margin: 0 auto; padding: 20px 18px 48px; }
+
+.top {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+.brand img {
+  width: 36px;
+  height: 36px;
+  object-fit: contain;
+}
+.brand h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+.brand p {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.nav, .toggle {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.nav a, .toggle button, button.btn, .field button {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  font-weight: 560;
+  cursor: pointer;
+  transition: background 180ms ease, border-color 180ms ease, transform 180ms ease;
+}
+.nav a.active, .toggle button.active, button.btn.primary {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.nav a:hover, .toggle button:hover, button.btn:hover, .field button:hover {
+  border-color: var(--primary-2);
+  background: var(--surface-2);
+}
+.nav a.active:hover, .toggle button.active:hover, button.btn.primary:hover {
+  background: #047857;
+  color: #fff;
+}
+button.btn:focus-visible, .toggle button:focus-visible, .nav a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid var(--mint);
+  outline-offset: 2px;
+}
+
+.meta {
+  color: var(--muted);
+  font-size: 0.85rem;
+  font-family: var(--mono);
+  margin-bottom: 14px;
+}
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.kpi {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  box-shadow: var(--shadow);
+}
+.kpi .label { color: var(--muted); font-size: 0.78rem; }
+.kpi .value {
+  margin-top: 4px;
+  font-size: 1.45rem;
+  font-weight: 700;
+  font-family: var(--mono);
+  letter-spacing: -0.03em;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+  .grid { grid-template-columns: 1fr; }
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+}
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: 1rem;
+  font-weight: 650;
+}
+  .panel .chart {
+    width: 100%;
+    height: 280px;
+  }
+  .panel .chart.calendar {
+    height: 220px;
+  }
+  .panel canvas { max-height: 260px; }
+
+  .day-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .day-bar input[type="date"] {
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 8px 12px;
+    font: inherit;
+    background: #fff;
+    color: var(--text);
+  }
+  .day-hint {
+    color: var(--muted);
+    font-size: 0.82rem;
+  }
+
+.table-wrap { overflow: auto; max-height: 420px; }
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+th, td {
+  text-align: left;
+  padding: 8px 8px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); }
+td.mono { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
+.q { max-width: 280px; }
+.a { max-width: 340px; color: var(--muted); }
+
+.hidden { display: none !important; }
+.err {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: var(--danger);
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.field label { font-size: 0.82rem; font-weight: 600; }
+.field .hint { font-size: 0.75rem; color: var(--muted); }
+.field input[type="text"],
+.field input[type="number"],
+.field textarea,
+.field select {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 10px;
+  font: inherit;
+  background: #fff;
+  color: var(--text);
+}
+.field textarea { min-height: 72px; resize: vertical; }
+.field.bool {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+}
+.actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 14px 0; }
+.learned-list { display: grid; gap: 8px; }
+.learned-item {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+.learned-item .name { font-family: var(--mono); font-size: 0.8rem; color: var(--muted); }
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; }
+}
+</style>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 </head>
 <body>
@@ -16,7 +268,7 @@
       <div class="brand">
         <div>
           <h1>Botchain Delivery</h1>
-          <p>数据看板 · 每小时刷新 · ECharts</p>
+          <p>原型预览 · 60天日历 · ECharts</p>
         </div>
       </div>
       <nav class="nav">
@@ -110,13 +362,8 @@
     const token = params.get("token") || localStorage.getItem("dashboard_token") || "";
     if (params.get("token")) localStorage.setItem("dashboard_token", token);
 
-    (function fixCss() {
-      const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
-      const link = document.querySelector('link[rel="stylesheet"]');
-      if (link) link.href = `${base}/static/app.css?token=${encodeURIComponent(token)}`;
-      document.getElementById("link-settings").href = `${base}/settings?token=${encodeURIComponent(token)}`;
-      document.getElementById("link-data").href = `${base}?token=${encodeURIComponent(token)}`;
-    })();
+    document.getElementById("link-settings").href = "#";
+    document.getElementById("link-data").href = "#";
 
     const GREEN = {
       primary: "#059669",
@@ -500,23 +747,52 @@
     }
 
     async function load() {
-      const err = document.getElementById("err");
-      try {
-        apiBase = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
-        const res = await fetch(`${apiBase}/api/snapshot?token=${encodeURIComponent(token)}`);
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = await res.json();
-        snapshotData = data;
-        err.classList.add("hidden");
-        render(data);
-        if (selectedDay) await loadDay(selectedDay);
-      } catch (e) {
-        err.textContent = `加载失败：${e.message || e}（请确认 token）`;
-        err.classList.remove("hidden");
-      }
+      const MOCK = {
+        generated_at: "2026-08-15T15:00:00+08:00",
+        metrics_updated_at: "2026-08-15T14:58:00+08:00",
+        window: { qa_days: 7, list_limit: 150, calendar_days: 60 },
+        snapshot: { counters: {
+          faq_reply_sessions:{total:1620,week:86,today:12}, form_dispatch_success:{total:48,week:6,today:1},
+          logo_fill_success:{total:41,week:5,today:1}, welcome_sequences_started:{total:52,week:8,today:2},
+          mark_live_triggers:{total:19,week:3,today:0}, webhook_live_received:{total:120,week:14,today:2},
+          webhook_live_processed:{total:110,week:12,today:2}, absorb_learn_success:{total:27,week:4,today:1},
+        }, derived: { learned_md_count:27, form_dispatch_processed:48, welcome_greeted_count:244,
+          logo_fill_state:{success:41,no_logo:6,fail:2}, wallet_digest_new_today_from_state:1, wallet_digest_last_date:"2026-08-15" },
+          wallet_lark:{with_contract:36,total:48} },
+        daily: { folder_new_groups_today:2, logo_fill_today:1, messages_processed_24h:38, messages_replied_24h:21,
+          progress:{today_mainnet_live:1}, bot_messages:{faq_bubbles:14,faq_footer:2,social:3,welcome:6,form:1} },
+        counters_series: (function(){
+          const days=[]; const now=new Date("2026-08-15T14:00:00+08:00");
+          for(let i=13;i>=0;i--){ days.push(new Date(+now-i*864e5).toISOString().slice(0,10)); }
+          function mk(seed){ const o={}; days.forEach((d,i)=>o[d]=Math.max(0, Math.round(seed+Math.sin(i/2)*seed*0.4+i*0.3))); return o; }
+          return { faq_reply_sessions:{by_day:mk(8)}, messages_processed:{by_day:mk(12)}, form_dispatch_success:{by_day:mk(1)},
+            logo_fill_success:{by_day:mk(1)}, welcome_sequences_started:{by_day:mk(2)}, mark_live_triggers:{by_day:mk(1)} };
+        })(),
+        qa: { silence_reasons: {"below min relevance":18,"low relevance":9,"llm needs human":5,"no on-topic knowledge":4},
+          answered:[{ts:"2026-08-15T13:40:00+08:00",chat_title:"Moonrush",text:"Gas return?",reply_text:"填表单钱包字段",reason:"faq"}],
+          silent:[{ts:"2026-08-15T10:44:00+08:00",chat_title:"Meme Capsule",text:"合同能改吗？",reason:"below min relevance",score:0.31}] },
+        calendar: {"range_days": 60, "start": "2026-06-17", "end": "2026-08-15", "heat": [["2026-06-17", 3], ["2026-06-18", 8], ["2026-06-19", 11], ["2026-06-20", 16], ["2026-06-21", 12], ["2026-06-22", 16], ["2026-06-23", 12], ["2026-06-24", 1], ["2026-06-25", 16], ["2026-06-26", 9], ["2026-06-27", 16], ["2026-06-28", 12], ["2026-06-29", 8], ["2026-06-30", 13], ["2026-07-01", 5], ["2026-07-02", 0], ["2026-07-03", 2], ["2026-07-04", 7], ["2026-07-05", 7], ["2026-07-06", 13], ["2026-07-07", 2], ["2026-07-08", 12], ["2026-07-09", 13], ["2026-07-10", 6], ["2026-07-11", 16], ["2026-07-12", 0], ["2026-07-13", 12], ["2026-07-14", 12], ["2026-07-15", 16], ["2026-07-16", 15], ["2026-07-17", 2], ["2026-07-18", 15], ["2026-07-19", 4], ["2026-07-20", 13], ["2026-07-21", 9], ["2026-07-22", 3], ["2026-07-23", 14], ["2026-07-24", 2], ["2026-07-25", 10], ["2026-07-26", 15], ["2026-07-27", 14], ["2026-07-28", 8], ["2026-07-29", 12], ["2026-07-30", 4], ["2026-07-31", 3], ["2026-08-01", 1], ["2026-08-02", 12], ["2026-08-03", 15], ["2026-08-04", 8], ["2026-08-05", 17], ["2026-08-06", 17], ["2026-08-07", 10], ["2026-08-08", 1], ["2026-08-09", 12], ["2026-08-10", 4], ["2026-08-11", 14], ["2026-08-12", 12], ["2026-08-13", 14], ["2026-08-14", 1], ["2026-08-15", 8]], "days": [{"date": "2026-06-17", "replied": 1, "silent": 2, "other": 0, "activity": 3, "faq_sessions": 1, "messages_processed": 3, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-06-18", "replied": 4, "silent": 4, "other": 0, "activity": 8, "faq_sessions": 2, "messages_processed": 8, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-06-19", "replied": 5, "silent": 6, "other": 0, "activity": 11, "faq_sessions": 3, "messages_processed": 11, "form_ok": 2, "logo_ok": 1, "has_log": true}, {"date": "2026-06-20", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-06-21", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-06-22", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-06-23", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-06-24", "replied": 0, "silent": 1, "other": 0, "activity": 1, "faq_sessions": 0, "messages_processed": 1, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-06-25", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-06-26", "replied": 4, "silent": 5, "other": 0, "activity": 9, "faq_sessions": 3, "messages_processed": 9, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-06-27", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-06-28", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-06-29", "replied": 4, "silent": 4, "other": 0, "activity": 8, "faq_sessions": 2, "messages_processed": 8, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-06-30", "replied": 6, "silent": 7, "other": 0, "activity": 13, "faq_sessions": 4, "messages_processed": 13, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-01", "replied": 2, "silent": 3, "other": 0, "activity": 5, "faq_sessions": 1, "messages_processed": 5, "form_ok": 2, "logo_ok": 1, "has_log": true}, {"date": "2026-07-02", "replied": 0, "silent": 0, "other": 0, "activity": 0, "faq_sessions": 0, "messages_processed": 0, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-03", "replied": 1, "silent": 1, "other": 0, "activity": 2, "faq_sessions": 0, "messages_processed": 2, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-04", "replied": 3, "silent": 4, "other": 0, "activity": 7, "faq_sessions": 2, "messages_processed": 7, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-05", "replied": 3, "silent": 4, "other": 0, "activity": 7, "faq_sessions": 2, "messages_processed": 7, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-06", "replied": 6, "silent": 7, "other": 0, "activity": 13, "faq_sessions": 4, "messages_processed": 13, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-07", "replied": 1, "silent": 1, "other": 0, "activity": 2, "faq_sessions": 0, "messages_processed": 2, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-08", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-09", "replied": 6, "silent": 7, "other": 0, "activity": 13, "faq_sessions": 4, "messages_processed": 13, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-10", "replied": 3, "silent": 3, "other": 0, "activity": 6, "faq_sessions": 2, "messages_processed": 6, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-11", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-07-12", "replied": 0, "silent": 0, "other": 0, "activity": 0, "faq_sessions": 0, "messages_processed": 0, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-13", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-14", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-15", "replied": 8, "silent": 8, "other": 0, "activity": 16, "faq_sessions": 5, "messages_processed": 16, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-07-16", "replied": 7, "silent": 8, "other": 0, "activity": 15, "faq_sessions": 5, "messages_processed": 15, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-07-17", "replied": 1, "silent": 1, "other": 0, "activity": 2, "faq_sessions": 0, "messages_processed": 2, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-18", "replied": 7, "silent": 8, "other": 0, "activity": 15, "faq_sessions": 5, "messages_processed": 15, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-07-19", "replied": 2, "silent": 2, "other": 0, "activity": 4, "faq_sessions": 1, "messages_processed": 4, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-07-20", "replied": 6, "silent": 7, "other": 0, "activity": 13, "faq_sessions": 4, "messages_processed": 13, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-07-21", "replied": 4, "silent": 5, "other": 0, "activity": 9, "faq_sessions": 3, "messages_processed": 9, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-07-22", "replied": 1, "silent": 2, "other": 0, "activity": 3, "faq_sessions": 1, "messages_processed": 3, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-07-23", "replied": 7, "silent": 7, "other": 0, "activity": 14, "faq_sessions": 4, "messages_processed": 14, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-24", "replied": 1, "silent": 1, "other": 0, "activity": 2, "faq_sessions": 0, "messages_processed": 2, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-25", "replied": 5, "silent": 5, "other": 0, "activity": 10, "faq_sessions": 3, "messages_processed": 10, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-07-26", "replied": 7, "silent": 8, "other": 0, "activity": 15, "faq_sessions": 5, "messages_processed": 15, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-07-27", "replied": 7, "silent": 7, "other": 0, "activity": 14, "faq_sessions": 4, "messages_processed": 14, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-28", "replied": 4, "silent": 4, "other": 0, "activity": 8, "faq_sessions": 2, "messages_processed": 8, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-07-29", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-07-30", "replied": 2, "silent": 2, "other": 0, "activity": 4, "faq_sessions": 1, "messages_processed": 4, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-07-31", "replied": 1, "silent": 2, "other": 0, "activity": 3, "faq_sessions": 1, "messages_processed": 3, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-08-01", "replied": 0, "silent": 1, "other": 0, "activity": 1, "faq_sessions": 0, "messages_processed": 1, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-08-02", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-08-03", "replied": 7, "silent": 8, "other": 0, "activity": 15, "faq_sessions": 5, "messages_processed": 15, "form_ok": 0, "logo_ok": 1, "has_log": true}, {"date": "2026-08-04", "replied": 4, "silent": 4, "other": 0, "activity": 8, "faq_sessions": 2, "messages_processed": 8, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-08-05", "replied": 8, "silent": 9, "other": 0, "activity": 17, "faq_sessions": 5, "messages_processed": 17, "form_ok": 2, "logo_ok": 1, "has_log": true}, {"date": "2026-08-06", "replied": 8, "silent": 9, "other": 0, "activity": 17, "faq_sessions": 5, "messages_processed": 17, "form_ok": 2, "logo_ok": 1, "has_log": true}, {"date": "2026-08-07", "replied": 5, "silent": 5, "other": 0, "activity": 10, "faq_sessions": 3, "messages_processed": 10, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-08-08", "replied": 0, "silent": 1, "other": 0, "activity": 1, "faq_sessions": 0, "messages_processed": 1, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-08-09", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-08-10", "replied": 2, "silent": 2, "other": 0, "activity": 4, "faq_sessions": 1, "messages_processed": 4, "form_ok": 1, "logo_ok": 0, "has_log": true}, {"date": "2026-08-11", "replied": 7, "silent": 7, "other": 0, "activity": 14, "faq_sessions": 4, "messages_processed": 14, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-08-12", "replied": 6, "silent": 6, "other": 0, "activity": 12, "faq_sessions": 4, "messages_processed": 12, "form_ok": 0, "logo_ok": 0, "has_log": true}, {"date": "2026-08-13", "replied": 7, "silent": 7, "other": 0, "activity": 14, "faq_sessions": 4, "messages_processed": 14, "form_ok": 2, "logo_ok": 0, "has_log": true}, {"date": "2026-08-14", "replied": 0, "silent": 1, "other": 0, "activity": 1, "faq_sessions": 0, "messages_processed": 1, "form_ok": 1, "logo_ok": 1, "has_log": true}, {"date": "2026-08-15", "replied": 4, "silent": 4, "other": 0, "activity": 8, "faq_sessions": 2, "messages_processed": 8, "form_ok": 2, "logo_ok": 0, "has_log": true}]}
+      };
+      snapshotData = MOCK;
+      apiBase = ".";
+      render(MOCK);
+      // day API mock
+      window.__dayMock = true;
+    }
+    const _loadDay = loadDay;
+    loadDay = async function(day){
+      if (!window.__dayMock) return _loadDay(day);
+      applyDayDetail({
+        date: day, retain_days: 60,
+        metrics: { faq_reply_sessions: 3, messages_processed: 8, form_dispatch_success: 1, logo_fill_success: 1, welcome_sequences_started: 1, absorb_learn_success: 0 },
+        qa: { counts: { replied: 2, silent: 3, other: 0, lines: 5 },
+          silence_reasons: { "below min relevance": 2, "llm needs human": 1 },
+          answered: [{ts: day+"T12:00:00+08:00", chat_title:"Demo", text:"当日问题示例", reply_text:"当日回答示例", reason:"faq"}],
+          silent: [{ts: day+"T11:00:00+08:00", chat_title:"Demo", text:"当日沉默示例", reason:"below min relevance", score:0.28}] }
+      });
     }
 
-    document.getElementById("btn-day").addEventListener("click", () => {
+document.getElementById("btn-day").addEventListener("click", () => {
       const day = document.getElementById("day-picker").value;
       if (day) loadDay(day);
     });

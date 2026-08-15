@@ -109,6 +109,27 @@ def register_dashboard_routes(
         data = await _ensure_snapshot(app["dashboard_config"], force=force)
         return web.json_response(data)
 
+    async def api_day(request: web.Request) -> web.Response:
+        denied = await require_auth(request)
+        if denied:
+            return denied
+        day = (request.rel_url.query.get("date") or "").strip()
+        if not day:
+            return web.json_response({"ok": False, "error": "date required"}, status=400)
+        from bot.dashboard_snapshot import build_day_detail
+
+        loop = asyncio.get_running_loop()
+        try:
+            detail = await loop.run_in_executor(
+                None, build_day_detail, app["dashboard_config"], day
+            )
+        except ValueError as exc:
+            return web.json_response({"ok": False, "error": str(exc)}, status=400)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("dashboard day detail failed")
+            return web.json_response({"ok": False, "error": str(exc)}, status=500)
+        return web.json_response(detail)
+
     async def api_settings_get(request: web.Request) -> web.Response:
         denied = await require_auth(request)
         if denied:
@@ -240,6 +261,7 @@ def register_dashboard_routes(
     app.router.add_get(prefix + "/", page_index)
     app.router.add_get(prefix + "/settings", page_settings)
     app.router.add_get(prefix + "/api/snapshot", api_snapshot)
+    app.router.add_get(prefix + "/api/day", api_day)
     app.router.add_get(prefix + "/api/settings", api_settings_get)
     app.router.add_put(prefix + "/api/settings", api_settings_put)
     app.router.add_get(prefix + "/api/learned", api_learned_get)

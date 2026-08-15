@@ -101,6 +101,84 @@ def _scan_message_logs(
     }
 
 
+def _scan_one_day(
+    config: Any,
+    day: str,
+    *,
+    list_limit: int,
+) -> dict[str, Any]:
+    """Stream a single day JSONL file into answered/silent lists + counts."""
+    log_dir = _message_log_dir(config)
+    path = log_dir / f"messages-{day}.jsonl"
+    answered_all: list[dict[str, Any]] = []
+    silent_all: list[dict[str, Any]] = []
+    reasons: Counter[str] = Counter()
+    lines = replied = silent_n = other = 0
+    if not path.is_file():
+        return {
+            "date": day,
+            "exists": False,
+            "answered": [],
+            "silent": [],
+            "silence_reasons": {},
+            "counts": {"replied": 0, "silent": 0, "other": 0, "lines": 0},
+            "list_limit": list_limit,
+        }
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                lines += 1
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                outcome = str(row.get("outcome") or "")
+                reason = str(row.get("reason") or "") or "(empty)"
+                item = {
+                    "ts": row.get("ts") or "",
+                    "chat_title": (row.get("chat_title") or "")[:120],
+                    "text": (row.get("text") or "")[:500],
+                    "reply_text": (row.get("reply_text") or "")[:800],
+                    "reason": reason[:200],
+                    "score": row.get("score"),
+                    "kind": row.get("kind") or "",
+                }
+                if outcome == "replied":
+                    replied += 1
+                    answered_all.append(item)
+                elif outcome == "silent":
+                    silent_n += 1
+                    silent_all.append(item)
+                    reasons[reason] += 1
+                else:
+                    other += 1
+    except OSError:
+        logger.exception("dashboard: failed reading %s", path)
+
+    limit = max(int(list_limit), 1)
+    answered = list(reversed(answered_all))[:limit]
+    silent = list(reversed(silent_all))[:limit]
+    return {
+        "date": day,
+        "exists": True,
+        "answered": answered,
+        "silent": silent,
+        "silence_reasons": dict(reasons.most_common(40)),
+        "counts": {
+            "replied": replied,
+            "silent": silent_n,
+            "other": other,
+            "lines": lines,
+        },
+        "list_limit": list_limit,
+    }
+
+
 def _counter_series(config: Any) -> dict[str, Any]:
     from bot.metrics import COUNTER_KEYS, get_counter
 
@@ -112,6 +190,119 @@ def _counter_series(config: Any) -> dict[str, Any]:
             "by_day": dict(c.get("by_day") or {}),
         }
     return out
+
+
+def build_calendar_activity(config: Any, *, days: int = 60) -> dict[str, Any]:
+    """Count-only scan of last N day logs for calendar heatmap (cheap)."""
+    days_n = max(min(int(days), 90), 1)
+    log_dir = _message_log_dir(config)
+    series = _counter_series(config)
+    heat: list[list[Any]] = []  # [date, activity]
+    per_day: list[dict[str, Any]] = []
+    for day in _day_list(days_n):
+        path = log_dir / f"messages-{day}.jsonl"
+        replied = silent = other = 0
+        if path.is_file():
+            try:
+                with path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            row = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(row, dict):
+                            continue
+                        outcome = str(row.get("outcome") or "")
+                        if outcome == "replied":
+                            replied += 1
+                        elif outcome == "silent":
+                            silent += 1
+                        else:
+                            other += 1
+            except OSError:
+                logger.exception("dashboard calendar: failed reading %s", path)
+        faq = int((series.get("faq_reply_sessions") or {}).get("by_day", {}).get(day) or 0)
+        processed = int((series.get("messages_processed") or {}).get("by_day", {}).get(day) or 0)
+        form_ok = int((series.get("form_dispatch_success") or {}).get("by_day", {}).get(day) or 0)
+        logo_ok = int((series.get("logo_fill_success") or {}).get("by_day", {}).get(day) or 0)
+        # Heat prefers message outcomes; fall back to metrics if no log file
+        activity = replied + silent
+        if activity == 0:
+            activity = processed or faq
+        heat.append([day, activity])
+        per_day.append(
+            {
+                "date": day,
+                "replied": replied,
+                "silent": silent,
+                "other": other,
+                "activity": activity,
+                "faq_sessions": faq,
+                "messages_processed": processed,
+                "form_ok": form_ok,
+                "logo_ok": logo_ok,
+                "has_log": path.is_file(),
+            }
+        )
+    start = per_day[0]["date"] if per_day else _day_list(1)[0]
+    end = per_day[-1]["date"] if per_day else start
+    return {
+        "range_days": days_n,
+        "start": start,
+        "end": end,
+        "heat": heat,
+        "days": per_day,
+    }
+
+
+def build_day_detail(config: Any, day: str, *, list_limit: int | None = None) -> dict[str, Any]:
+    """Full revisit payload for one Asia/Shanghai calendar day."""
+    day = str(day or "").strip()
+    try:
+        datetime.strptime(day, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError("date must be YYYY-MM-DD") from exc
+
+    retain = int(getattr(config, "metrics_message_log_retain_days", 60) or 60)
+    allowed = set(_day_list(max(retain, 1)))
+    if day not in allowed:
+        raise ValueError(f"date out of retain window ({retain} days)")
+
+    limit = int(
+        list_limit
+        if list_limit is not None
+        else getattr(config, "dashboard_list_limit", 150) or 150
+    )
+    qa = _scan_one_day(config, day, list_limit=limit)
+    series = _counter_series(config)
+    metrics_day = {
+        key: int((series.get(key) or {}).get("by_day", {}).get(day) or 0)
+        for key in (
+            "faq_reply_sessions",
+            "faq_bubbles_sent",
+            "messages_processed",
+            "social_chitchat_replies",
+            "welcome_sequences_started",
+            "welcome_messages_sent",
+            "form_dispatch_success",
+            "logo_fill_success",
+            "mark_live_triggers",
+            "absorb_learn_success",
+            "webhook_live_received",
+            "webhook_live_processed",
+        )
+    }
+    return {
+        "generated_at": _now_iso(),
+        "timezone": "Asia/Shanghai",
+        "date": day,
+        "retain_days": retain,
+        "metrics": metrics_day,
+        "qa": qa,
+    }
 
 
 def build_dashboard_snapshot(
@@ -131,6 +322,11 @@ def build_dashboard_snapshot(
         if list_limit is not None
         else getattr(config, "dashboard_list_limit", 150) or 150
     )
+    calendar_days = int(
+        getattr(config, "metrics_message_log_retain_days", 60)
+        or getattr(config, "dashboard_calendar_days", 60)
+        or 60
+    )
 
     from bot.metrics import build_daily_report, snapshot
 
@@ -144,16 +340,22 @@ def build_dashboard_snapshot(
 
     qa = _scan_message_logs(config, lookback_days=lookback, list_limit=limit)
     series = _counter_series(config)
+    calendar = build_calendar_activity(config, days=calendar_days)
 
     return {
         "generated_at": _now_iso(),
         "timezone": "Asia/Shanghai",
-        "window": {"qa_days": lookback, "list_limit": limit},
+        "window": {
+            "qa_days": lookback,
+            "list_limit": limit,
+            "calendar_days": calendar_days,
+        },
         "metrics_updated_at": snap.get("updated_at") or "",
         "snapshot": snap,
         "daily": daily,
         "counters_series": series,
         "qa": qa,
+        "calendar": calendar,
     }
 
 
