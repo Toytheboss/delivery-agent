@@ -325,10 +325,10 @@
         <div class="daily-card">
           <h3>三、Bot 消息</h3>
           <ul class="daily-stats">
-            <li>处理消息 <strong>${esc(daily.messages_processed_24h ?? bot.processed ?? 0)}</strong></li>
-            <li>回复消息 <strong>${esc(daily.messages_replied_24h ?? bot.replied ?? 0)}</strong></li>
+            <li>发出消息 <strong>${esc(daily.messages_replied_24h ?? bot.replied ?? bot.sent ?? 0)}</strong>（交付号全部出站）</li>
+            <li>处理入站 <strong>${esc(daily.messages_processed_24h ?? bot.processed ?? 0)}</strong></li>
           </ul>
-          <p class="day-hint">含 FAQ 气泡 ${esc(bot.faq_bubbles ?? 0)}、页脚 ${esc(bot.faq_footer ?? 0)}、社交寒暄 ${esc(bot.social ?? 0)}、欢迎 ${esc(bot.welcome ?? 0)}、表单 ${esc(bot.form ?? 0)}</p>
+          <p class="day-hint">其中自动：FAQ 气泡 ${esc(bot.faq_bubbles ?? 0)}、页脚 ${esc(bot.faq_footer ?? 0)}、社交寒暄 ${esc(bot.social ?? 0)}、欢迎 ${esc(bot.welcome ?? 0)}、表单 ${esc(bot.form ?? 0)}${bot.auto_replied != null ? `（合计 ${esc(bot.auto_replied)}）` : ""}</p>
           <div class="chart mix" id="chartDailyMix"></div>
         </div>
       `;
@@ -459,6 +459,7 @@
       const labels = days.map(d => d.slice(5));
       const faq = seriesVals(series, "faq_reply_sessions", days);
       const processed = seriesVals(series, "messages_processed", days);
+      const sent = seriesVals(series, "messages_sent", days);
       const form = seriesVals(series, "form_dispatch_success", days);
       const logo = seriesVals(series, "logo_fill_success", days);
       const welcome = seriesVals(series, "welcome_sequences_started", days);
@@ -476,7 +477,8 @@
         xAxis: { type: "category", data: labels, boundaryGap: false, axisLabel: { color: GREEN.muted } },
         yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
         series: [
-          { name: "处理消息", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: processed },
+          { name: "发出消息", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: sent },
+          { name: "处理入站", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: processed },
           { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: faq },
           { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: folder },
           { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: logo },
@@ -602,8 +604,8 @@
         ["24h 新群", daily24.folder_new_groups_today ?? "—"],
         ["24h Logo", daily24.logo_fill_today ?? "—"],
         ["24h 新钱包", daily24.wallet?.today_new_projects ?? "—"],
-        ["24h 处理消息", daily24.messages_processed_24h ?? "—"],
-        ["24h 回复消息", daily24.messages_replied_24h ?? "—"],
+        ["24h 发出消息", daily24.messages_replied_24h ?? "—"],
+        ["24h 处理入站", daily24.messages_processed_24h ?? "—"],
         ["FAQ sessions 累计", cTriple(c, "faq_reply_sessions").total],
         ["表单成功 累计", cTriple(c, "form_dispatch_success").total],
       ]);

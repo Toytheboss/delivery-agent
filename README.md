@@ -120,10 +120,10 @@ End-to-end path when a project goes **Mainnet Live**:
 
 | Feature | What it does |
 |---------|----------------|
-| **Persistent counters** | FAQ sessions/bubbles/footer, social, welcome, folder add, form/logo outcomes, mark-live, webhooks, wallet digest, messages processed, etc. |
+| **Persistent counters** | FAQ sessions/bubbles/footer, social, welcome, folder add, form/logo outcomes, mark-live, webhooks, wallet digest, inbound processed, **all outbound sends**, etc. |
 | **Stats (detail)** | Full Chinese ops breakdown. |
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
-| **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix (processed / replied / FAQ / social / welcome / form). |
+| **Daily report** | Rolling window (24h / 7d / 30d on dashboard): new mainnet live, deploy transitions, folders, wallets, logos, bot messages (**all outbound** from the delivery account + inbound processed + auto mix). |
 | **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default **60**). |
 | **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops daily report for 24h/7d/30d, 30-day calendar with range summaries, 14-day charts, day-level logo/wallet/Q&A). Token via `DASHBOARD_TOKEN`. |
 | **Settings panel** | Same host `/dashboard/settings`: allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |

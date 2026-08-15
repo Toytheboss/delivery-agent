@@ -617,3 +617,24 @@ class MessageHandler:
         @self.client.on(events.NewMessage())
         async def _on_message(event: events.NewMessage.Event) -> None:
             asyncio.create_task(self.handle(event))
+
+        @self.client.on(events.NewMessage(outgoing=True))
+        async def _on_outgoing(event: events.NewMessage.Event) -> None:
+            asyncio.create_task(self._count_outgoing(event))
+
+    async def _count_outgoing(self, event: events.NewMessage.Event) -> None:
+        """Count every outbound message from the delivery account (auto + manual)."""
+        try:
+            message = event.message
+            if not message:
+                return
+            # Skip pure service actions (join/title change/etc.)
+            if getattr(message, "action", None) is not None:
+                return
+            text = (message.raw_text or "").strip()
+            has_media = bool(getattr(message, "media", None))
+            if not text and not has_media:
+                return
+            inc("messages_sent")
+        except Exception:  # noqa: BLE001
+            logger.exception("Failed counting outgoing message")

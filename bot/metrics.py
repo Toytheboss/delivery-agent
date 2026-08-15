@@ -42,6 +42,7 @@ COUNTER_KEYS = (
     "faq_bubbles_sent",
     "faq_footer_sent",
     "messages_processed",
+    "messages_sent",
     "welcome_sequences_started",
     "welcome_messages_sent",
     "folder_auto_add_success",
@@ -437,27 +438,37 @@ def snapshot(config: Any | None = None, *, include_lark: bool = True) -> dict[st
         if include_lark:
             wallet = _wallet_table_counts(config)
 
-    # Approximate outbound TG messages attributed to agent actions (since metrics on).
+    # Outbound: prefer full account send counter; fall back to auto-action sum.
     c = counters
+    sent = c.get("messages_sent") or {}
+    auto_total = (
+        int((c.get("faq_bubbles_sent") or {}).get("total") or 0)
+        + int((c.get("faq_footer_sent") or {}).get("total") or 0)
+        + int((c.get("welcome_messages_sent") or {}).get("total") or 0)
+        + int((c.get("form_dispatch_success") or {}).get("total") or 0)
+        + int((c.get("social_chitchat_replies") or {}).get("total") or 0)
+    )
+    auto_week = (
+        int((c.get("faq_bubbles_sent") or {}).get("week") or 0)
+        + int((c.get("faq_footer_sent") or {}).get("week") or 0)
+        + int((c.get("welcome_messages_sent") or {}).get("week") or 0)
+        + int((c.get("form_dispatch_success") or {}).get("week") or 0)
+        + int((c.get("social_chitchat_replies") or {}).get("week") or 0)
+    )
+    auto_today = (
+        int((c.get("faq_bubbles_sent") or {}).get("today") or 0)
+        + int((c.get("faq_footer_sent") or {}).get("today") or 0)
+        + int((c.get("welcome_messages_sent") or {}).get("today") or 0)
+        + int((c.get("form_dispatch_success") or {}).get("today") or 0)
+        + int((c.get("social_chitchat_replies") or {}).get("today") or 0)
+    )
     outbound = {
-        "total": (
-            int((c.get("faq_bubbles_sent") or {}).get("total") or 0)
-            + int((c.get("faq_footer_sent") or {}).get("total") or 0)
-            + int((c.get("welcome_messages_sent") or {}).get("total") or 0)
-            + int((c.get("form_dispatch_success") or {}).get("total") or 0)
-        ),
-        "week": (
-            int((c.get("faq_bubbles_sent") or {}).get("week") or 0)
-            + int((c.get("faq_footer_sent") or {}).get("week") or 0)
-            + int((c.get("welcome_messages_sent") or {}).get("week") or 0)
-            + int((c.get("form_dispatch_success") or {}).get("week") or 0)
-        ),
-        "today": (
-            int((c.get("faq_bubbles_sent") or {}).get("today") or 0)
-            + int((c.get("faq_footer_sent") or {}).get("today") or 0)
-            + int((c.get("welcome_messages_sent") or {}).get("today") or 0)
-            + int((c.get("form_dispatch_success") or {}).get("today") or 0)
-        ),
+        "total": int(sent.get("total") or 0) or auto_total,
+        "week": int(sent.get("week") or 0) or auto_week,
+        "today": int(sent.get("today") or 0) or auto_today,
+        "auto_total": auto_total,
+        "auto_week": auto_week,
+        "auto_today": auto_today,
     }
 
     return {
@@ -795,6 +806,9 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         processed = _counter_triple(
             data["counters"], "messages_processed", week_days, day_days=window_days
         )
+        sent = _counter_triple(
+            data["counters"], "messages_sent", week_days, day_days=window_days
+        )
         faq_bubbles = _counter_triple(
             data["counters"], "faq_bubbles_sent", week_days, day_days=window_days
         )
@@ -812,7 +826,7 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         )
         updated_at = data.get("updated_at") or ""
 
-    replies_window = (
+    auto_replies = (
         int(faq_bubbles.get("today") or 0)
         + int(faq_footer.get("today") or 0)
         + int(social.get("today") or 0)
@@ -820,6 +834,9 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         + int(form_ok.get("today") or 0)
     )
     processed_window = int(processed.get("today") or 0)
+    sent_window = int(sent.get("today") or 0)
+    # Until messages_sent has history, fall back to auto sum so reports aren't empty.
+    replied_window = sent_window if sent_window > 0 else auto_replies
 
     progress = _progress_table_daily_counts(config, since=since)
     wallet = _wallet_daily_counts(config, window_days=window_days)
@@ -866,10 +883,13 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "logo_fill_today": int(logo_ok.get("today") or 0),
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
         "messages_processed_24h": processed_window,
-        "messages_replied_24h": replies_window,
+        "messages_replied_24h": replied_window,
+        "messages_sent_24h": sent_window,
         "bot_messages": {
             "processed": processed_window,
-            "replied": replies_window,
+            "replied": replied_window,
+            "sent": sent_window,
+            "auto_replied": auto_replies,
             "faq_bubbles": int(faq_bubbles.get("today") or 0),
             "faq_footer": int(faq_footer.get("today") or 0),
             "social": int(social.get("today") or 0),
@@ -962,17 +982,21 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     lines.append(f"3. 过去24小时收集 Logo：{daily.get('logo_fill_today', 0)} 个")
 
     bm = daily.get("bot_messages") or {}
+    window = daily.get("window_label") or "过去24小时"
     lines.extend(
         [
             "",
-            "三、过去24小时 Bot 消息",
-            f"1. 处理消息：{daily.get('messages_processed_24h', bm.get('processed', 0))} 条",
-            f"2. 回复消息：{daily.get('messages_replied_24h', bm.get('replied', 0))} 条",
+            f"三、{window} Bot 消息",
             (
-                "   （含 FAQ 气泡 "
+                f"1. 发出消息：{daily.get('messages_replied_24h', bm.get('replied', 0))} 条"
+                "（交付号全部出站，含手动发送）"
+            ),
+            f"2. 处理入站：{daily.get('messages_processed_24h', bm.get('processed', 0))} 条",
+            (
+                "   （其中自动发出：FAQ 气泡 "
                 f"{bm.get('faq_bubbles', 0)}、页脚 {bm.get('faq_footer', 0)}、"
                 f"社交寒暄 {bm.get('social', 0)}、欢迎 {bm.get('welcome', 0)}、"
-                f"表单 {bm.get('form', 0)}）"
+                f"表单 {bm.get('form', 0)}；自动合计 {bm.get('auto_replied', 0)}）"
             ),
         ]
     )
@@ -980,13 +1004,13 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         [
             "",
             "口径说明",
-            "· 本报告统计「过去24小时」滚动窗口内的新增，不含全量存量名单。",
-            "· 主网上线 = 状态已是「主网上线」，且「主网上线时间」或「更新日期」落在过去24小时（或监测到该窗口内新进该状态）。",
-            "· 新进测试网/主网部署 = 监测到状态在过去24小时进入对应项。",
-            "· 新进群 / Logo = 埋点按日桶汇总后，取覆盖过去24小时的日历日合计（近似）。",
-            "· 新收集钱包 = digest first_seen 落在覆盖过去24小时的日历日。",
-            "· 处理消息 = 进入 FAQ/社交处理链路的入站消息数（含最终沉默未回）。",
-            "· 回复消息 = Bot 实际发出的消息条数（FAQ 气泡+页脚+社交+欢迎+表单）。",
+            f"· 本报告统计「{window}」滚动窗口内的新增，不含全量存量名单。",
+            "· 主网上线 = 状态已是「主网上线」，且「主网上线时间」或「更新日期」落在窗口内（或监测到该窗口内新进该状态）。",
+            "· 新进测试网/主网部署 = 监测到状态在窗口内进入对应项。",
+            "· 新进群 / Logo = 埋点按日桶汇总后，取覆盖窗口的日历日合计（近似）。",
+            "· 新收集钱包 = digest first_seen 落在覆盖窗口的日历日。",
+            "· 发出消息 = 交付号账号全部出站消息（含 FAQ/欢迎/表单/手动打字等）。",
+            "· 处理入站 = 进入 FAQ/社交处理链路的入站消息数（含最终沉默未回）。",
         ]
     )
     return "\n".join(lines)
