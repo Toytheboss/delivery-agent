@@ -22,6 +22,9 @@ UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
+# Reject emoji-favicon stubs / empty shots; real logos and header strips are larger.
+MIN_LOGO_BYTES = 512
+MIN_SCREENSHOT_BYTES = 1000
 
 
 def link_str(v: Any) -> str:
@@ -108,17 +111,29 @@ def http_get(url: str, timeout: float = 12.0) -> requests.Response | None:
     return None
 
 
+def _is_svg_bytes(data: bytes) -> bool:
+    stripped = data.lstrip()
+    return stripped.startswith(b"<svg") or (
+        stripped.startswith(b"<?xml") and b"<svg" in data[:500]
+    )
+
+
+def _is_usable_logo(data: bytes, *, min_bytes: int = MIN_LOGO_BYTES) -> bool:
+    """True if bytes look like a real logo asset (not a tiny emoji favicon)."""
+    if not data or len(data) < min_bytes:
+        return False
+    return True
+
+
 def _is_image_bytes(data: bytes, ctype: str) -> bool:
     ctype = (ctype or "").lower()
     if "text/html" in ctype:
         return False
-    stripped = data.lstrip()
-    is_svg = stripped.startswith(b"<svg") or (
-        stripped.startswith(b"<?xml") and b"<svg" in data[:500]
-    )
+    is_svg = _is_svg_bytes(data)
     if is_svg:
-        return len(data) >= 32
-    if len(data) < 64:
+        # Tiny data-URI emoji SVGs (~38B) must not count as success.
+        return _is_usable_logo(data)
+    if not _is_usable_logo(data):
         return False
     return (
         "image" in ctype
@@ -154,19 +169,20 @@ def download_image(url: str) -> tuple[bytes, str] | None:
     if url.startswith("data:image"):
         try:
             header, b64 = url.split(",", 1)
+            # SPA emoji favicons are almost always tiny SVG data URIs — skip them.
+            if "svg" in header.lower():
+                return None
             raw = base64.b64decode(b64)
+            if not _is_usable_logo(raw):
+                return None
             ext = "png"
-            if "svg" in header:
-                ext = "svg"
-            elif "jpeg" in header or "jpg" in header:
+            if "jpeg" in header or "jpg" in header:
                 ext = "jpg"
             elif "webp" in header:
                 ext = "webp"
-            if len(raw) >= 32:
-                return raw, f"logo.{ext}"
+            return raw, f"logo.{ext}"
         except Exception:
             return None
-        return None
     if url.startswith("data:"):
         return None
     r = http_get(url, timeout=10.0)
@@ -266,9 +282,11 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
 
 
 def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
+    """Second-pass logo fetch: render SPA with Playwright, then screenshot brand area."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
+        logger.warning("playwright not installed; cannot fallback logo fetch for %s", site)
         return None
 
     js = """
@@ -296,7 +314,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   const img = pickImg(header) || pickImg(document.body);
   if (img) {
     const src = img.currentSrc || img.src || '';
-    if (src && !src.startsWith('data:image/svg')) return { type: 'url', src };
+    if (src && !src.startsWith('data:')) return { type: 'url', src };
     return { type: 'el' };
   }
   const svg = [...document.querySelectorAll('header svg, nav svg, a svg')]
@@ -305,77 +323,136 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
       return r.width >= 12 && r.height >= 12 && r.top < 160 && r.left < 400;
     });
   if (svg) return { type: 'el' };
-  const icon = document.querySelector('link[rel*="icon"]');
-  if (icon && icon.href) return { type: 'url', src: icon.href };
-  return null;
+  // Prefer brand-strip screenshot over tiny favicon links.
+  return { type: 'header' };
 }
 """
+
+    def _accept_shot(png: bytes | None) -> tuple[bytes, str] | None:
+        if png and _is_usable_logo(png, min_bytes=MIN_SCREENSHOT_BYTES):
+            return png, "logo.png"
+        return None
+
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(user_agent=UA, ignore_https_errors=True)
+            context = browser.new_context(
+                user_agent=UA,
+                ignore_https_errors=True,
+                viewport={"width": 1280, "height": 800},
+            )
             page = context.new_page()
-            page.set_default_timeout(20000)
-            page.goto(site, wait_until="domcontentloaded")
+            page.set_default_timeout(30000)
+            try:
+                page.goto(site, wait_until="domcontentloaded")
+            except Exception:
+                page.goto(site, wait_until="load")
             try:
                 page.wait_for_load_state("networkidle", timeout=8000)
             except Exception:
                 pass
-            page.wait_for_timeout(800)
+            page.wait_for_timeout(2000)
             info = page.evaluate(js)
             result: tuple[bytes, str] | None = None
             if info and info.get("type") == "url" and info.get("src"):
                 result = download_image(info["src"])
-            if result is None and info:
-                loc = page.locator(
-                    "header img, nav img, a img, header svg, nav svg, img"
-                ).first
-                try:
-                    if loc.is_visible(timeout=2000):
-                        png = loc.screenshot(type="png")
-                        if png and len(png) >= 64:
-                            result = (png, "logo.png")
-                except Exception:
-                    png = page.screenshot(
-                        type="png",
-                        clip={"x": 0, "y": 0, "width": 220, "height": 80},
-                    )
-                    if png and len(png) >= 64:
-                        result = (png, "logo.png")
+
+            if result is None:
+                for sel in (
+                    "header img",
+                    "nav img",
+                    "a img",
+                    "header svg",
+                    "nav svg",
+                    "img",
+                ):
+                    loc = page.locator(sel).first
+                    try:
+                        if loc.count() and loc.is_visible(timeout=800):
+                            result = _accept_shot(loc.screenshot(type="png"))
+                            if result:
+                                break
+                    except Exception:
+                        continue
+
+            if result is None:
+                for clip in (
+                    {"x": 0, "y": 0, "width": 400, "height": 120},
+                    {"x": 0, "y": 0, "width": 220, "height": 80},
+                ):
+                    try:
+                        result = _accept_shot(page.screenshot(type="png", clip=clip))
+                    except Exception:
+                        result = None
+                    if result:
+                        break
+
             browser.close()
+            if result:
+                logger.info(
+                    "logo browser fallback ok for %s (%d bytes)",
+                    site,
+                    len(result[0]),
+                )
+            else:
+                logger.warning("logo browser fallback found nothing usable for %s", site)
             return result
     except Exception:
         logger.debug("browser logo fetch failed for %s", site, exc_info=True)
         return None
 
 
-def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
+def fetch_logo_via_http(site: str) -> tuple[bytes, str] | None:
+    """First-pass logo fetch: static HTML + well-known icon paths (no browser)."""
     page = http_get(site, timeout=15.0)
     if page is None or not page.text:
         p = urlparse(site if "://" in site else f"https://{site}")
         origin = f"{p.scheme or 'https'}://{p.netloc}"
         page = http_get(origin, timeout=15.0)
-    if page is not None:
-        final_url = page.url or site
-        html = page.text or ""
-        for img_url in logo_candidates_from_html(html, final_url):
-            got = download_image(img_url)
-            if got:
-                return got
-        p = urlparse(final_url)
-        origin = f"{p.scheme}://{p.netloc}"
-        for path in (
-            "/apple-touch-icon.png",
-            "/favicon.ico",
-            "/favicon.png",
-            "/logo.svg",
-            "/logo.png",
-            "/vite.svg",
-        ):
-            got = download_image(origin + path)
-            if got:
-                return got
-    return fetch_logo_via_browser(site)
+    if page is None:
+        return None
+    final_url = page.url or site
+    html = page.text or ""
+    for img_url in logo_candidates_from_html(html, final_url):
+        got = download_image(img_url)
+        if got:
+            return got
+    p = urlparse(final_url)
+    origin = f"{p.scheme}://{p.netloc}"
+    for path in (
+        "/apple-touch-icon.png",
+        "/favicon.ico",
+        "/favicon.png",
+        "/logo.svg",
+        "/logo.png",
+        "/vite.svg",
+    ):
+        got = download_image(origin + path)
+        if got:
+            return got
+    return None
+
+
+def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
+    """HTTP scrape first; on failure, Playwright second pass (header/element shot)."""
+    logo = fetch_logo_via_http(site)
+    if logo:
+        return logo
+    logger.info("logo HTTP scrape failed for %s — trying Playwright", site)
+    # Prefer site homepage for SPA apps whose live URL is /app etc.
+    candidates = [site]
+    try:
+        p = urlparse(site if "://" in site else f"https://{site}")
+        origin = f"{p.scheme or 'https'}://{p.netloc}/"
+        if origin.rstrip("/") != site.rstrip("/"):
+            candidates.append(origin)
+    except Exception:
+        pass
+    for url in candidates:
+        logo = fetch_logo_via_browser(url)
+        if logo:
+            return logo
+    return None
 
 
 def upload_bitable_image(

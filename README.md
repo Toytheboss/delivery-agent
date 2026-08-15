@@ -100,7 +100,7 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
 | **Manual send form** | Ops command in current group as fallback. |
 | **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
-| **Logo fill** | Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). |
+| **Logo fill** | Fetches site logo from live/project URL into Lark attachment field: HTTP scrape first, then Playwright header/element screenshot if that fails (still one record attempt; no poller retry on hard fail). |
 | **Form / logo poll** | Optional expensive poller (off by default; prefer webhook + watch + mark-live). |
 | **Form chase (24h)** | After form sent: if wallet table still has &lt; N of required fields after 24h, resend reminder listing **missing fields** (capped reminders). |
 | **Wallet notify (TG)** | When required wallet fields are complete, notify finance/ops/tech chats (optional). |

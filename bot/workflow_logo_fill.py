@@ -1,4 +1,7 @@
-"""Workflow: status → live → fetch site logo once into 项目logo (no retry on fail)."""
+"""Workflow: status → live → fetch site logo once into 项目logo (no poller retry on fail).
+
+Per record: HTTP scrape first; on failure Playwright second pass (see project_logo).
+"""
 
 from __future__ import annotations
 
