@@ -125,7 +125,7 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
 | **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix (processed / replied / FAQ / social / welcome / form). |
 | **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default **60**). |
-| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (24h daily report, 30-day calendar with 7/30-day range summaries, 14-day charts, day-level logo/wallet/Q&A). Token via `DASHBOARD_TOKEN`. |
+| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops daily report for 24h/7d/30d, 30-day calendar with range summaries, 14-day charts, day-level logo/wallet/Q&A). Token via `DASHBOARD_TOKEN`. |
 | **Settings panel** | Same host `/dashboard/settings`: allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |
 
 **Report command aliases:**

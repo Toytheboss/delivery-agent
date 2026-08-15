@@ -656,15 +656,16 @@ def build_dashboard_snapshot(
     calendar_days = int(getattr(config, "dashboard_calendar_days", 30) or 30)
     calendar_days = max(min(calendar_days, 90), 7)
 
-    from bot.metrics import build_daily_report, snapshot
+    from bot.metrics import build_period_reports, snapshot
 
     snap = snapshot(config, include_lark=include_lark)
-    daily: dict[str, Any] = {}
+    period_reports: dict[str, Any] = {}
     try:
-        daily = build_daily_report(config)
+        period_reports = build_period_reports(config)
     except Exception:  # noqa: BLE001
-        logger.exception("dashboard: build_daily_report failed")
-        daily = {"error": "build_daily_report_failed"}
+        logger.exception("dashboard: build_period_reports failed")
+        period_reports = {"24h": {"error": "build_period_reports_failed"}}
+    daily = period_reports.get("24h") or {"error": "missing_24h"}
 
     qa = _scan_message_logs(config, lookback_days=lookback, list_limit=limit)
     series = _counter_series(config)
@@ -685,6 +686,7 @@ def build_dashboard_snapshot(
         "metrics_updated_at": snap.get("updated_at") or "",
         "snapshot": snap,
         "daily": daily,
+        "period_reports": period_reports,
         "counters_series": series,
         "qa": qa,
         "calendar": calendar,

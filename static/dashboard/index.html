@@ -32,7 +32,14 @@
       <div class="kpis" id="ops-kpis"></div>
 
       <div class="panel daily-panel" id="daily-panel">
-        <h2>过去 24 小时日报</h2>
+        <div class="qa-head">
+          <h2>运营日报</h2>
+          <div class="qa-tabs" id="daily-tabs" role="tablist">
+            <button type="button" class="active" data-daily="24h" role="tab" aria-selected="true">过去24小时</button>
+            <button type="button" data-daily="7d" role="tab" aria-selected="false">过去7天</button>
+            <button type="button" data-daily="30d" role="tab" aria-selected="false">过去30天</button>
+          </div>
+        </div>
         <p class="day-hint" id="daily-window">加载中…</p>
         <div class="daily-grid" id="daily-report"></div>
       </div>
@@ -172,6 +179,7 @@
     let snapshotData = null;
     let selectedDay = null;
     let selectedRange = null;
+    let selectedDailyPeriod = "24h";
     let apiBase = "/dashboard";
 
     function esc(s) {
@@ -222,6 +230,50 @@
       return `<ol class="daily-names">${list.map(n => `<li>${esc(n)}</li>`).join("")}</ol>`;
     }
 
+    function getPeriodReport(key) {
+      const pr = (snapshotData && snapshotData.period_reports) || {};
+      if (pr[key]) return pr[key];
+      if (key === "24h") return (snapshotData && snapshotData.daily) || {};
+      return {};
+    }
+
+    function setDailyPeriod(key) {
+      selectedDailyPeriod = key;
+      document.querySelectorAll("#daily-tabs button").forEach(btn => {
+        const on = btn.dataset.daily === key;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      renderDailyReport(getPeriodReport(key));
+      // refresh mix chart only
+      const bot = getPeriodReport(key)?.bot_messages || {};
+      ensureChart("chartDailyMix")?.setOption({
+        color: [GREEN.primary],
+        textStyle: baseTextStyle(),
+        tooltip: { trigger: "axis" },
+        grid: { left: 40, right: 16, top: 24, bottom: 32 },
+        xAxis: {
+          type: "category",
+          data: ["FAQ气泡", "页脚", "寒暄", "欢迎", "表单"],
+          axisLabel: { color: GREEN.muted },
+        },
+        yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
+        series: [{
+          type: "bar",
+          barWidth: 28,
+          data: [bot.faq_bubbles || 0, bot.faq_footer || 0, bot.social || 0, bot.welcome || 0, bot.form || 0],
+          itemStyle: {
+            borderRadius: [8, 8, 0, 0],
+            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+              { offset: 0, color: GREEN.mint },
+              { offset: 1, color: GREEN.primary },
+            ]),
+          },
+          label: { show: true, position: "top", color: GREEN.muted },
+        }],
+      }, true);
+    }
+
     function renderDailyReport(daily) {
       const el = document.getElementById("daily-report");
       const win = document.getElementById("daily-window");
@@ -235,6 +287,7 @@
         el.innerHTML = `<p class="daily-empty">${esc(daily?.error || "无数据")}</p>`;
         return;
       }
+      const label = daily.window_label || "当前窗口";
       const p = daily.progress || {};
       const w = daily.wallet || {};
       const dc = daily.deploy_changes || {};
@@ -243,7 +296,7 @@
       const enteredMain = dc.entered_mainnet_deploy || [];
       const liveNames = p.today_mainnet_live_names || [];
       win.textContent =
-        `窗口 ${daily.window_since || "—"} ~ ${daily.window_until || "—"} · 生成日 ${daily.today || "—"}`;
+        `${label} · ${daily.window_since || "—"} ~ ${daily.window_until || "—"} · 生成日 ${daily.today || "—"}`;
 
       el.innerHTML = `
         <div class="daily-card">
@@ -498,8 +551,8 @@
         ],
       }, true);
 
-      // 5) Bar — last 24h message mix (exec)
-      const bot = data.daily?.bot_messages || {};
+      // 5) Bar — selected period message mix
+      const bot = getPeriodReport(selectedDailyPeriod)?.bot_messages || data.daily?.bot_messages || {};
       ensureChart("chartDailyMix")?.setOption({
         color: [GREEN.primary],
         textStyle: baseTextStyle(),
@@ -530,20 +583,26 @@
     }
 
     function render(data) {
+      snapshotData = data;
       const c = (data.snapshot || {}).counters || {};
-      const daily = data.daily || {};
+      const daily24 = (data.period_reports || {}).["24h"] || data.daily || {};
       document.getElementById("meta").textContent =
-        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 14} 天`;
+        `生成于 ${data.generated_at || "—"} · metrics ${data.metrics_updated_at || "—"} · QA 窗口 ${data.window?.qa_days || 14} 天 · 日历 ${data.window?.calendar_days || 30} 天`;
 
-      renderDailyReport(daily);
+      document.querySelectorAll("#daily-tabs button").forEach(btn => {
+        const on = btn.dataset.daily === selectedDailyPeriod;
+        btn.classList.toggle("active", on);
+        btn.setAttribute("aria-selected", on ? "true" : "false");
+      });
+      renderDailyReport(getPeriodReport(selectedDailyPeriod));
 
       renderKpis(document.getElementById("ops-kpis"), [
-        ["24h 主网上线", daily.progress?.today_mainnet_live ?? "—"],
-        ["24h 新群", daily.folder_new_groups_today ?? "—"],
-        ["24h Logo", daily.logo_fill_today ?? "—"],
-        ["24h 新钱包", daily.wallet?.today_new_projects ?? "—"],
-        ["24h 处理消息", daily.messages_processed_24h ?? "—"],
-        ["24h 回复消息", daily.messages_replied_24h ?? "—"],
+        ["24h 主网上线", daily24.progress?.today_mainnet_live ?? "—"],
+        ["24h 新群", daily24.folder_new_groups_today ?? "—"],
+        ["24h Logo", daily24.logo_fill_today ?? "—"],
+        ["24h 新钱包", daily24.wallet?.today_new_projects ?? "—"],
+        ["24h 处理消息", daily24.messages_processed_24h ?? "—"],
+        ["24h 回复消息", daily24.messages_replied_24h ?? "—"],
         ["FAQ sessions 累计", cTriple(c, "faq_reply_sessions").total],
         ["表单成功 累计", cTriple(c, "form_dispatch_success").total],
       ]);
@@ -743,6 +802,12 @@
       const btn = ev.target.closest("button[data-qa-tab]");
       if (!btn) return;
       setQaTab(btn.dataset.qaTab);
+    });
+
+    document.getElementById("daily-tabs").addEventListener("click", (ev) => {
+      const btn = ev.target.closest("button[data-daily]");
+      if (!btn) return;
+      setDailyPeriod(btn.dataset.daily);
     });
 
     document.getElementById("btn-day").addEventListener("click", () => {

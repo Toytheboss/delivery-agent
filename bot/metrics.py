@@ -771,11 +771,19 @@ def _wallet_daily_counts(
     return out
 
 
-def build_daily_report(config: Any) -> dict[str, Any]:
-    """Assemble numbers for the ops daily report (rolling past 24 hours)."""
-    since = _window_start(hours=24)
-    window_days = _dates_covering_hours(24)
+def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
+    """Assemble ops report for a rolling window (default past 24 hours)."""
+    hours = max(int(hours), 1)
+    since = _window_start(hours=hours)
+    window_days = _dates_covering_hours(hours)
     week_days = _week_dates(7)
+    if hours <= 24:
+        window_label = "过去24小时"
+    elif hours % 24 == 0:
+        window_label = f"过去{hours // 24}天"
+    else:
+        window_label = f"过去{hours}小时"
+
     with _lock:
         data = _ensure_loaded()
         folder = _counter_triple(
@@ -804,14 +812,14 @@ def build_daily_report(config: Any) -> dict[str, Any]:
         )
         updated_at = data.get("updated_at") or ""
 
-    replies_24h = (
+    replies_window = (
         int(faq_bubbles.get("today") or 0)
         + int(faq_footer.get("today") or 0)
         + int(social.get("today") or 0)
         + int(welcome_msgs.get("today") or 0)
         + int(form_ok.get("today") or 0)
     )
-    processed_24h = int(processed.get("today") or 0)
+    processed_window = int(processed.get("today") or 0)
 
     progress = _progress_table_daily_counts(config, since=since)
     wallet = _wallet_daily_counts(config, window_days=window_days)
@@ -828,7 +836,7 @@ def build_daily_report(config: Any) -> dict[str, Any]:
     try:
         from bot.workflow_deploy_status_watch import summarize_window
 
-        deploy_changes = summarize_window(config, since=since)
+        deploy_changes = summarize_window(config, since=since, hours=hours)
     except Exception as exc:  # noqa: BLE001
         logger.warning("metrics: deploy status summarize failed: %s", exc)
         deploy_changes["error"] = str(exc)
@@ -845,7 +853,11 @@ def build_daily_report(config: Any) -> dict[str, Any]:
     return {
         "timezone": "Asia/Shanghai",
         "today": _today(),
-        "window_label": "过去24小时",
+        "period_key": (
+            "24h" if hours <= 24 else f"{hours // 24}d" if hours % 24 == 0 else f"{hours}h"
+        ),
+        "window_hours": hours,
+        "window_label": window_label,
         "window_since": since.isoformat(timespec="seconds"),
         "window_until": _now_iso(),
         "window_days": window_days,
@@ -853,11 +865,11 @@ def build_daily_report(config: Any) -> dict[str, Any]:
         "folder_new_groups_today": int(folder.get("today") or 0),
         "logo_fill_today": int(logo_ok.get("today") or 0),
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
-        "messages_processed_24h": processed_24h,
-        "messages_replied_24h": replies_24h,
+        "messages_processed_24h": processed_window,
+        "messages_replied_24h": replies_window,
         "bot_messages": {
-            "processed": processed_24h,
-            "replied": replies_24h,
+            "processed": processed_window,
+            "replied": replies_window,
             "faq_bubbles": int(faq_bubbles.get("today") or 0),
             "faq_footer": int(faq_footer.get("today") or 0),
             "social": int(social.get("today") or 0),
@@ -868,6 +880,18 @@ def build_daily_report(config: Any) -> dict[str, Any]:
         "wallet": wallet,
         "deploy_changes": deploy_changes,
     }
+
+
+def build_period_reports(config: Any) -> dict[str, Any]:
+    """24h / 7d / 30d ops reports for the dashboard daily panel."""
+    out: dict[str, Any] = {}
+    for key, hours in (("24h", 24), ("7d", 7 * 24), ("30d", 30 * 24)):
+        try:
+            out[key] = build_daily_report(config, hours=hours)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("metrics: period report %s failed", key)
+            out[key] = {"error": str(exc), "period_key": key, "window_label": key}
+    return out
 
 
 def _append_name_list(lines: list[str], names: list[Any]) -> None:
