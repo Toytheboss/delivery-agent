@@ -1,0 +1,25 @@
+---
+description: Always commit and push local Delivery Agent changes to GitHub; do not leave edits only on the production server.
+alwaysApply: true
+---
+
+# Local changes → GitHub (required)
+
+After any meaningful local code/docs change in this repo:
+
+1. **Commit** on the working branch (clear message; include README if capability changed).
+2. **Push** to `origin` (`git push -u origin HEAD` when needed).
+3. Do **not** treat “SCP / deploy to Aliyun only” as done — GitHub must reflect the same change.
+
+## Order of operations
+
+Preferred: edit locally → commit → push → then deploy/sync to production.
+
+If an emergency hotfix was applied on the server first, **copy the same files back into this repo**, commit, and push in the same session so `origin/main` is not stale.
+
+## Do not skip
+
+- Skipping commit/push because “prod already has the file”
+- Leaving uncommitted working-tree changes after a finished task the user expects on GitHub
+
+Secrets (`.env`, live `config.yaml`, `data/`) stay out of git as usual.
