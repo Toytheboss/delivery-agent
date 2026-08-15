@@ -448,7 +448,7 @@ def load_config() -> AppConfig:
         rate_limit_seconds=int(reply.get("rate_limit_seconds", 60)),
         reply_delay_seconds=int(reply.get("reply_delay_seconds", 0)),
         bubble_gap_seconds=int(reply.get("bubble_gap_seconds", 30)),
-        min_relevance_score=float(reply.get("min_relevance_score", 0.35)),
+        min_relevance_score=float(reply.get("min_relevance_score", 0.50)),
         blocked_topics=[str(x).lower() for x in safety.get("blocked_topics", [])],
         hint_keywords=[str(x).lower() for x in trigger.get("hint_keywords", [])],
         require_mention_or_question=bool(

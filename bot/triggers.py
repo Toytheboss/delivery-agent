@@ -77,6 +77,28 @@ _SOCIAL_REPLIES_ZH = (
     "好的，谢谢分享 🙏🔥",
 )
 
+# Short ack replies — casual, never FAQ.
+_ACK_REPLIES_EN = (
+    "👍",
+    "Got it 👍",
+    "Cool 🙌",
+    "Sounds good!",
+    "Perfect 👌",
+    "Alright!",
+    "Noted 👍",
+    "👍👍",
+)
+_ACK_REPLIES_ZH = (
+    "👍",
+    "好的 👍",
+    "收到～",
+    "嗯嗯",
+    "OK 👌",
+    "好嘞",
+    "没问题 🙌",
+    "行～",
+)
+
 
 def is_social_chitchat(text: str) -> bool:
     """True for gm/gn / short greetings / X-post shares (not real FAQ questions)."""
@@ -112,6 +134,23 @@ def pick_social_reply(text: str, *, seed: int | None = None) -> str:
     pool = _SOCIAL_REPLIES_ZH if cjk >= 2 else _SOCIAL_REPLIES_EN
     rng = random.Random(seed)
     return rng.choice(pool)
+
+
+def pick_ack_reply(text: str, *, seed: int | None = None) -> str:
+    """Short acknowledgement reply; not FAQ / not knowledge-based."""
+    import random
+
+    cjk = sum(1 for c in (text or "") if "\u4e00" <= c <= "\u9fff")
+    pool = _ACK_REPLIES_ZH if cjk >= 1 else _ACK_REPLIES_EN
+    rng = random.Random(seed)
+    return rng.choice(pool)
+
+
+def pick_casual_reply(text: str, *, seed: int | None = None) -> str:
+    """Social greeting/share → social pool; short ack → ack pool."""
+    if is_social_chitchat(text):
+        return pick_social_reply(text, seed=seed)
+    return pick_ack_reply(text, seed=seed)
 
 
 def is_qa_tester(

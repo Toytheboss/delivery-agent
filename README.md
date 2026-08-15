@@ -49,7 +49,8 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Greetings** | Short emoji replies to `gm` / `gn` / `早上好` / `晚安` / etc. (not FAQ). |
 | **X / Twitter shares** | Casual thanks when partners share short posts (links + “发了” style captions). |
-| **FAQ fallback** | If RAG silences a social-shaped message, still send the social reply. |
+| **Short acks** | `收到` / `好的` / `thanks` / `got it` / `ok` / `will do` → short casual reply (not FAQ, not silence). |
+| **FAQ fallback** | If RAG silences a social/ack-shaped message, still send the casual reply. |
 
 ---
 

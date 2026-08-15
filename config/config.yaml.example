@@ -41,7 +41,7 @@ reply:
   reply_delay_seconds: 10
   bubble_gap_seconds: 30
   # 低于此值保持静默；宁可不答，勿答非所问
-  min_relevance_score: 0.35
+  min_relevance_score: 0.50
   language: auto
   # FAQ auto-reply footer (not used for welcome / mark-live / form workflows)
   footer_enabled: false

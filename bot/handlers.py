@@ -25,11 +25,12 @@ from bot.metrics import (
 from bot.message_log import log_message_event
 from bot.rag import generate_reply, split_reply_bubbles
 from bot.triggers import (
+    is_ack_or_chitchat,
     is_qa_tester,
     is_social_chitchat,
     is_whitelisted,
     is_workflow_operator,
-    pick_social_reply,
+    pick_casual_reply,
     should_process,
 )
 from bot.workflow_form_dispatch import is_manual_form_command, send_form_manual
@@ -357,13 +358,13 @@ class MessageHandler:
             logger.debug("Skip whitelisted sender %s in chat %s", sender_id, chat_id)
             return
 
-        # Social gm / X-post shares → short emoji reply (not FAQ)
-        if is_social_chitchat(text):
+        # Social gm / X-post / short acks (收到、thanks…) → casual reply, not FAQ
+        if is_social_chitchat(text) or is_ack_or_chitchat(text):
             if sender_id is not None and not qa_mode and self._is_rate_limited(
                 chat_id, sender_id
             ):
                 logger.info(
-                    "Rate limited social reply user %s in chat %s", sender_id, chat_id
+                    "Rate limited casual reply user %s in chat %s", sender_id, chat_id
                 )
                 return
             msg_id = message.id
@@ -371,7 +372,7 @@ class MessageHandler:
                 return
             self._processing.add(msg_id)
             try:
-                reply = pick_social_reply(
+                reply = pick_casual_reply(
                     text, seed=(chat_id or 0) ^ (msg_id or 0)
                 )
                 delay = 0 if qa_mode else min(8, max(0, self.config.reply_delay_seconds))
@@ -380,6 +381,11 @@ class MessageHandler:
                 await message.reply(reply)
                 if sender_id is not None:
                     self._mark_replied(chat_id, sender_id)
+                reason = (
+                    "social_chitchat"
+                    if is_social_chitchat(text)
+                    else "ack_chitchat"
+                )
                 try:
                     inc("messages_processed")
                     inc("social_chitchat_replies")
@@ -396,13 +402,13 @@ class MessageHandler:
                     qa=qa_mode,
                     qa_group=in_qa_group,
                     outcome="replied",
-                    reason="social_chitchat",
+                    reason=reason,
                 )
                 logger.info(
-                    "Social chitchat reply in chat %s: %r", chat_id, reply
+                    "Casual reply (%s) in chat %s: %r", reason, chat_id, reply
                 )
             except Exception:
-                logger.exception("Social chitchat reply failed in chat %s", chat_id)
+                logger.exception("Casual reply failed in chat %s", chat_id)
                 log_message_event(
                     kind="social",
                     chat_id=chat_id,
@@ -413,7 +419,7 @@ class MessageHandler:
                     qa=qa_mode,
                     qa_group=in_qa_group,
                     outcome="error",
-                    reason="social_reply_failed",
+                    reason="casual_reply_failed",
                 )
             finally:
                 self._processing.discard(msg_id)
@@ -457,9 +463,9 @@ class MessageHandler:
         try:
             decision = await generate_reply(question, self.kb, self.config)
             if not decision.should_reply:
-                # Fallback: if FAQ silenced a share/greeting that slipped through
-                if is_social_chitchat(question):
-                    reply = pick_social_reply(
+                # Fallback: if FAQ silenced a share/greeting/ack that slipped through
+                if is_social_chitchat(question) or is_ack_or_chitchat(question):
+                    reply = pick_casual_reply(
                         question, seed=(chat_id or 0) ^ (msg_id or 0)
                     )
                     delay = 0 if qa_mode else min(
@@ -485,11 +491,11 @@ class MessageHandler:
                         qa=qa_tester,
                         qa_group=in_qa_group,
                         outcome="replied",
-                        reason=f"social_fallback:{decision.reason}",
+                        reason=f"casual_fallback:{decision.reason}",
                         score=decision.best_score,
                     )
                     logger.info(
-                        "Social fallback after FAQ silence (%s) in chat %s: %r",
+                        "Casual fallback after FAQ silence (%s) in chat %s: %r",
                         decision.reason,
                         chat_id,
                         reply,

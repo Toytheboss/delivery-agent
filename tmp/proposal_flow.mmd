@@ -1,0 +1,52 @@
+flowchart TB
+  subgraph IN["① 统一入口"]
+    A["项目方填写 Typeform<br/>BOT Chain 生态合作申请"]
+    B["选择合作类型（可后续再定是否多选）"]
+  end
+
+  subgraph ROUTE["② 类型分流 · Agent 映射负责人"]
+    T1["重点 AI 项目推进<br/>→ 审核负责人 A"]
+    T2["重点 RWA 项目推进<br/>→ 审核负责人 B"]
+    T3["交易所上币扶持<br/>→ 审核负责人 C"]
+    T4["生态项目孵化<br/>→ 审核负责人 D"]
+    T5["社区和用户增长<br/>→ 审核负责人 E"]
+  end
+
+  subgraph SYNC["③ 同步与提醒 · 自动 🤖"]
+    C["🤖 Typeform Webhook"]
+    D["写入 Lark 提案表<br/>默认状态：未审核<br/>写入：合作类型 / 审核负责人 / BD"]
+    F["🤖 Lark 群通知<br/>@该类型审核负责人 + @BD"]
+  end
+
+  subgraph HUMAN["④ 人工唯一动作"]
+    G["对应审核负责人只改「审核状态」"]
+  end
+
+  subgraph TG["⑤ Telegram 对外同步 · 自动 🤖"]
+    H1["🤖 审核中 →「提案审核中」"]
+    H2["🤖 已通过 →「审核已通过」"]
+    H3["🤖 推进会议 → Calendly + 约会话术"]
+    H4["🤖 审核驳回 → 未通过话术"]
+    H5["🤖 超时已驳回（≥7天）→ 同驳回话术"]
+  end
+
+  subgraph REPORT["⑥ 周月报倒逼 · 自动 🤖"]
+    R["按审核负责人 A–E 汇总<br/>发群并 @ 对应负责人"]
+  end
+
+  A --> B
+  B --> T1 & T2 & T3 & T4 & T5
+  T1 & T2 & T3 & T4 & T5 --> C --> D --> F --> G
+  G -->|审核中| H1
+  G -->|已通过| H2
+  G -->|推进会议| H3
+  G -->|审核驳回| H4
+  G -.->|长期不改| H5
+  H1 & H2 & H3 & H4 & H5 --> R
+
+  classDef auto fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
+  classDef type fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+  classDef human fill:#fff8e1,stroke:#f9a825,color:#5d4037;
+  class C,D,F,H1,H2,H3,H4,H5,R auto;
+  class T1,T2,T3,T4,T5 type;
+  class G human;

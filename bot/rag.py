@@ -437,7 +437,7 @@ def _fallback_compose(
     hits: list[SearchHit],
     lang: str,
     *,
-    min_score: float = 0.35,
+    min_score: float = 0.50,
 ) -> ReplyDecision:
     if not hits:
         return _silent_decision("no relevant knowledge", 0.0)
