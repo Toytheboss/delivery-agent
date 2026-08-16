@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections import Counter, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -693,6 +694,128 @@ def build_dashboard_snapshot(
         "calendar": calendar,
         "ranges": ranges,
     }
+
+
+def build_live_project_rows(config: Any) -> dict[str, Any]:
+    """Read the Lark progress table and join it with the Bot's TG title cache.
+
+    The browser never receives Lark credentials.  This function runs on the Bot
+    server and exposes only the fields needed by the admin console.
+    """
+    out: dict[str, Any] = {
+        "generated_at": _now_iso(),
+        "total": 0,
+        "matched": 0,
+        "rows": [],
+        "error": None,
+    }
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        out["error"] = "missing LARK credentials"
+        return out
+
+    try:
+        from bot.lark_bitable import get_tenant_access_token, list_records
+        from bot.workflow_form_dispatch import _field_text, match_project_to_chat
+
+        token = get_tenant_access_token(app_id, app_secret)
+        records = list_records(
+            token,
+            str(getattr(config, "workflow_base_app_token", "")),
+            str(getattr(config, "workflow_progress_table_id", "")),
+        )
+
+        title_cache: dict[int, str] = {}
+        cache_path = ROOT / "data" / "folder_title_cache.json"
+        if cache_path.is_file():
+            raw = json.loads(cache_path.read_text(encoding="utf-8"))
+            for key, value in (raw.get("titles") or {}).items():
+                try:
+                    chat_id = int(key)
+                except (TypeError, ValueError):
+                    continue
+                title = value.get("title") if isinstance(value, dict) else value
+                if str(title or "").strip():
+                    title_cache[chat_id] = str(title).strip()
+
+        status_field = str(getattr(config, "workflow_status_field", "项目状态") or "项目状态")
+        name_field = str(
+            getattr(config, "workflow_project_name_field", "项目名称 Project Name")
+            or "项目名称 Project Name"
+        )
+        bd_field = "BD"
+        delivery_field = "交付"
+        update_field = "更新日期"
+        ignored_ids = set(getattr(config, "ignored_group_ids", set()) or set())
+        rows: list[dict[str, Any]] = []
+
+        def stage(status: str) -> tuple[str, str]:
+            text = status.lower()
+            if "主网上线" in status or "live on" in text:
+                return "live", "主网上线"
+            if "主网部署" in status or "mainnet" in text and "deploy" in text:
+                return "main_deploy", "主网部署中"
+            if "测试网部署" in status or "testnet" in text and "deploy" in text:
+                return "test_deploy", "测试网部署"
+            return "other", status or "未设置"
+
+        for record in records:
+            fields = record.get("fields") or {}
+            name = _field_text(fields, name_field)
+            if not name:
+                continue
+            status_raw = _field_text(fields, status_field)
+            stage_key, stage_label = stage(status_raw)
+            chat_id, match_reason = match_project_to_chat(name, title_cache)
+            chat_title = title_cache.get(chat_id) if chat_id is not None else ""
+            bd = _field_text(fields, bd_field)
+            delivery = _field_text(fields, delivery_field)
+            updated = fields.get(update_field)
+            rows.append(
+                {
+                    "record_id": str(record.get("record_id") or ""),
+                    "project": name[:160],
+                    "stage": stage_key,
+                    "stage_label": stage_label[:120],
+                    "status_raw": status_raw[:200],
+                    "bd": bd[:120],
+                    "delivery": delivery[:120],
+                    "updated_at": updated,
+                    "chat_id": chat_id,
+                    "chat_title": chat_title[:160],
+                    "tg_bound": chat_id is not None,
+                    "tg_ignored": chat_id in ignored_ids if chat_id is not None else False,
+                    "tg_match_reason": match_reason,
+                    "lark_bound": True,
+                }
+            )
+
+        order = {"main_deploy": 0, "test_deploy": 1, "other": 2, "live": 3}
+        rows.sort(key=lambda row: (order.get(str(row.get("stage")), 9), str(row.get("project") or "").lower()))
+        sent_ids: set[str] = set()
+        state_raw = str(getattr(config, "workflow_state_file", "data/form_dispatch_state.json") or "data/form_dispatch_state.json")
+        state_path = Path(state_raw)
+        if not state_path.is_absolute():
+            state_path = ROOT / state_path
+        if state_path.is_file():
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+                sent_ids = {str(item) for item in (state.get("sent_record_ids") or [])}
+            except (OSError, json.JSONDecodeError, TypeError):
+                sent_ids = set()
+        for row in rows:
+            row["form_sent"] = row.get("record_id") in sent_ids
+        out["total"] = len(rows)
+        out["matched"] = sum(1 for row in rows if row.get("tg_bound"))
+        out["form_pending"] = sum(
+            1 for row in rows if row.get("stage") == "live" and not row.get("form_sent")
+        )
+        out["rows"] = rows
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("dashboard: live project rows failed")
+        out["error"] = str(exc)
+    return out
 
 
 def snapshot_path(config: Any | None = None) -> Path:

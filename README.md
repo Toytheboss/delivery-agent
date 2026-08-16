@@ -97,7 +97,7 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Live status watch** | Polls Progress Tracker; only **new** live rows trigger form + logo (webhook backup). |
 | **Deploy status watch** | Tracks enter/leave mainnet-live / mainnet-deploying / testnet-deploying for daily report. |
 | **Startup live catch-up** | Optional one-shot process of live rows missing form/logo. |
-| **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
+| **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); matching ignores case and whitespace and supports containment in either direction. If multiple groups are candidates, the workflow leaves the row for manual review instead of guessing and sending to the wrong chat. |
 | **Manual send form** | Ops command in current group as fallback. |
 | **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
 | **Logo fill** | Fetches site logo from live/project URL into Lark attachment field: HTTP scrape first, then Playwright header/element screenshot if that fails (still one record attempt; no poller retry on hard fail). |

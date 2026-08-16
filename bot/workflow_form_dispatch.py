@@ -76,8 +76,9 @@ def _parse_chat_id(raw: str) -> int | None:
 def _normalize_name(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[\[\]（）()【】{}<>|_·•/\\]+", " ", text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    # Matching is intentionally case-insensitive and whitespace-insensitive:
+    # "Project X", "projectx" and "PROJECT  X" should compare equally.
+    return re.sub(r"\s+", "", text)
 
 
 def build_form_message(config: AppConfig, project_name: str) -> str:
@@ -107,34 +108,26 @@ def match_project_to_chat(
     if not project or len(project) < 2:
         return None, "project name too short"
 
-    exact: list[int] = []
-    partial: list[tuple[int, int]] = []  # (chat_id, score)
+    candidates: list[tuple[int, str]] = []
 
     for chat_id, title in title_by_chat.items():
         norm_title = _normalize_name(title)
         if not norm_title:
             continue
         if norm_title == project:
-            exact.append(chat_id)
-            continue
-        if project in norm_title or norm_title in project:
-            score = min(len(project), len(norm_title))
-            partial.append((chat_id, score))
+            candidates.append((chat_id, "exact title match"))
+        elif project in norm_title or norm_title in project:
+            candidates.append((chat_id, "partial title match"))
 
-    if len(exact) == 1:
-        return exact[0], "exact title match"
-    if len(exact) > 1:
-        return None, f"ambiguous exact matches: {exact}"
-
-    if not partial:
+    if not candidates:
         return None, "no title match"
-
-    partial.sort(key=lambda x: x[1], reverse=True)
-    best_score = partial[0][1]
-    top = [cid for cid, score in partial if score == best_score]
-    if len(top) == 1:
-        return top[0], f"partial title match (score={best_score})"
-    return None, f"ambiguous partial matches: {top}"
+    # Never guess when more than one group is a candidate.  A false positive
+    # would send a form (or mark the wrong Lark row live) in the wrong project
+    # chat, so all ambiguous matches must be reviewed manually.
+    if len(candidates) > 1:
+        ids = [chat_id for chat_id, _ in candidates]
+        return None, f"ambiguous title matches: {ids}"
+    return candidates[0]
 
 
 async def build_folder_title_map(

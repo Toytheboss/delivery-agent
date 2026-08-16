@@ -52,7 +52,8 @@
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "登录失败");
-        location.href = base;
+        const next = new URLSearchParams(location.search).get("next") || base;
+        location.href = next.startsWith(base) ? next : base;
       } catch (e) {
         error.textContent = e.message || "登录失败";
         button.disabled = false;

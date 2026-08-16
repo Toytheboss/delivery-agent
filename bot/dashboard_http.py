@@ -199,7 +199,15 @@ def register_dashboard_routes(
             return denied
         force = (request.rel_url.query.get("refresh") or "") in {"1", "true", "yes"}
         data = await _ensure_snapshot(app["dashboard_config"], force=force)
-        return web.json_response(data)
+        from bot.dashboard_snapshot import build_live_project_rows
+
+        loop = asyncio.get_running_loop()
+        projects = await loop.run_in_executor(
+            None, build_live_project_rows, app["dashboard_config"]
+        )
+        payload = dict(data)
+        payload["projects"] = projects
+        return web.json_response(payload)
 
     async def api_day(request: web.Request) -> web.Response:
         denied = await require_auth(request)
@@ -335,6 +343,18 @@ def register_dashboard_routes(
             return web.Response(text="settings.html missing", status=500)
         return web.FileResponse(path)
 
+    async def page_prototype(request: web.Request) -> web.Response:
+        """Serve the live delivery console to authenticated administrators."""
+        if not _session_user(request, app["dashboard_config"]):
+            raise web.HTTPFound(prefix + "/login?next=" + prefix + "/prototype")
+        path = _html_page("delivery-console-prototype.html")
+        if not path.is_file():
+            return web.Response(text="delivery-console-prototype.html missing", status=500)
+        return web.FileResponse(path, headers={"Cache-Control": "no-store"})
+
+    async def page_prototype_redirect(_: web.Request) -> web.Response:
+        raise web.HTTPFound(prefix + "/prototype")
+
     async def static_asset(request: web.Request) -> web.Response:
         if request.match_info.get("name") != "login.html" and not _session_user(request, app["dashboard_config"]):
             return web.Response(text="unauthorized", status=401)
@@ -355,6 +375,8 @@ def register_dashboard_routes(
     app.router.add_get(prefix, page_index)
     app.router.add_get(prefix + "/", page_index)
     app.router.add_get(prefix + "/settings", page_settings)
+    app.router.add_get(prefix + "/prototype", page_prototype)
+    app.router.add_get("/delivery-console-prototype.html", page_prototype_redirect)
     app.router.add_get(prefix + "/api/snapshot", api_snapshot)
     app.router.add_get(prefix + "/api/day", api_day)
     app.router.add_get(prefix + "/api/settings", api_settings_get)
