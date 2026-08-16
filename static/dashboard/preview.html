@@ -358,10 +358,6 @@ td.mono { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
     </section>
   </div>
   <script>
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token") || localStorage.getItem("dashboard_token") || "";
-    if (params.get("token")) localStorage.setItem("dashboard_token", token);
-
     document.getElementById("link-settings").href = "#";
     document.getElementById("link-data").href = "#";
 
@@ -725,7 +721,7 @@ td.mono { font-family: var(--mono); font-size: 0.78rem; color: var(--muted); }
     async function loadDay(day) {
       const err = document.getElementById("err");
       try {
-        const res = await fetch(`${apiBase}/api/day?date=${encodeURIComponent(day)}&token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${apiBase}/api/day?date=${encodeURIComponent(day)}`, { credentials: "same-origin" });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         err.classList.add("hidden");

@@ -376,9 +376,9 @@ async def main() -> None:
         await start_live_webhook_server(client, config, scope, kb=kb)
 
     try:
-        from bot.dashboard_http import dashboard_enabled, dashboard_snapshot_loop, dashboard_token
+        from bot.dashboard_http import dashboard_auth_configured, dashboard_enabled, dashboard_snapshot_loop
 
-        if dashboard_enabled(config) and dashboard_token(config):
+        if dashboard_enabled(config) and dashboard_auth_configured(config):
             asyncio.create_task(dashboard_snapshot_loop(config))
             logger.info(
                 "Dashboard snapshot loop enabled (every %dm)",

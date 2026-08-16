@@ -97,10 +97,10 @@ async def start_live_webhook_server(
     kb: KnowledgeBase | None = None,
 ) -> web.AppRunner | None:
     """Start HTTP server for live webhook and/or dashboard."""
-    from bot.dashboard_http import dashboard_enabled, dashboard_token, register_dashboard_routes
+    from bot.dashboard_http import dashboard_auth_configured, dashboard_enabled, register_dashboard_routes
 
     want_webhook = bool(getattr(config, "workflow_live_webhook_enabled", False))
-    want_dashboard = dashboard_enabled(config) and bool(dashboard_token(config))
+    want_dashboard = dashboard_enabled(config) and dashboard_auth_configured(config)
     if not want_webhook and not want_dashboard:
         return None
 

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import os
+
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -152,6 +154,10 @@ class AppConfig:
     metrics_message_log_text_max: int
     dashboard_enabled: bool
     dashboard_token: str
+    dashboard_admin_users: list[str]
+    dashboard_admin_password_hash: str
+    dashboard_session_secret: str
+    dashboard_cookie_secure: bool
     dashboard_refresh_minutes: int
     dashboard_qa_lookback_days: int
     dashboard_list_limit: int
@@ -836,6 +842,15 @@ def load_config() -> AppConfig:
         ),
         dashboard_enabled=bool((cfg.get("dashboard") or {}).get("enabled", True)),
         dashboard_token=str((cfg.get("dashboard") or {}).get("token", "") or "").strip(),
+        dashboard_admin_users=[
+            str(x).strip()
+            for x in str(os.getenv("DASHBOARD_ADMIN_USERS", "Roy,Grace,Josh")).split(",")
+            if str(x).strip()
+        ],
+        dashboard_admin_password_hash=os.getenv("DASHBOARD_ADMIN_PASSWORD_HASH", "").strip(),
+        dashboard_session_secret=os.getenv("DASHBOARD_SESSION_SECRET", "").strip(),
+        dashboard_cookie_secure=os.getenv("DASHBOARD_COOKIE_SECURE", "true").strip().lower()
+        not in {"0", "false", "no", "off"},
         dashboard_refresh_minutes=int(
             (cfg.get("dashboard") or {}).get("refresh_minutes", 60) or 60
         ),

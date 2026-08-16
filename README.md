@@ -125,8 +125,8 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
 | **Daily report** | Rolling window (24h / 7d / 30d on dashboard): new mainnet live, deploy transitions, folders, wallets, logos, bot messages (**all outbound** from the delivery account + inbound processed + auto mix). |
 | **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default **60**). |
-| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops daily report for 24h/7d/30d, 30-day calendar with range summaries, 14-day charts, day-level logo/wallet/Q&A). Token via `DASHBOARD_TOKEN`. |
-| **Settings panel** | Same host `/dashboard/settings`: allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |
+| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops daily report for 24h/7d/30d, 30-day calendar with range summaries, 14-day charts, day-level logo/wallet/Q&A). Requires an administrator login. |
+| **Settings panel** | Same host `/dashboard/settings`: administrator-only allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |
 
 **Report command aliases:**
 
@@ -267,6 +267,10 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | `LARK_APP_ID` / `LARK_APP_SECRET` | Bitable / wiki / digest |
 | `LARK_WIKI_TOKEN` | Optional wiki sync |
 | `WORKFLOW_LIVE_WEBHOOK_SECRET` | Optional override for live webhook auth |
+| `DASHBOARD_ADMIN_USERS` | Comma-separated administrator login names |
+| `DASHBOARD_ADMIN_PASSWORD_HASH` | Shared administrator password as a `pbkdf2_sha256` hash; never store plaintext |
+| `DASHBOARD_SESSION_SECRET` | Random secret used to sign 8-hour administrator sessions |
+| `DASHBOARD_COOKIE_SECURE` | Keep `true` behind HTTPS; use `false` only for local HTTP testing |
 
 ---
 
@@ -281,7 +285,7 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | See last 24h ops | `交付日报` / `/daily` |
 | See last 7 days summary | `交付周报` / `/report` |
 | Full counters | `交付统计` / `/stats` |
-| Web dashboard / settings | `http://HOST:8787/dashboard?token=…` and `/dashboard/settings?token=…` |
+| Web dashboard / settings | Open `http(s)://HOST:8787/dashboard`, then sign in as an administrator. Settings are protected by the same admin session. |
 | Teach the bot a fact | QA tester: `学习 …` (or configured trigger) |
 | Audit ask/reply text | Read `data/message_logs/messages-YYYY-MM-DD.jsonl` on the server |
 

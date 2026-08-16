@@ -68,7 +68,7 @@ a:hover { text-decoration: underline; }
   gap: 8px;
   flex-wrap: wrap;
 }
-.nav a, .toggle button, button.btn, .field button {
+.nav a, .nav button, .toggle button, button.btn, .field button {
   appearance: none;
   border: 1px solid var(--border);
   background: var(--surface);
@@ -85,7 +85,7 @@ a:hover { text-decoration: underline; }
   border-color: var(--primary);
   color: #fff;
 }
-.nav a:hover, .toggle button:hover, button.btn:hover, .field button:hover {
+.nav a:hover, .nav button:hover, .toggle button:hover, button.btn:hover, .field button:hover {
   border-color: var(--primary-2);
   background: var(--surface-2);
 }
@@ -93,7 +93,7 @@ a:hover { text-decoration: underline; }
   background: #047857;
   color: #fff;
 }
-button.btn:focus-visible, .toggle button:focus-visible, .nav a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+button.btn:focus-visible, .toggle button:focus-visible, .nav a:focus-visible, .nav button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
   outline: 2px solid var(--mint);
   outline-offset: 2px;
 }

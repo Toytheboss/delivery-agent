@@ -205,10 +205,11 @@ metrics:
   message_log_retain_days: 60
   message_log_text_max: 500
 
-# 数据看板 + 设置面板（同机 :8787 /dashboard；token 优先读环境变量 DASHBOARD_TOKEN）
+# 数据看板 + 管理员设置面板（同机 :8787 /dashboard；管理员登录）
 dashboard:
   enabled: true
-  token: ""
+  # Admin accounts/password hash/session secret are provided through .env.
+  token: ""  # legacy field; no longer authorizes dashboard access
   refresh_minutes: 60
   qa_lookback_days: 30
   calendar_days: 30

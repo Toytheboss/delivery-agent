@@ -21,6 +21,7 @@
       <nav class="nav">
         <a href="#" id="link-data">数据</a>
         <a class="active" href="#" id="link-settings">设置</a>
+        <button type="button" id="btn-logout">退出</button>
       </nav>
     </header>
 
@@ -51,28 +52,29 @@
     </section>
   </div>
   <script>
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token") || localStorage.getItem("dashboard_token") || "";
-    if (params.get("token")) localStorage.setItem("dashboard_token", token);
     const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
-    document.querySelector('link[rel="stylesheet"]').href = `${base}/static/app.css?token=${encodeURIComponent(token)}`;
-    document.getElementById("link-data").href = `${base}?token=${encodeURIComponent(token)}`;
-    document.getElementById("link-settings").href = `${base}/settings?token=${encodeURIComponent(token)}`;
+    document.querySelector('link[rel="stylesheet"]').href = `${base}/static/app.css`;
+    document.getElementById("link-data").href = `${base}`;
+    document.getElementById("link-settings").href = `${base}/settings`;
+    document.getElementById("btn-logout").addEventListener("click", async () => {
+      await fetch(`${base}/api/logout`, { method: "POST", credentials: "same-origin" });
+      location.href = `${base}/login`;
+    });
 
     function esc(s) {
       return String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]));
     }
 
     async function api(path, opts = {}) {
-      const url = `${base}${path}${path.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}`;
-      const res = await fetch(url, {
+      const res = await fetch(`${base}${path}`, {
+        credentials: "same-origin",
         ...opts,
         headers: {
           "Content-Type": "application/json",
           ...(opts.headers || {}),
-          Authorization: `Bearer ${token}`,
         },
       });
+      if (res.status === 401) { location.href = `${base}/login`; throw new Error("登录已过期"); }
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return res.json();
     }

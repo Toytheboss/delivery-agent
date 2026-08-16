@@ -21,6 +21,7 @@
       <nav class="nav">
         <a class="active" href="#" id="link-data">数据</a>
         <a href="#" id="link-settings">设置</a>
+        <button type="button" id="btn-logout">退出</button>
       </nav>
     </header>
 
@@ -150,17 +151,13 @@
   </div>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
   <script>
-    const params = new URLSearchParams(location.search);
-    const token = params.get("token") || localStorage.getItem("dashboard_token") || "";
-    if (params.get("token")) localStorage.setItem("dashboard_token", token);
-
-    (function fixCss() {
-      const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
-      const link = document.querySelector('link[rel="stylesheet"]');
-      if (link) link.href = `${base}/static/app.css?token=${encodeURIComponent(token)}`;
-      document.getElementById("link-settings").href = `${base}/settings?token=${encodeURIComponent(token)}`;
-      document.getElementById("link-data").href = `${base}?token=${encodeURIComponent(token)}`;
-    })();
+    const base = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
+    document.getElementById("link-settings").href = `${base}/settings`;
+    document.getElementById("link-data").href = `${base}`;
+    document.getElementById("btn-logout").addEventListener("click", async () => {
+      await fetch(`${base}/api/logout`, { method: "POST", credentials: "same-origin" });
+      location.href = `${base}/login`;
+    });
 
     const GREEN = {
       primary: "#059669",
@@ -758,7 +755,8 @@
     async function loadDay(day) {
       const err = document.getElementById("err");
       try {
-        const res = await fetch(`${apiBase}/api/day?date=${encodeURIComponent(day)}&token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${apiBase}/api/day?date=${encodeURIComponent(day)}`, { credentials: "same-origin" });
+        if (res.status === 401) { location.href = `${apiBase}/login`; return; }
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
         err.classList.add("hidden");
@@ -787,7 +785,8 @@
       const err = document.getElementById("err");
       try {
         apiBase = location.pathname.replace(/\/$/, "").replace(/\/settings$/, "") || "/dashboard";
-        const res = await fetch(`${apiBase}/api/snapshot?token=${encodeURIComponent(token)}`);
+        const res = await fetch(`${apiBase}/api/snapshot`, { credentials: "same-origin" });
+        if (res.status === 401) { location.href = `${apiBase}/login`; return; }
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
         snapshotData = data;
@@ -796,7 +795,7 @@
         if (selectedDay) await loadDay(selectedDay);
         else if (selectedRange) applyRangeSummary(selectedRange);
       } catch (e) {
-        err.textContent = `加载失败：${e.message || e}（请确认 token）`;
+        err.textContent = `加载失败：${e.message || e}（请重新登录）`;
         err.classList.remove("hidden");
       }
     }
