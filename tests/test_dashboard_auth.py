@@ -45,6 +45,8 @@ class DashboardAuthTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(response.status, 302)
         self.assertTrue(response.headers["Location"].endswith("/dashboard/login"))
+        response = await self.client.get("/dashboard/api/settings")
+        self.assertEqual(response.status, 401)
 
     async def test_all_admins_can_sign_in_and_open_settings(self):
         for username in ("Roy", "Grace", "Josh"):

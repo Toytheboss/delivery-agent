@@ -195,7 +195,7 @@ def register_dashboard_routes(
 
     async def api_snapshot(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         force = (request.rel_url.query.get("refresh") or "") in {"1", "true", "yes"}
         data = await _ensure_snapshot(app["dashboard_config"], force=force)
@@ -203,7 +203,7 @@ def register_dashboard_routes(
 
     async def api_day(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         day = (request.rel_url.query.get("date") or "").strip()
         if not day:
@@ -224,7 +224,7 @@ def register_dashboard_routes(
 
     async def api_settings_get(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         from bot.dashboard_settings import get_settings_view
 
@@ -232,7 +232,7 @@ def register_dashboard_routes(
 
     async def api_settings_put(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         try:
             body = await request.json()
@@ -250,7 +250,7 @@ def register_dashboard_routes(
 
     async def api_learned_get(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         from bot.dashboard_settings import list_learned
 
@@ -258,7 +258,7 @@ def register_dashboard_routes(
 
     async def api_learned_post(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         try:
             body = await request.json()
@@ -288,7 +288,7 @@ def register_dashboard_routes(
 
     async def api_learned_delete(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         name = (request.match_info.get("name") or "").strip()
         from bot.dashboard_settings import delete_learned_note
@@ -307,7 +307,7 @@ def register_dashboard_routes(
 
     async def api_kb_reload(request: web.Request) -> web.Response:
         denied = await require_auth(request)
-        if denied:
+        if denied is not None:
             return denied
         kb_obj = app.get("dashboard_kb")
         if kb_obj is None:
