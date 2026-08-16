@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Botchain Delivery Console - Prototype</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;600;700&family=Fira+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://unpkg.com/lucide@0.468.0/dist/umd/lucide.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
+  <style>
+    :root {
+      --bg: #ecfdf5;
+      --surface: #ffffff;
+      --surface-2: #d1fae5;
+      --surface-subtle: #f8fffb;
+      --surface-hover: #d1fae5;
+      --ink: #064e3b;
+      --muted: #047857;
+      --faint: #10b981;
+      --line: #a7f3d0;
+      --line-strong: #6ee7b7;
+      --nav: #ffffff;
+      --nav-muted: #047857;
+      --primary: #059669;
+      --primary-2: #10b981;
+      --primary-strong: #047857;
+      --primary-soft: #d1fae5;
+      --mint: #79ffb8;
+      --blue: #10b981;
+      --blue-soft: #ecfdf5;
+      --amber: #f59e0b;
+      --amber-soft: #fffbeb;
+      --red: #dc2626;
+      --red-soft: #fef2f2;
+      --purple: #047857;
+      --purple-soft: #d1fae5;
+      --shadow: 0 8px 24px rgba(6, 78, 59, .08);
+      --radius: 14px;
+      --sidebar: 232px;
+      font-family: "Fira Sans", system-ui, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; }
+    body { background: var(--bg); font-size: 14px; }
+    button, input, select { font: inherit; }
+    button { letter-spacing: 0; }
+    a { color: inherit; text-decoration: none; }
+
+    .app-shell { min-height: 100vh; display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); }
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      background: var(--nav);
+      color: #fff;
+      display: flex;
+      flex-direction: column;
+      padding: 18px 12px 14px;
+      z-index: 20;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; padding: 0 9px 20px; }
+    .brand-mark {
+      width: 32px;
+      height: 32px;
+      display: grid;
+      place-items: center;
+      border-radius: 6px;
+      background: #0e8a6c;
+      color: #fff;
+      font-weight: 800;
+      font-size: 15px;
+    }
+    .brand-name { font-size: 14px; font-weight: 700; line-height: 1.2; }
+    .brand-sub { margin-top: 3px; color: var(--nav-muted); font-size: 11px; }
+    .nav-label { padding: 14px 10px 6px; color: #72817b; font-size: 10px; font-weight: 700; text-transform: uppercase; }
+    .nav-list { display: grid; gap: 3px; }
+    .nav-item {
+      border: 0;
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 10px;
+      border-radius: 5px;
+      background: transparent;
+      color: var(--nav-muted);
+      cursor: pointer;
+      text-align: left;
+    }
+    .nav-item:hover { background: #202c28; color: #fff; }
+    .nav-item.active { background: #263630; color: #fff; }
+    .nav-item .lucide { width: 17px; height: 17px; }
+    .nav-item span { flex: 1; }
+    .nav-badge { min-width: 20px; height: 19px; padding: 0 6px; border-radius: 10px; background: #c23a35; color: #fff; font-size: 11px; display: grid; place-items: center; }
+    .sidebar-foot { margin-top: auto; border-top: 1px solid #2c3834; padding-top: 12px; }
+    .health-mini { display: flex; align-items: center; gap: 8px; color: var(--nav-muted); padding: 7px 10px 13px; font-size: 12px; }
+    .pulse { width: 8px; height: 8px; border-radius: 50%; background: #4ad69f; box-shadow: 0 0 0 3px rgba(74, 214, 159, .12); }
+    .profile { display: flex; align-items: center; gap: 9px; padding: 8px 9px; }
+    .avatar { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: #d7e9e2; color: #21483a; font-size: 12px; font-weight: 700; }
+    .profile-meta { min-width: 0; flex: 1; }
+    .profile-name { font-size: 12px; font-weight: 650; }
+    .profile-role { color: var(--nav-muted); font-size: 10px; margin-top: 2px; }
+
+    .workspace { min-width: 0; }
+    .topbar {
+      height: 60px;
+      padding: 0 24px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      position: sticky;
+      top: 0;
+      z-index: 15;
+    }
+    .icon-btn.menu-toggle { display: none; }
+    .breadcrumb { color: var(--muted); font-size: 12px; }
+    .breadcrumb strong { color: var(--ink); font-weight: 650; }
+    .topbar-spacer { flex: 1; }
+    .sync-status { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 7px; }
+    .sync-status .lucide { width: 14px; height: 14px; color: var(--primary); }
+    .icon-btn {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: var(--surface);
+      color: var(--muted);
+      cursor: pointer;
+      position: relative;
+    }
+    .icon-btn:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-subtle); }
+    .icon-btn .lucide { width: 17px; height: 17px; }
+    .notify-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--red); top: 6px; right: 6px; border: 1px solid #fff; }
+
+    main { padding: 22px 24px 40px; max-width: 1600px; margin: 0 auto; }
+    .view { display: none; }
+    .view.active { display: block; }
+    .page-head { display: flex; align-items: flex-start; gap: 20px; margin-bottom: 20px; }
+    .page-head h1 { margin: 0; font-size: 22px; line-height: 1.25; font-weight: 720; letter-spacing: 0; }
+    .page-head p { margin: 5px 0 0; color: var(--muted); font-size: 13px; }
+    .page-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .btn {
+      min-height: 34px;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      padding: 0 12px;
+      background: var(--surface);
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 7px;
+      cursor: pointer;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .btn:hover { background: var(--surface-hover); }
+    .btn.primary { border-color: var(--primary); background: var(--primary); color: #fff; }
+    .btn.primary:hover { background: var(--primary-strong); }
+    .btn.danger { border-color: #e6b6b4; color: var(--red); background: var(--red-soft); }
+    .btn.small { min-height: 29px; padding: 0 9px; }
+    .btn .lucide { width: 15px; height: 15px; }
+
+    .segmented { display: inline-flex; padding: 3px; background: #e9edeb; border-radius: 6px; }
+    .segmented button { border: 0; border-radius: 4px; background: transparent; color: var(--muted); padding: 6px 10px; font-size: 11px; cursor: pointer; }
+    .segmented button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20, 28, 25, .12); }
+    .analytics-range { padding: 4px; gap: 1px; background: #d1fae5; border: 1px solid #6ee7b7; box-shadow: inset 0 0 0 1px rgba(52, 211, 153, .08); }
+    .analytics-range button { min-width: 72px; min-height: 38px; padding: 0 14px; color: #064e3b; font-size: 13px; font-weight: 500; transition: background 160ms ease, box-shadow 160ms ease, color 160ms ease; }
+    .analytics-range button.active { background: #fff; color: #064e3b; box-shadow: 0 4px 12px rgba(6, 78, 59, .16); }
+    .analytics-range button:focus-visible { outline: 2px solid #059669; outline-offset: 2px; }
+    .analytics-range.is-updating { opacity: .72; }
+
+    .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); min-height: 100px; }
+    .stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
+    .stat-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; }
+    .stat-icon .lucide { width: 14px; height: 14px; }
+    .stat-icon.green { color: var(--primary); background: var(--primary-soft); }
+    .stat-icon.blue { color: var(--blue); background: var(--blue-soft); }
+    .stat-icon.amber { color: var(--amber); background: var(--amber-soft); }
+    .stat-icon.red { color: var(--red); background: var(--red-soft); }
+    .stat-icon.purple { color: var(--purple); background: var(--purple-soft); }
+    .stat-value { margin-top: 10px; font-size: 25px; font-weight: 740; line-height: 1; font-variant-numeric: tabular-nums; }
+    .stat-foot { margin-top: 8px; color: var(--faint); font-size: 11px; }
+    .stat-foot strong { color: var(--primary); font-weight: 650; }
+    .stat-foot strong.warn { color: var(--amber); }
+    .stat-foot strong.danger { color: var(--red); }
+
+    .grid-2 { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(320px, .85fr); gap: 12px; margin-bottom: 12px; }
+    .grid-even { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 12px; }
+    .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden; }
+    .panel-head { min-height: 50px; padding: 12px 14px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+    .panel-title { margin: 0; font-size: 14px; font-weight: 700; }
+    .panel-sub { color: var(--muted); font-size: 11px; margin-top: 2px; }
+    .panel-head .spacer { flex: 1; }
+    .text-link { border: 0; background: none; color: var(--primary); font-size: 11px; font-weight: 650; cursor: pointer; padding: 4px; }
+    .text-link:hover { text-decoration: underline; }
+
+    .pipeline { padding: 15px; }
+    .pipeline-track { display: grid; grid-template-columns: repeat(6, minmax(90px, 1fr)); gap: 6px; }
+    .pipeline-step { position: relative; padding: 11px 9px; min-height: 80px; background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 6px; }
+    .pipeline-step.complete { background: #f0f8f5; border-color: #c9e4da; }
+    .pipeline-step.blocked { background: var(--red-soft); border-color: #efc4c2; }
+    .step-count { font-size: 21px; font-weight: 730; line-height: 1; }
+    .step-label { color: var(--muted); font-size: 11px; margin-top: 8px; line-height: 1.35; }
+    .step-note { color: var(--faint); font-size: 10px; margin-top: 5px; }
+    .pipeline-step.complete .step-count { color: var(--primary); }
+    .pipeline-step.blocked .step-count { color: var(--red); }
+
+    .exception-list { display: grid; }
+    .exception-item { padding: 12px 14px; border-bottom: 1px solid var(--line); display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; gap: 10px; align-items: start; }
+    .exception-item:last-child { border-bottom: 0; }
+    .severity { width: 25px; height: 25px; border-radius: 5px; display: grid; place-items: center; margin-top: 1px; }
+    .severity .lucide { width: 14px; height: 14px; }
+    .severity.high { background: var(--red-soft); color: var(--red); }
+    .severity.medium { background: var(--amber-soft); color: var(--amber); }
+    .exception-title { font-size: 12px; font-weight: 680; line-height: 1.4; }
+    .exception-meta { color: var(--muted); font-size: 10px; margin-top: 4px; line-height: 1.45; }
+    .exception-action { align-self: center; }
+
+    .connector-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
+    .connector { padding: 14px; border-right: 1px solid var(--line); }
+    .connector:last-child { border-right: 0; }
+    .connector-top { display: flex; align-items: center; gap: 9px; }
+    .connector-logo { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; color: #fff; font-weight: 750; font-size: 11px; }
+    .connector-logo.tg { background: #2798d0; }
+    .connector-logo.lark { background: #3370ff; }
+    .connector-logo.google { background: #da483b; }
+    .connector-logo.ai { background: #5c4ac7; }
+    .connector-name { font-size: 12px; font-weight: 680; }
+    .connector-state { margin-top: 3px; color: var(--muted); font-size: 10px; display: flex; align-items: center; gap: 5px; }
+    .state-dot { width: 6px; height: 6px; border-radius: 50%; background: #2aaa75; }
+    .state-dot.warn { background: #de9420; }
+    .connector-metric { margin-top: 12px; display: flex; justify-content: space-between; color: var(--faint); font-size: 10px; }
+    .connector-metric strong { color: var(--ink); font-weight: 650; }
+
+    .activity-list { display: grid; }
+    .activity { padding: 11px 14px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
+    .activity:last-child { border-bottom: 0; }
+    .activity-icon { width: 25px; height: 25px; border-radius: 50%; background: var(--surface-hover); color: var(--muted); display: grid; place-items: center; }
+    .activity-icon .lucide { width: 13px; height: 13px; }
+    .activity-text { font-size: 11px; line-height: 1.45; }
+    .activity-text strong { font-weight: 680; }
+    .activity-time { color: var(--faint); font-size: 10px; white-space: nowrap; }
+
+    .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+    .search { position: relative; min-width: 250px; flex: 1; max-width: 380px; }
+    .search .lucide { position: absolute; width: 15px; height: 15px; left: 10px; top: 9px; color: var(--faint); }
+    .search input { width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; padding: 0 10px 0 33px; color: var(--ink); outline: none; }
+    .search input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(11, 122, 97, .1); }
+    select { height: 34px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; color: var(--ink); padding: 0 28px 0 10px; outline: none; }
+    .table-panel { overflow: hidden; }
+    .table-wrap { overflow: auto; }
+    table { width: 100%; border-collapse: collapse; min-width: 900px; }
+    table.project-table-compact { min-width: 720px; table-layout: fixed; }
+    .project-table-compact th:nth-child(1) { width: 29%; }
+    .project-table-compact th:nth-child(2) { width: 24%; }
+    .project-table-compact th:nth-child(3) { width: 18%; }
+    .project-table-compact th:nth-child(4) { width: 29%; }
+    .binding-pair { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    th { height: 38px; padding: 0 12px; background: var(--surface-subtle); color: var(--muted); font-size: 10px; font-weight: 700; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+    td { padding: 11px 12px; border-bottom: 1px solid var(--line); font-size: 11px; vertical-align: middle; }
+    tbody tr { cursor: pointer; }
+    tbody tr:hover { background: #fbfdfc; }
+    tbody tr:last-child td { border-bottom: 0; }
+    .project-name { font-size: 12px; font-weight: 680; }
+    .project-id { color: var(--faint); font-size: 9px; margin-top: 3px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+    .owner-cell { display: flex; align-items: center; gap: 7px; }
+    .mini-avatar { width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center; background: #e5ebe8; color: #3d4d47; font-size: 9px; font-weight: 700; }
+    .status { display: inline-flex; align-items: center; gap: 5px; border-radius: 11px; padding: 4px 7px; font-size: 9px; font-weight: 700; white-space: nowrap; }
+    .status.success { background: var(--primary-soft); color: var(--primary-strong); }
+    .status.progress { background: var(--blue-soft); color: var(--blue); }
+    .status.wait { background: var(--amber-soft); color: var(--amber); }
+    .status.error { background: var(--red-soft); color: var(--red); }
+    .status.neutral { background: #edf0ef; color: #58645f; }
+    .progress-bar { width: 92px; height: 5px; border-radius: 3px; background: #e8ecea; overflow: hidden; }
+    .progress-bar span { display: block; height: 100%; background: var(--primary); border-radius: inherit; }
+    .progress-text { color: var(--muted); font-size: 9px; margin-top: 4px; }
+    .tag { display: inline-flex; padding: 3px 6px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font-size: 9px; background: #fff; }
+    .row-menu { width: 28px; height: 28px; border: 0; background: transparent; display: grid; place-items: center; color: var(--faint); border-radius: 4px; cursor: pointer; }
+    .row-menu:hover { background: var(--surface-hover); color: var(--ink); }
+
+    .automation-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .task-card { background: #fff; border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); }
+    .task-head { display: flex; align-items: flex-start; gap: 9px; }
+    .task-icon { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; background: var(--surface-hover); color: var(--primary); }
+    .task-icon .lucide { width: 15px; height: 15px; }
+    .task-name { font-size: 12px; font-weight: 700; }
+    .task-desc { color: var(--muted); font-size: 10px; margin-top: 3px; line-height: 1.4; }
+    .task-head .status { margin-left: auto; }
+    .task-metrics { display: grid; grid-template-columns: repeat(3, 1fr); margin-top: 13px; border-top: 1px solid var(--line); padding-top: 11px; }
+    .task-metric { padding-right: 8px; }
+    .task-metric + .task-metric { border-left: 1px solid var(--line); padding-left: 9px; }
+    .task-metric span { display: block; color: var(--faint); font-size: 9px; }
+    .task-metric strong { display: block; margin-top: 4px; font-size: 11px; font-weight: 680; }
+    .task-foot { margin-top: 12px; display: flex; align-items: center; gap: 8px; }
+    .task-foot .next { color: var(--muted); font-size: 9px; flex: 1; }
+    .switch { position: relative; width: 32px; height: 18px; border: 0; border-radius: 10px; background: #cfd6d2; cursor: pointer; padding: 0; }
+    .switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 12px; height: 12px; border-radius: 50%; background: #fff; transition: transform .18s ease; box-shadow: 0 1px 2px rgba(0,0,0,.18); }
+    .switch.on { background: var(--primary); }
+    .switch.on::after { transform: translateX(14px); }
+
+    .chart { width: 100%; height: 280px; }
+    .chart.compact { height: 230px; }
+    .chart.calendar { height: 235px; }
+    .chart-legend { display: flex; align-items: center; gap: 14px; color: var(--muted); font-size: 10px; }
+    .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; }
+    .chart-pad { padding: 4px 10px 8px; }
+    .analysis-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 13px 14px; border-bottom: 1px solid var(--line); }
+    .summary-item { border-right: 1px solid var(--line); padding-right: 10px; }
+    .summary-item:last-child { border-right: 0; }
+    .summary-item span { display: block; color: var(--muted); font-size: 10px; }
+    .summary-item strong { display: block; margin-top: 5px; font-size: 17px; font-weight: 730; }
+    .qa-tabs { display: inline-flex; gap: 3px; background: #e9edeb; border-radius: 5px; padding: 3px; }
+    .qa-tabs button { border: 0; background: transparent; color: var(--muted); border-radius: 4px; padding: 5px 9px; font-size: 10px; cursor: pointer; }
+    .qa-tabs button.active { background: #fff; color: var(--ink); box-shadow: 0 1px 3px rgba(20, 28, 25, .12); }
+    .qa-pane { display: none; }
+    .qa-pane.active { display: block; }
+    .score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--primary); }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+
+    .empty-state { display: none; padding: 50px 20px; text-align: center; color: var(--muted); }
+    .empty-state .lucide { width: 28px; height: 28px; margin-bottom: 8px; color: var(--faint); }
+
+    .drawer-backdrop { position: fixed; inset: 0; background: rgba(15, 22, 19, .25); z-index: 50; opacity: 0; pointer-events: none; transition: opacity .18s ease; }
+    .drawer-backdrop.open { opacity: 1; pointer-events: auto; }
+    .drawer { position: fixed; right: 0; top: 0; bottom: 0; width: min(540px, 100vw); background: #fff; z-index: 51; box-shadow: -12px 0 35px rgba(18, 28, 24, .12); transform: translateX(100%); transition: transform .22s ease; display: flex; flex-direction: column; }
+    .drawer.open { transform: translateX(0); }
+    .drawer-head { height: 62px; padding: 0 18px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 10px; }
+    .drawer-head h2 { margin: 0; font-size: 16px; }
+    .drawer-head .icon-btn { margin-left: auto; }
+    .drawer-body { padding: 18px; overflow-y: auto; }
+    .detail-top { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+    .detail-logo { width: 42px; height: 42px; border-radius: 7px; background: #17201d; color: #fff; display: grid; place-items: center; font-weight: 750; }
+    .detail-name { font-size: 15px; font-weight: 720; }
+    .detail-meta { margin-top: 4px; color: var(--muted); font-size: 10px; }
+    .detail-section { border-top: 1px solid var(--line); padding-top: 15px; margin-top: 15px; }
+    .detail-section h3 { margin: 0 0 12px; font-size: 12px; }
+    .stage-list { display: grid; }
+    .stage { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 9px; min-height: 48px; position: relative; }
+    .stage:not(:last-child)::after { content: ""; position: absolute; width: 1px; top: 22px; bottom: 0; left: 10px; background: var(--line-strong); }
+    .stage-mark { width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: #fff; z-index: 1; }
+    .stage-mark .lucide { width: 12px; height: 12px; }
+    .stage-mark.pending { background: #fff; color: var(--faint); border: 1px solid var(--line-strong); }
+    .stage-title { font-size: 11px; font-weight: 650; padding-top: 3px; }
+    .stage-sub { color: var(--muted); font-size: 9px; margin-top: 3px; }
+    .stage-time { color: var(--faint); font-size: 9px; padding-top: 4px; }
+    .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+    .detail-field { background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 5px; padding: 9px; }
+    .detail-field span { color: var(--faint); font-size: 9px; display: block; }
+    .detail-field strong { font-size: 10px; font-weight: 650; display: block; margin-top: 4px; overflow-wrap: anywhere; }
+
+    .toast { position: fixed; right: 22px; bottom: 22px; z-index: 70; background: #17201d; color: #fff; border-radius: 6px; padding: 11px 14px; display: flex; align-items: center; gap: 8px; font-size: 11px; box-shadow: 0 10px 30px rgba(12, 20, 17, .22); transform: translateY(20px); opacity: 0; pointer-events: none; transition: .2s ease; }
+    .toast.show { transform: translateY(0); opacity: 1; }
+    .toast .lucide { width: 15px; height: 15px; color: #79ffb8; }
+
+    /* Align the new console with the original dashboard's visual system. */
+    body { background: var(--bg); }
+    .sidebar { color: var(--ink); border-right: 1px solid var(--line); box-shadow: 4px 0 20px rgba(6, 78, 59, .04); }
+    .brand-mark { background: var(--primary); border-radius: 9px; }
+    .brand-name { color: var(--ink); }
+    .brand-sub, .profile-role { color: var(--muted); }
+    .nav-label { color: var(--primary-2, #10b981); }
+    .nav-item { color: var(--nav-muted); border-radius: 10px; }
+    .nav-item:hover { background: var(--surface-hover); color: var(--ink); }
+    .nav-item.active { background: var(--primary); color: #fff; }
+    .nav-item.active:hover { background: var(--primary-strong); color: #fff; }
+    .nav-item.active .nav-badge { background: rgba(255,255,255,.2) !important; }
+    .sidebar-foot { border-top-color: var(--line); }
+    .health-mini { color: var(--muted); }
+    .profile-name { color: var(--ink); }
+    .topbar { box-shadow: 0 4px 16px rgba(6, 78, 59, .03); }
+    .btn { border-radius: 999px; }
+    .segmented, .qa-tabs { border-radius: 999px; background: var(--surface-2, #d1fae5); border: 1px solid var(--line); }
+    .segmented button, .qa-tabs button { border-radius: 999px; }
+    .stat-card, .panel, .task-card { border-radius: var(--radius); }
+    .stat-value { font-family: "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
+    .stat-icon, .task-icon, .severity, .connector-logo { border-radius: 9px; }
+    .pipeline-step, .detail-field { border-radius: 10px; }
+    .pipeline-step { background: #f8fffb; }
+    .pipeline-step.complete { background: #ecfdf5; }
+    .connector-state, .connector-metric, .panel-sub, .stat-foot { color: var(--muted); }
+    th { background: #f0fdf6; color: var(--muted); }
+    tbody tr:hover { background: #f8fffb; }
+    .search input, select { border-radius: 999px; }
+    .icon-btn { border-radius: 10px; }
+    .toast { background: var(--ink); border-radius: 12px; }
+    [hidden] { display: none !important; }
+    .settings-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+    .settings-form-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+    .settings-field { min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); }
+    .settings-field label { display: block; margin-bottom: 7px; color: var(--ink); font-size: 12px; font-weight: 700; }
+    .settings-field input:not([type="checkbox"]), .settings-field textarea { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--ink); background: #fff; }
+    .settings-field textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+    .settings-field.bool { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .settings-field.bool label { margin: 0; }
+    .settings-field input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); }
+    .settings-hint { margin-top: 6px; color: var(--muted); font-size: 11px; }
+    .knowledge-compose { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(220px, .7fr); gap: 12px; }
+    .learned-list { display: grid; gap: 10px; margin-top: 14px; }
+    .learned-item { padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); }
+    .learned-item-head { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+    .learned-item-name { min-width: 0; flex: 1; color: var(--ink); font-weight: 700; overflow-wrap: anywhere; }
+    .learned-item-preview { color: var(--muted); line-height: 1.55; white-space: pre-wrap; }
+    .day-detail-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+    .day-detail-kpi { padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-subtle); }
+    .day-detail-kpi span { display: block; color: var(--muted); font-size: 11px; }
+    .day-detail-kpi strong { display: block; margin-top: 5px; color: var(--ink); font-size: 20px; }
+    .day-detail-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .logout-btn { width: 34px; height: 34px; flex: 0 0 34px; border: 1px solid #d7e5df; border-radius: 8px; background: #fff; color: var(--muted); cursor: pointer; }
+    .logout-btn:hover { color: var(--red); border-color: #fecaca; background: var(--red-soft); }
+
+    @media (max-width: 1180px) {
+      .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      .automation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .pipeline-track { grid-template-columns: repeat(3, 1fr); }
+    }
+    @media (max-width: 860px) {
+      .app-shell { grid-template-columns: 1fr; }
+      .sidebar { position: fixed; left: 0; transform: translateX(-100%); transition: transform .2s ease; box-shadow: 14px 0 30px rgba(0,0,0,.18); }
+      .sidebar.open { transform: translateX(0); }
+      .icon-btn.menu-toggle { display: grid; }
+      .topbar { padding: 0 14px; }
+      main { padding: 18px 14px 32px; }
+      .grid-2, .grid-even { grid-template-columns: 1fr; }
+      .connector-grid { grid-template-columns: repeat(2, 1fr); }
+      .connector:nth-child(2) { border-right: 0; }
+      .connector:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+      .sync-status { display: none; }
+      .analysis-summary { grid-template-columns: repeat(2, 1fr); }
+      .summary-item:nth-child(2) { border-right: 0; }
+    }
+    @media (max-width: 600px) {
+      .page-head { display: block; }
+      .page-actions { margin: 12px 0 0; overflow-x: auto; }
+      .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .stat-card { min-height: 92px; }
+      .pipeline-track { grid-template-columns: repeat(2, 1fr); }
+      .automation-grid { grid-template-columns: 1fr; }
+      .chart { height: 250px; }
+      .chart.calendar { height: 300px; }
+      .toolbar { align-items: stretch; }
+      .search { min-width: 100%; max-width: none; }
+      .toolbar select { flex: 1; min-width: 130px; }
+      .breadcrumb { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .settings-form-grid, .knowledge-compose, .day-detail-columns { grid-template-columns: 1fr; }
+      .day-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-mark">BC</div>
+        <div><div class="brand-name">Botchain Delivery</div><div class="brand-sub">Automation Console</div></div>
+      </div>
+      <div class="nav-label">工作台</div>
+      <nav class="nav-list">
+        <button class="nav-item active" data-view="overview"><i data-lucide="layout-dashboard"></i><span>总览</span></button>
+        <button class="nav-item" data-view="projects"><i data-lucide="folder-kanban"></i><span>项目交付</span><b class="nav-badge" style="background:#3d514a">24</b></button>
+        <button class="nav-item" data-view="automations"><i data-lucide="workflow"></i><span>自动化任务</span></button>
+        <button class="nav-item" data-view="analytics"><i data-lucide="chart-no-axes-combined"></i><span>数据分析</span></button>
+        <button class="nav-item" data-view="exceptions"><i data-lucide="circle-alert"></i><span>异常中心</span><b class="nav-badge" id="exceptions-nav-badge">—</b></button>
+      </nav>
+      <div class="nav-label">系统</div>
+      <nav class="nav-list">
+        <button class="nav-item" data-view="audit"><i data-lucide="scroll-text"></i><span>审计日志</span></button>
+        <button class="nav-item" id="settings-demo" data-view="settings"><i data-lucide="settings"></i><span>设置</span></button>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="health-mini"><span class="pulse"></span><span>服务运行正常</span></div>
+        <div class="profile"><div class="avatar">R</div><div class="profile-meta"><div class="profile-name">Roy</div><div class="profile-role">Administrator</div></div><button class="logout-btn" id="logout-btn" aria-label="退出登录" title="退出登录"><i data-lucide="log-out"></i></button></div>
+      </div>
+    </aside>
+
+    <section class="workspace">
+      <header class="topbar">
+        <button class="icon-btn menu-toggle" id="menu-toggle" aria-label="打开导航" title="打开导航"><i data-lucide="menu"></i></button>
+        <div class="breadcrumb">交付控制台 / <strong id="breadcrumb-current">总览</strong></div>
+        <div class="topbar-spacer"></div>
+        <div class="sync-status"><i data-lucide="refresh-cw"></i><span>数据更新于 14:32:08</span></div>
+        <button class="icon-btn" id="refresh-btn" aria-label="刷新数据" title="刷新数据"><i data-lucide="refresh-cw"></i></button>
+        <button class="icon-btn" aria-label="通知" title="通知"><i data-lucide="bell"></i><span class="notify-dot"></span></button>
+      </header>
+
+      <main>
+        <section class="view active" id="view-overview">
+          <div class="page-head">
+            <div><h1>交付运行总览</h1><p>项目流程、自动化任务和跨平台连接状态</p></div>
+            <div class="page-actions"><div class="segmented"><button>今日</button><button class="active">7 天</button><button>30 天</button></div><button class="btn primary" data-open-project="1"><i data-lucide="plus"></i>新建交付</button></div>
+          </div>
+
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-top"><span>进行中项目</span><span class="stat-icon green"><i data-lucide="folder-kanban"></i></span></div><div class="stat-value">24</div><div class="stat-foot"><strong>+3</strong> 本周新增</div></div>
+            <div class="stat-card"><div class="stat-top"><span>待人工处理</span><span class="stat-icon red"><i data-lucide="user-round-check"></i></span></div><div class="stat-value">5</div><div class="stat-foot"><strong class="danger">2 个</strong> 已超时</div></div>
+            <div class="stat-card"><div class="stat-top"><span>今日自动化</span><span class="stat-icon blue"><i data-lucide="workflow"></i></span></div><div class="stat-value">1,284</div><div class="stat-foot"><strong>99.2%</strong> 执行成功</div></div>
+            <div class="stat-card"><div class="stat-top"><span>表单待回收</span><span class="stat-icon amber"><i data-lucide="clipboard-clock"></i></span></div><div class="stat-value">9</div><div class="stat-foot"><strong class="warn">4 个</strong> 超过 24h</div></div>
+            <div class="stat-card"><div class="stat-top"><span>本月主网上线</span><span class="stat-icon purple"><i data-lucide="rocket"></i></span></div><div class="stat-value">18</div><div class="stat-foot"><strong>+28.6%</strong> 较上月</div></div>
+          </div>
+
+          <div class="grid-2">
+            <section class="panel">
+              <div class="panel-head"><div><h2 class="panel-title">项目交付漏斗</h2><div class="panel-sub" id="funnel-subtitle">正在加载 Lark 项目阶段分布</div></div><div class="spacer"></div><button class="text-link" data-nav="projects">查看项目</button></div>
+              <div class="pipeline"><div class="pipeline-track">
+                <div class="pipeline-step complete" data-funnel-step="bound"><div class="step-count">—</div><div class="step-label">TG / Lark 已绑定</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step" data-funnel-step="technical"><div class="step-count">—</div><div class="step-label">技术接入中</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step" data-funnel-step="main_deploy"><div class="step-count">—</div><div class="step-label">主网部署中</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step" data-funnel-step="form_pending"><div class="step-count">—</div><div class="step-label">上线后待回收表单</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step blocked" data-funnel-step="wallet_incomplete"><div class="step-count">—</div><div class="step-label">钱包地址待补齐</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step complete" data-funnel-step="notified"><div class="step-count">—</div><div class="step-label">部门通知成功</div><div class="step-note">等待实时数据</div></div>
+              </div></div>
+            </section>
+
+            <section class="panel">
+              <div class="panel-head"><div><h2 class="panel-title">需要处理</h2><div class="panel-sub" id="exception-subtitle">正在读取真实异常</div></div><div class="spacer"></div><button class="text-link" data-nav="exceptions" id="exception-count">全部 — 项</button></div>
+              <div class="exception-list" id="overview-exception-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载真实异常…</div></div>
+            </section>
+          </div>
+
+          <section class="panel" style="margin-bottom:12px">
+            <div class="panel-head"><div><h2 class="panel-title">跨平台连接</h2><div class="panel-sub">最近 15 分钟健康状态</div></div><div class="spacer"></div><button class="icon-btn" title="检查连接" aria-label="检查连接"><i data-lucide="activity"></i></button></div>
+            <div class="connector-grid">
+              <div class="connector"><div class="connector-top"><span class="connector-logo tg">TG</span><div><div class="connector-name">Telegram</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>请求成功率</span><strong>99.98%</strong></div></div>
+              <div class="connector"><div class="connector-top"><span class="connector-logo lark">L</span><div><div class="connector-name">Lark</div><div class="connector-state"><span class="state-dot warn"></span>轻微波动</div></div></div><div class="connector-metric"><span>请求成功率</span><strong>97.61%</strong></div></div>
+              <div class="connector"><div class="connector-top"><span class="connector-logo google">G</span><div><div class="connector-name">Google Forms</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>同步延迟</span><strong>42 秒</strong></div></div>
+              <div class="connector"><div class="connector-top"><span class="connector-logo ai">AI</span><div><div class="connector-name">DeepSeek</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>平均响应</span><strong>1.8 秒</strong></div></div>
+            </div>
+          </section>
+
+          <div class="grid-even">
+            <section class="panel">
+              <div class="panel-head"><div><h2 class="panel-title">近 14 日趋势（折线）</h2><div class="panel-sub">发出消息、处理入站、FAQ、新进群与 Logo</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
+              <div class="chart-pad"><div class="chart compact" id="overview-trend"></div></div>
+            </section>
+            <section class="panel">
+              <div class="panel-head"><div><h2 class="panel-title">工作流日增量（面积）</h2><div class="panel-sub">表单、Logo、欢迎、Mark live 与新钱包</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
+              <div class="chart-pad"><div class="chart compact" id="overview-flow"></div></div>
+            </section>
+          </div>
+
+          <div class="grid-even">
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">最近完成</h2><div class="panel-sub">来自真实事件日志</div></div></div><div class="activity-list" id="recent-activity-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载真实事件…</div></div></section>
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">自动化任务</h2><div class="panel-sub">6 个核心任务</div></div><div class="spacer"></div><button class="text-link" data-nav="automations">查看全部</button></div><div class="activity-list">
+              <div class="activity"><span class="activity-icon"><i data-lucide="scan-search"></i></span><div class="activity-text"><strong>表单与 Logo 轮询</strong><br><span style="color:var(--muted)">上次 14:30 · 用时 8.4s</span></div><span class="status success">成功</span></div>
+              <div class="activity"><span class="activity-icon"><i data-lucide="radio"></i></span><div class="activity-text"><strong>主网上线监听</strong><br><span style="color:var(--muted)">持续运行 · 0 次重连</span></div><span class="status success">运行中</span></div>
+              <div class="activity"><span class="activity-icon"><i data-lucide="bell-ring"></i></span><div class="activity-text"><strong>表单催收</strong><br><span style="color:var(--muted)">下次 15:00 · 9 个项目</span></div><span class="status wait">等待</span></div>
+            </div></section>
+          </div>
+        </section>
+
+        <section class="view" id="view-projects">
+          <div class="page-head"><div><h1>项目交付</h1><p>项目状态和对应 BD 均从 Lark 进度表同步</p></div><div class="page-actions"><button class="btn"><i data-lucide="download"></i>导出</button><button class="btn primary" data-open-project="1"><i data-lucide="plus"></i>新建交付</button></div></div>
+          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input id="project-search" type="search" placeholder="搜索项目或对应 BD"></label><select id="stage-filter"><option value="all">全部项目状态</option><option value="main_deploy">主网部署中</option><option value="test_deploy">测试网部署</option><option value="live">主网上线</option></select><select id="bd-filter"><option value="all">全部 BD</option><option>Alice</option><option>Leo</option><option>Mia</option><option>Daniel</option></select><button class="icon-btn" title="更多筛选" aria-label="更多筛选"><i data-lucide="sliders-horizontal"></i></button></div>
+          <section class="panel table-panel"><div class="table-wrap"><table id="project-table" class="project-table-compact"><thead><tr><th>项目</th><th>当前阶段 <span class="project-id">Lark · 项目状态</span></th><th>对应 BD <span class="project-id">Lark</span></th><th>TG / Lark 绑定</th></tr></thead><tbody>
+            <tr data-stage="main_deploy" data-stage-label="主网部署中" data-bd="Alice" data-search="helios project helios alice"><td><div class="project-name">Project Helios</div><div class="project-id">DEL-2026-0241</div></td><td><span class="status progress">主网部署中</span></td><td><div class="owner-cell"><span class="mini-avatar">A</span>Alice</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+            <tr data-stage="live" data-stage-label="主网上线" data-bd="Leo" data-search="nova finance leo"><td><div class="project-name">Nova Finance</div><div class="project-id">DEL-2026-0238</div></td><td><span class="status success">主网上线</span></td><td><div class="owner-cell"><span class="mini-avatar">L</span>Leo</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+            <tr data-stage="test_deploy" data-stage-label="测试网部署" data-bd="Mia" data-search="manta pay mia"><td><div class="project-name">Manta Pay</div><div class="project-id">DEL-2026-0235</div></td><td><span class="status wait">测试网部署</span></td><td><div class="owner-cell"><span class="mini-avatar">M</span>Mia</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+            <tr data-stage="main_deploy" data-stage-label="主网部署中" data-bd="Daniel" data-search="orbitx daniel"><td><div class="project-name">OrbitX</div><div class="project-id">DEL-2026-0230</div></td><td><span class="status progress">主网部署中</span></td><td><div class="owner-cell"><span class="mini-avatar">D</span>Daniel</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status error">Lark 同步异常</span></div></td></tr>
+            <tr data-stage="live" data-stage-label="主网上线" data-bd="Alice" data-search="aster network alice"><td><div class="project-name">Aster Network</div><div class="project-id">DEL-2026-0226</div></td><td><span class="status success">主网上线</span></td><td><div class="owner-cell"><span class="mini-avatar">A</span>Alice</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+            <tr data-stage="test_deploy" data-stage-label="测试网部署" data-bd="Leo" data-search="ember project ember leo"><td><div class="project-name">Project Ember</div><div class="project-id">DEL-2026-0224</div></td><td><span class="status wait">测试网部署</span></td><td><div class="owner-cell"><span class="mini-avatar">L</span>Leo</div></td><td><div class="binding-pair"><span class="status neutral">TG 未绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+          </tbody></table><div class="empty-state" id="project-empty"><i data-lucide="search-x"></i><div>没有符合条件的项目</div></div></div></section>
+        </section>
+
+        <section class="view" id="view-automations">
+          <div class="page-head"><div><h1>自动化任务</h1><p>定时任务、监听器和消息工作流的运行状态</p></div><div class="page-actions"><button class="btn" id="run-health"><i data-lucide="stethoscope"></i>运行健康检查</button></div></div>
+          <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(140px,1fr))"><div class="stat-card"><div class="stat-top"><span>已启用</span><span class="stat-icon green"><i data-lucide="power"></i></span></div><div class="stat-value">8</div><div class="stat-foot">共 9 个任务</div></div><div class="stat-card"><div class="stat-top"><span>今日执行</span><span class="stat-icon blue"><i data-lucide="play"></i></span></div><div class="stat-value">1,284</div><div class="stat-foot">最近一次 14:32</div></div><div class="stat-card"><div class="stat-top"><span>失败 / 重试</span><span class="stat-icon red"><i data-lucide="rotate-ccw"></i></span></div><div class="stat-value">3 / 7</div><div class="stat-foot"><strong class="danger">1 个</strong> 需要人工处理</div></div><div class="stat-card"><div class="stat-top"><span>平均耗时</span><span class="stat-icon purple"><i data-lucide="timer"></i></span></div><div class="stat-value">2.4s</div><div class="stat-foot">过去 24 小时</div></div></div>
+          <div class="automation-grid">
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="message-circle"></i></span><div><div class="task-name">交付 Bot 问答</div><div class="task-desc">TG 群内自动回答与人工纠错</div></div><span class="status success">运行中</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>926 次</strong></div><div class="task-metric"><span>成功率</span><strong>99.8%</strong></div><div class="task-metric"><span>平均耗时</span><strong>1.8s</strong></div></div><div class="task-foot"><span class="next">持续监听 · 14:32 心跳</span><button class="switch on" aria-label="启用交付 Bot 问答"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="scan-search"></i></span><div><div class="task-name">表单与 Logo 轮询</div><div class="task-desc">每 5 分钟抓取并回填 Lark</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>174 次</strong></div><div class="task-metric"><span>成功率</span><strong>98.9%</strong></div><div class="task-metric"><span>上次耗时</span><strong>8.4s</strong></div></div><div class="task-foot"><span class="next">下次运行 14:35</span><button class="btn small retry-btn"><i data-lucide="play"></i>运行</button><button class="switch on"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="radio"></i></span><div><div class="task-name">主网上线监听</div><div class="task-desc">监听 Lark 状态并触发后续流程</div></div><span class="status success">运行中</span></div><div class="task-metrics"><div class="task-metric"><span>今日变更</span><strong>6 次</strong></div><div class="task-metric"><span>重连</span><strong>0 次</strong></div><div class="task-metric"><span>延迟</span><strong>18s</strong></div></div><div class="task-foot"><span class="next">持续监听 · 14:32 心跳</span><button class="switch on"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="bell-ring"></i></span><div><div class="task-name">表单自动催收</div><div class="task-desc">按策略向未填写项目发送提醒</div></div><span class="status wait">等待</span></div><div class="task-metrics"><div class="task-metric"><span>待提醒</span><strong>9 个</strong></div><div class="task-metric"><span>今日已发</span><strong>12 次</strong></div><div class="task-metric"><span>回复率</span><strong>41.7%</strong></div></div><div class="task-foot"><span class="next">下次运行 15:00</span><button class="btn small retry-btn"><i data-lucide="play"></i>运行</button><button class="switch on"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="wallet-cards"></i></span><div><div class="task-name">钱包资料汇总</div><div class="task-desc">汇总钱包并推送部门摘要</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日新增</span><strong>8 条</strong></div><div class="task-metric"><span>待确认</span><strong>2 条</strong></div><div class="task-metric"><span>上次耗时</span><strong>3.1s</strong></div></div><div class="task-foot"><span class="next">下次运行 18:00</span><button class="switch on"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="send"></i></span><div><div class="task-name">部门通知</div><div class="task-desc">向财务、运营、技术分发完整资料</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>18 条</strong></div><div class="task-metric"><span>成功率</span><strong>100%</strong></div><div class="task-metric"><span>确认率</span><strong>94.4%</strong></div></div><div class="task-foot"><span class="next">事件触发 · 最近 14:30</span><button class="switch on"></button></div></article>
+          </div>
+        </section>
+
+        <section class="view" id="view-analytics">
+          <div class="page-head">
+            <div><h1>数据分析</h1><p>保留原看板的运营趋势、日历复查和问答明细</p></div>
+            <div class="page-actions"><div class="segmented analytics-range" role="group" aria-label="数据时间范围"><button data-range="24h" aria-pressed="false">24 小时</button><button data-range="7d" aria-pressed="false">7 天</button><button class="active" data-range="30d" aria-pressed="true">30 天</button></div><button class="btn"><i data-lucide="download"></i>导出报表</button></div>
+          </div>
+          <div class="sr-only" id="analytics-live-status" aria-live="polite"></div>
+
+          <div class="stats-grid">
+            <div class="stat-card"><div class="stat-top"><span>主网部署</span><span class="stat-icon green"><i data-lucide="rocket"></i></span></div><div class="stat-value" id="analytics-mainnet-value">18</div><div class="stat-foot" id="analytics-mainnet-foot"><strong>+18</strong> 过去 30 天</div></div>
+            <div class="stat-card"><div class="stat-top"><span>测试网部署</span><span class="stat-icon blue"><i data-lucide="flask-conical"></i></span></div><div class="stat-value" id="analytics-testnet-value">9</div><div class="stat-foot" id="analytics-testnet-foot"><strong>+9</strong> 过去 30 天</div></div>
+            <div class="stat-card"><div class="stat-top"><span>新增 TG 群</span><span class="stat-icon purple"><i data-lucide="messages-square"></i></span></div><div class="stat-value" id="analytics-groups-value">53</div><div class="stat-foot" id="analytics-groups-foot">过去 30 天新增</div></div>
+            <div class="stat-card"><div class="stat-top"><span>Bot 已回答</span><span class="stat-icon green"><i data-lucide="message-square-reply"></i></span></div><div class="stat-value" id="analytics-answered-value">3,482</div><div class="stat-foot" id="analytics-answered-foot"><strong>96.2%</strong> 自动解决率</div></div>
+            <div class="stat-card"><div class="stat-top"><span>沉默 / 转人工</span><span class="stat-icon amber"><i data-lucide="message-square-warning"></i></span></div><div class="stat-value" id="analytics-silent-value">137</div><div class="stat-foot" id="analytics-silent-foot"><strong class="warn">53 个</strong> 知识缺口</div></div>
+          </div>
+
+          <div class="grid-even">
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title" id="analytics-trend-title">近 30 日趋势（折线）</h2><div class="panel-sub" id="analytics-trend-sub">过去 30 天的发出消息、处理入站、FAQ、新进群与 Logo</div></div></div><div class="chart-pad"><div class="chart" id="analysis-trend"></div></div></section>
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">沉默原因占比（环形）</h2><div class="panel-sub">用于定位知识库和策略缺口</div></div></div><div class="analysis-summary"><div class="summary-item"><span>总沉默</span><strong id="summary-silent">137</strong></div><div class="summary-item"><span>知识缺口</span><strong id="summary-knowledge">53</strong></div><div class="summary-item"><span>低置信度</span><strong id="summary-confidence">41</strong></div><div class="summary-item"><span>需人工确认</span><strong id="summary-human">28</strong></div></div><div class="chart-pad"><div class="chart" id="analysis-silence"></div></div></section>
+          </div>
+
+          <section class="panel" style="margin-bottom:12px">
+            <div class="panel-head"><div><h2 class="panel-title" id="analytics-calendar-title">30 天日历复查</h2><div class="panel-sub" id="analytics-calendar-sub">颜色表示过去 30 天的问答活跃度</div></div><div class="spacer"></div><input type="date" id="analytics-date-picker" value="2026-08-16" aria-label="复查日期" style="height:30px;border:1px solid var(--line-strong);border-radius:999px;padding:0 10px;color:var(--ink);background:#fff"></div>
+            <div class="chart-pad"><div class="chart calendar" id="analysis-calendar"></div></div>
+          </section>
+
+          <section class="panel" id="day-detail-panel" hidden>
+            <div class="panel-head"><div><h2 class="panel-title" id="day-detail-title">单日复查</h2><div class="panel-sub" id="day-detail-sub">选择日历日期后查看当日明细</div></div><div class="spacer"></div><button class="btn small" id="day-detail-clear">清除复查</button></div>
+            <div class="day-detail-grid" id="day-detail-kpis"></div>
+            <div class="day-detail-columns">
+              <div><h3 class="panel-title" style="font-size:13px;margin:0 0 8px">Logo 抓取</h3><div class="table-wrap"><table><thead><tr><th>时间</th><th>项目</th><th>结果</th></tr></thead><tbody id="day-detail-logos"></tbody></table></div></div>
+              <div><h3 class="panel-title" style="font-size:13px;margin:0 0 8px">钱包资料</h3><div class="table-wrap"><table><thead><tr><th>项目</th><th>类型</th><th>地址</th></tr></thead><tbody id="day-detail-wallets"></tbody></table></div></div>
+            </div>
+          </section>
+
+          <div class="grid-even">
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">近 14 日工作流构成</h2><div class="panel-sub">表单、Logo、欢迎、Mark live、新进群与钱包</div></div></div><div class="chart-pad"><div class="chart" id="analysis-workflow"></div></div></section>
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">工作流日增量（面积）</h2><div class="panel-sub">各自动化节点的每日增量</div></div></div><div class="chart-pad"><div class="chart" id="analysis-area"></div></div></section>
+          </div>
+
+          <section class="panel table-panel">
+            <div class="panel-head"><div><h2 class="panel-title">问答明细</h2><div class="panel-sub" id="qa-window-label">最近 30 天的回答记录和人工处理线索</div></div><div class="spacer"></div><div class="qa-tabs"><button class="active" data-qa="answered" id="qa-answered-tab">已回答 3,482</button><button data-qa="silent" id="qa-silent-tab">沉默 137</button></div></div>
+            <div class="qa-pane active" id="qa-answered"><div class="table-wrap"><table><thead><tr><th>时间</th><th>Telegram 群</th><th>项目方问题</th><th>Bot 回答摘要</th><th>置信度</th></tr></thead><tbody>
+              <tr data-age-hours="0.3"><td>今天 14:18</td><td>Project Ember</td><td>How do we register the callback URL?</td><td>提供控制台路径、签名参数及回调验证步骤</td><td><span class="score">96%</span></td></tr>
+              <tr data-age-hours="0.8"><td>今天 13:42</td><td>OrbitX</td><td>Does testnet use the same app ID?</td><td>说明测试网与主网 App ID 的隔离规则</td><td><span class="score">93%</span></td></tr>
+              <tr data-age-hours="3.5"><td>今天 11:08</td><td>Aster Network</td><td>When will our logo be visible?</td><td>说明 Logo 抓取频率及上线后的缓存更新时间</td><td><span class="score">91%</span></td></tr>
+              <tr data-age-hours="20"><td>昨天 18:25</td><td>Manta Pay</td><td>Which wallet address should we submit?</td><td>区分运营钱包、结算钱包及填写要求</td><td><span class="score">89%</span></td></tr>
+              <tr data-age-hours="72"><td>3 天前</td><td>Nova Finance</td><td>Can the webhook endpoint be changed later?</td><td>说明回调地址更新流程与生效时间</td><td><span class="score">94%</span></td></tr>
+              <tr data-age-hours="336"><td>14 天前</td><td>Helios</td><td>Where can we verify the deployed contract?</td><td>提供主网浏览器验证路径</td><td><span class="score">92%</span></td></tr>
+            </tbody></table></div></div>
+            <div class="qa-pane" id="qa-silent"><div class="table-wrap"><table><thead><tr><th>时间</th><th>Telegram 群</th><th>项目方问题</th><th>沉默原因</th><th>最高匹配</th><th>状态</th></tr></thead><tbody>
+              <tr data-age-hours="0.5"><td>今天 14:02</td><td>Project Helios</td><td>Can treasury settlement use a multisig contract?</td><td>知识库没有结算钱包合约规则</td><td><span class="score">42%</span></td><td><span class="status error">待纠错</span></td></tr>
+              <tr data-age-hours="4"><td>今天 10:31</td><td>Skyline Labs</td><td>Can we change the app namespace after mainnet?</td><td>置信度低于自动回答阈值</td><td><span class="score">51%</span></td><td><span class="status wait">已转人工</span></td></tr>
+              <tr data-age-hours="22"><td>昨天 16:44</td><td>Lumen Chain</td><td>Who approves the finance settlement schedule?</td><td>跨部门业务问题</td><td><span class="score">28%</span></td><td><span class="status success">已处理</span></td></tr>
+              <tr data-age-hours="96"><td>4 天前</td><td>OrbitX</td><td>Can the grant wallet be a custodial address?</td><td>缺少钱包托管规则</td><td><span class="score">39%</span></td><td><span class="status success">已处理</span></td></tr>
+              <tr data-age-hours="408"><td>17 天前</td><td>Aster Network</td><td>Is the campaign schedule confirmed?</td><td>非技术交付问题</td><td><span class="score">25%</span></td><td><span class="status success">已处理</span></td></tr>
+            </tbody></table></div></div>
+          </section>
+        </section>
+
+        <section class="view" id="view-exceptions">
+          <div class="page-head"><div><h1>异常中心</h1><p>统一处理失败任务、资料缺失和人工确认</p></div><div class="page-actions"><button class="btn"><i data-lucide="check-check"></i>批量确认</button></div></div>
+          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索异常或项目"></label><select><option>全部类型</option><option>同步失败</option><option>资料缺失</option><option>等待人工确认</option></select><select><option>全部优先级</option><option>高优先级</option><option>中优先级</option></select></div>
+          <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>优先级</th><th>异常</th><th>项目</th><th>来源</th><th>重试</th><th>负责人</th><th>发生时间</th><th>操作</th></tr></thead><tbody id="exceptions-table-body"><tr><td colspan="8">等待真实异常数据…</td></tr></tbody></table></div></section>
+        </section>
+
+        <section class="view" id="view-audit">
+          <div class="page-head"><div><h1>审计日志</h1><p>管理员操作、状态变更和自动化执行记录</p></div><div class="page-actions"><button class="btn"><i data-lucide="download"></i>导出日志</button></div></div>
+          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索操作者、项目或动作"></label><select><option>全部操作者</option><option>Roy</option><option>Grace</option><option>Josh</option><option>System</option></select><select><option>全部动作</option><option>状态变更</option><option>人工重试</option><option>设置修改</option></select></div>
+          <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>变更内容</th><th>结果</th></tr></thead><tbody>
+            <tr><td>2026-08-16 14:30:18</td><td><div class="owner-cell"><span class="mini-avatar">S</span>System</div></td><td>部门通知</td><td>Aster Network</td><td>推送至 Finance / Ops / Tech</td><td><span class="status success">成功</span></td></tr>
+            <tr><td>2026-08-16 14:21:42</td><td><div class="owner-cell"><span class="mini-avatar">G</span>Grace</div></td><td>状态变更</td><td>Nova Finance</td><td>技术接入中 → 待主网确认</td><td><span class="status success">成功</span></td></tr>
+            <tr><td>2026-08-16 14:08:11</td><td><div class="owner-cell"><span class="mini-avatar">R</span>Roy</div></td><td>人工重试</td><td>Project Helios</td><td>重试 Lark 项目同步</td><td><span class="status error">失败</span></td></tr>
+            <tr><td>2026-08-16 13:54:05</td><td><div class="owner-cell"><span class="mini-avatar">J</span>Josh</div></td><td>资料修正</td><td>Manta Pay</td><td>更新 Logo 来源 URL</td><td><span class="status success">成功</span></td></tr>
+            <tr><td>2026-08-16 13:30:00</td><td><div class="owner-cell"><span class="mini-avatar">S</span>System</div></td><td>表单同步</td><td>OrbitX</td><td>Google Forms → Lark 多维表格</td><td><span class="status success">成功</span></td></tr>
+          </tbody></table></div></section>
+        </section>
+
+        <section class="view" id="view-settings">
+          <div class="page-head"><div><h1>系统设置</h1><p>管理员专属配置、知识学习和运行时开关</p></div><div class="page-actions"><span class="status success" id="settings-auth-badge">管理员可见</span></div></div>
+          <div class="panel">
+            <div class="panel-head"><div><h2 class="panel-title">运行时设置</h2><div class="panel-sub" id="settings-meta">加载中…</div></div><div class="spacer"></div><div class="settings-actions"><button class="btn primary" id="settings-save">保存设置</button><button class="btn" id="settings-reload-kb">重载知识库</button></div></div>
+            <div class="settings-form-grid" id="settings-form"></div>
+          </div>
+          <div class="panel" style="margin-top:12px">
+            <div class="panel-head"><div><h2 class="panel-title">知识学习</h2><div class="panel-sub">写入后可立即重载到 Bot 检索库</div></div></div>
+            <div class="knowledge-compose">
+              <div class="settings-field"><label for="learn-content">知识正文</label><textarea id="learn-content" placeholder="答案或知识点正文"></textarea></div>
+              <div class="settings-field"><label for="learn-q">相关问题（可选）</label><input id="learn-q" type="text" placeholder="例如：如何部署主网合约？"><div class="settings-hint"><label style="display:flex;align-items:center;gap:7px;font-weight:500"><input id="learn-lark" type="checkbox"> 同步飞书词条库</label></div><div class="settings-actions" style="margin-top:12px"><button class="btn primary" id="settings-learn">保存学习</button></div></div>
+            </div>
+            <div class="learned-list" id="learned-list"></div>
+          </div>
+        </section>
+      </main>
+    </section>
+  </div>
+
+  <div class="drawer-backdrop" id="drawer-backdrop"></div>
+  <aside class="drawer" id="project-drawer" aria-hidden="true">
+    <div class="drawer-head"><h2>项目详情</h2><button class="icon-btn" id="drawer-close" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
+    <div class="drawer-body">
+      <div class="detail-top"><div class="detail-logo">PH</div><div><div class="detail-name" id="drawer-project-name">Project Helios</div><div class="detail-meta" id="drawer-project-meta">对应 BD：Alice · 状态来源：Lark 项目状态</div></div><span class="status progress" id="drawer-project-stage" style="margin-left:auto">主网部署中</span></div>
+      <div class="detail-section" style="margin-top:0;border-top:0;padding-top:0"><h3>交付流程</h3><div class="stage-list">
+        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">BD 建群并邀请交付</div><div class="stage-sub">Telegram 群已绑定至 Lark 项目</div></div><time class="stage-time">08-11 10:22</time></div>
+        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">Bot 自动问候</div><div class="stage-sub">欢迎消息发送成功</div></div><time class="stage-time">08-11 10:23</time></div>
+        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">生态 App 技术接入</div><div class="stage-sub">已回答 18 个问题，人工介入 2 次</div></div><time class="stage-time">进行中</time></div>
+        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">主网上线确认</div><div class="stage-sub">等待交付人员在 Lark 确认</div></div><time class="stage-time">待处理</time></div>
+        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">Google 表单回收</div><div class="stage-sub">主网上线后自动发送</div></div><time class="stage-time">未开始</time></div>
+        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">部门资料推送</div><div class="stage-sub">钱包等资料齐全后触发</div></div><time class="stage-time">未开始</time></div>
+      </div></div>
+      <div class="detail-section"><h3>跨平台绑定</h3><div class="detail-grid"><div class="detail-field"><span>Telegram 群</span><strong>Botchain · Project Helios</strong></div><div class="detail-field"><span>Lark 记录</span><strong>recC82kA9FQ2</strong></div><div class="detail-field"><span>Google 表单</span><strong>上线后自动创建</strong></div><div class="detail-field"><span>主网状态</span><strong>尚未确认</strong></div></div></div>
+      <div class="detail-section"><h3>待处理事项</h3><div class="exception-item" style="padding:0;border:0"><span class="severity high"><i data-lucide="triangle-alert"></i></span><div><div class="exception-title">Lark 同步连续失败 3 次</div><div class="exception-meta">TLS handshake error · 最近尝试于 14:24</div></div><button class="btn small retry-btn"><i data-lucide="rotate-cw"></i>重试</button></div></div>
+    </div>
+  </aside>
+
+  <div class="toast" id="toast"><i data-lucide="circle-check"></i><span id="toast-text">操作已完成</span></div>
+
+  <script>
+    const labels = { overview: "总览", projects: "项目交付", automations: "自动化任务", analytics: "数据分析", exceptions: "异常中心", audit: "审计日志", settings: "系统设置" };
+    const sidebar = document.getElementById("sidebar");
+    const toast = document.getElementById("toast");
+    let toastTimer;
+    const chartInstances = {};
+    const chartDays = ["08-03", "08-04", "08-05", "08-06", "08-07", "08-08", "08-09", "08-10", "08-11", "08-12", "08-13", "08-14", "08-15", "08-16"];
+    const GREEN = {
+      primary: "#059669", mid: "#10b981", soft: "#34d399", mint: "#79ffb8",
+      deep: "#047857", ink: "#064e3b", muted: "#047857", warn: "#fbbf24", danger: "#dc2626",
+      palette: ["#059669", "#10b981", "#34d399", "#6ee7b7", "#a7f3d0", "#fbbf24", "#f59e0b", "#dc2626", "#047857", "#064e3b"]
+    };
+    const chartSeries = {
+      sent: [66,72,68,80,91,88,94,90,105,101,114,121,116,128],
+      processed: [58,64,60,72,79,76,84,80,92,89,99,106,102,112],
+      faq: [48,55,51,62,70,66,74,69,81,77,88,92,85,96],
+      folder: [2,1,3,1,2,2,0,3,2,1,2,1,3,2],
+      form: [1,2,1,2,1,1,2,1,3,2,2,1,2,3],
+      logo: [1,1,2,1,2,1,1,2,1,2,1,2,2,1],
+      welcome: [2,1,2,1,2,2,1,3,2,2,1,2,3,2],
+      markLive: [1,0,2,1,1,2,1,2,1,2,2,3,1,2],
+      wallet: [0,1,1,1,1,2,1,1,2,1,2,1,1,2]
+    };
+    let activeAnalyticsRange = "30d";
+    let analyticsUpdateTimer;
+
+    function dateLabels(count) {
+      const end = Date.UTC(2026, 7, 16);
+      return Array.from({ length: count }, (_, index) => {
+        const date = new Date(end - (count - 1 - index) * 86400000);
+        return date.toISOString().slice(5, 10);
+      });
+    }
+
+    function generatedSeries(count, base, wave, trend) {
+      return Array.from({ length: count }, (_, index) => Math.max(0, Math.round(base + wave[index % wave.length] + index * trend)));
+    }
+
+    const analyticsRanges = {
+      "24h": {
+        label: "过去 24 小时", short: "24 小时", calendarDays: 1, maxAgeHours: 24,
+        labels: ["00:00","02:00","04:00","06:00","08:00","10:00","12:00","14:00","16:00","18:00","20:00","22:00"],
+        stats: { mainnet: 2, testnet: 1, groups: 3, answered: 142, silent: 5, rate: "96.6%" },
+        silence: { knowledge: 2, confidence: 1, human: 1, other: 1 },
+        series: {
+          sent: [8,6,5,4,7,12,18,21,19,17,14,11], processed: [7,5,4,4,6,10,16,18,17,15,12,10],
+          faq: [5,4,3,3,5,8,13,15,14,12,10,8], folder: [0,0,0,0,1,0,1,0,0,1,0,0],
+          form: [0,0,0,0,0,1,0,1,0,0,1,0], logo: [0,0,0,0,1,0,0,1,0,0,0,0],
+          welcome: [0,0,0,0,1,0,1,0,0,1,0,0], markLive: [0,0,0,0,0,0,1,0,0,1,0,0], wallet: [0,0,0,0,0,1,0,0,1,0,0,0]
+        }
+      },
+      "7d": {
+        label: "过去 7 天", short: "7 天", calendarDays: 7, maxAgeHours: 168,
+        labels: dateLabels(7),
+        stats: { mainnet: 6, testnet: 3, groups: 17, answered: 926, silent: 36, rate: "96.3%" },
+        silence: { knowledge: 14, confidence: 11, human: 7, other: 4 },
+        series: {
+          sent: [116,124,132,121,148,139,156], processed: [102,110,118,108,132,126,141], faq: [88,94,101,92,113,108,124],
+          folder: [2,1,3,2,4,2,3], form: [2,3,2,4,3,4,5], logo: [1,2,2,3,2,3,4], welcome: [2,2,3,2,4,3,4], markLive: [1,1,0,2,1,3,2], wallet: [1,1,2,1,2,2,3]
+        }
+      },
+      "30d": {
+        label: "过去 30 天", short: "30 天", calendarDays: 30, maxAgeHours: 720,
+        labels: dateLabels(30),
+        stats: { mainnet: 18, testnet: 9, groups: 53, answered: 3482, silent: 137, rate: "96.2%" },
+        silence: { knowledge: 53, confidence: 41, human: 28, other: 15 },
+        series: {
+          sent: generatedSeries(30, 82, [0,7,-4,11,3,8,-2], 1.7), processed: generatedSeries(30, 71, [0,6,-3,9,2,7,-2], 1.5), faq: generatedSeries(30, 58, [0,5,-3,8,2,6,-1], 1.35),
+          folder: generatedSeries(30, 1, [0,1,0,2,1,0,1], .06), form: generatedSeries(30, 1, [0,1,1,2,0,1,2], .08), logo: generatedSeries(30, 1, [0,1,0,1,2,1,0], .05),
+          welcome: generatedSeries(30, 1, [1,0,1,2,0,1,1], .07), markLive: generatedSeries(30, 0, [0,1,0,1,0,2,1], .04), wallet: generatedSeries(30, 0, [0,0,1,0,1,1,0], .04)
+        }
+      }
+    };
+
+    function chartBase(labels = chartDays) {
+      return {
+        textStyle: { fontFamily: "Fira Sans, system-ui, sans-serif", color: GREEN.ink },
+        tooltip: { trigger: "axis" },
+        grid: { left: 40, right: 16, top: 24, bottom: 48 },
+        xAxis: { type: "category", boundaryGap: false, data: labels, axisLabel: { color: GREEN.muted } },
+        yAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } }
+      };
+    }
+
+    function mountChart(id, option) {
+      if (!window.echarts) return;
+      const element = document.getElementById(id);
+      if (!element) return;
+      if (!chartInstances[id]) chartInstances[id] = echarts.init(element, null, { renderer: "canvas" });
+      option.animation = !window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      chartInstances[id].setOption(option, true);
+      chartInstances[id].resize();
+    }
+
+    function renderOverviewCharts() {
+      const trend = chartBase();
+      trend.color = [GREEN.primary, GREEN.mid, GREEN.deep, GREEN.mint, GREEN.soft];
+      trend.legend = { bottom: 0, textStyle: { color: GREEN.muted, fontSize: 9 } };
+      trend.series = [
+        { name: "发出消息", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.sent },
+        { name: "处理入站", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.processed },
+        { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.faq },
+        { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.folder },
+        { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.logo }
+      ];
+      mountChart("overview-trend", trend);
+
+      const flow = chartBase();
+      flow.color = [GREEN.primary, GREEN.mid, GREEN.warn, GREEN.deep, GREEN.mint];
+      flow.legend = { bottom: 0, textStyle: { color: GREEN.muted, fontSize: 9 } };
+      flow.series = [
+        { name: "表单", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: chartSeries.form },
+        { name: "Logo", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: chartSeries.logo },
+        { name: "欢迎", type: "line", stack: "wf", areaStyle: { opacity: .25 }, smooth: true, showSymbol: false, data: chartSeries.welcome },
+        { name: "Mark live", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: chartSeries.markLive },
+        { name: "新钱包项目", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: chartSeries.wallet }
+      ];
+      mountChart("overview-flow", flow);
+    }
+
+    function renderAnalyticsCharts() {
+      const rangeData = analyticsRanges[activeAnalyticsRange];
+      const series = rangeData.series;
+      const trend = chartBase(rangeData.labels);
+      trend.color = [GREEN.primary, GREEN.mid, GREEN.deep, GREEN.mint, GREEN.soft];
+      trend.legend = { bottom: 0, textStyle: { color: GREEN.muted } };
+      trend.series = [
+        { name: "发出消息", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: series.sent },
+        { name: "处理入站", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: series.processed },
+        { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: series.faq },
+        { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: series.folder },
+        { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 6, data: series.logo }
+      ];
+      mountChart("analysis-trend", trend);
+
+      mountChart("analysis-silence", {
+        color: GREEN.palette,
+        textStyle: { fontFamily: "Fira Sans, system-ui, sans-serif", color: GREEN.ink },
+        tooltip: { trigger: "item", formatter: "{b}<br/>{c} ({d}%)" },
+        legend: { type: "scroll", bottom: 0, textStyle: { color: GREEN.muted, fontSize: 11 } },
+        series: [{ type: "pie", radius: ["42%", "68%"], center: ["50%", "44%"], itemStyle: { borderRadius: 6, borderColor: "#fff", borderWidth: 2 }, label: { color: GREEN.ink, formatter: "{d}%" }, data: [
+          { value: rangeData.silence.knowledge, name: "知识缺口" }, { value: rangeData.silence.confidence, name: "低置信度" }, { value: rangeData.silence.human, name: "需人工确认" }, { value: rangeData.silence.other, name: "非项目问题" }
+        ] }]
+      });
+
+      const correctCalendarData = Array.isArray(rangeData.calendarData) && rangeData.calendarData.length
+        ? rangeData.calendarData
+        : [];
+      const calendarEnd = correctCalendarData.length
+        ? new Date(`${correctCalendarData[correctCalendarData.length - 1][0]}T00:00:00Z`)
+        : new Date(Date.UTC(2026, 7, 16));
+      const calendarStart = correctCalendarData.length
+        ? new Date(`${correctCalendarData[0][0]}T00:00:00Z`)
+        : new Date(calendarEnd.getTime() - (rangeData.calendarDays - 1) * 86400000);
+      if (!correctCalendarData.length) {
+        for (let i = 0; i < rangeData.calendarDays; i++) {
+          const date = new Date(calendarStart.getTime() + i * 86400000);
+          const sourceIndex = Math.min(i, series.processed.length - 1);
+          correctCalendarData.push([date.toISOString().slice(0,10), Math.max(1, series.processed[sourceIndex] || 1)]);
+        }
+      }
+      const calendarMax = Math.max(...correctCalendarData.map(item => item[1]), 1);
+      mountChart("analysis-calendar", {
+        tooltip: { formatter: p => `${p.value[0]}<br/>活跃 ${p.value[1]}<br/>回答 ${Math.max(0, p.value[1] - 3)} · 沉默 ${Math.min(3, p.value[1])}` },
+        visualMap: { min: 0, max: calendarMax, calculable: true, orient: "horizontal", left: "center", bottom: 0, textStyle: { color: GREEN.muted }, inRange: { color: ["#ecfdf5", "#a7f3d0", "#34d399", "#059669", "#064e3b"] } },
+        calendar: { top: 28, left: 48, right: 16, bottom: 48, range: [calendarStart.toISOString().slice(0,10), calendarEnd.toISOString().slice(0,10)], cellSize: ["auto", activeAnalyticsRange === "30d" ? 18 : 24], itemStyle: { borderWidth: 2, borderColor: "#fff" }, splitLine: { lineStyle: { color: "#a7f3d0" } }, dayLabel: { color: GREEN.muted, nameMap: "cn" }, monthLabel: { color: GREEN.ink, nameMap: "cn" }, yearLabel: { show: false } },
+        series: [{ type: "heatmap", coordinateSystem: "calendar", data: correctCalendarData }]
+      });
+
+      const mixLabels = ["表单", "Logo", "欢迎", "Mark live", "新进群", "新钱包"];
+      const mixValues = [series.form, series.logo, series.welcome, series.markLive, series.folder, series.wallet].map(values => values.reduce((a, b) => a + b, 0));
+      mountChart("analysis-workflow", {
+        color: [GREEN.primary],
+        textStyle: { fontFamily: "Fira Sans, system-ui, sans-serif", color: GREEN.ink },
+        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
+        grid: { left: 12, right: 24, top: 12, bottom: 12, containLabel: true },
+        xAxis: { type: "value", minInterval: 1, splitLine: { lineStyle: { color: "#d1fae5" } }, axisLabel: { color: GREEN.muted } },
+        yAxis: { type: "category", data: mixLabels, axisLabel: { color: GREEN.ink, fontSize: 11 } },
+        series: [{ type: "bar", data: mixValues, barWidth: 16, itemStyle: { borderRadius: [0, 8, 8, 0], color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [{ offset: 0, color: GREEN.deep }, { offset: 1, color: GREEN.mint }]) }, label: { show: true, position: "right", color: GREEN.muted } }]
+      });
+
+      const area = chartBase(rangeData.labels);
+      area.color = [GREEN.primary, GREEN.mid, GREEN.warn, GREEN.deep, GREEN.mint];
+      area.legend = { bottom: 0, textStyle: { color: GREEN.muted } };
+      area.series = [
+        { name: "表单", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: series.form },
+        { name: "Logo", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: series.logo },
+        { name: "欢迎", type: "line", stack: "wf", areaStyle: { opacity: .25 }, smooth: true, showSymbol: false, data: series.welcome },
+        { name: "Mark live", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: series.markLive },
+        { name: "新钱包项目", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: series.wallet }
+      ];
+      mountChart("analysis-area", area);
+    }
+
+    function updateAnalyticsRange(range, announce = true) {
+      const rangeData = analyticsRanges[range];
+      if (!rangeData) return;
+      activeAnalyticsRange = range;
+
+      const control = document.querySelector(".analytics-range");
+      control?.classList.add("is-updating");
+      clearTimeout(analyticsUpdateTimer);
+      analyticsUpdateTimer = setTimeout(() => control?.classList.remove("is-updating"), 180);
+      document.querySelectorAll(".analytics-range button").forEach(button => {
+        const selected = button.dataset.range === range;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+
+      const { stats, silence } = rangeData;
+      document.getElementById("analytics-mainnet-value").textContent = stats.mainnet.toLocaleString("en-US");
+      document.getElementById("analytics-mainnet-foot").innerHTML = `<strong>+${stats.mainnet}</strong> ${rangeData.label}`;
+      document.getElementById("analytics-testnet-value").textContent = stats.testnet.toLocaleString("en-US");
+      document.getElementById("analytics-testnet-foot").innerHTML = `<strong>+${stats.testnet}</strong> ${rangeData.label}`;
+      document.getElementById("analytics-groups-value").textContent = stats.groups.toLocaleString("en-US");
+      document.getElementById("analytics-groups-foot").textContent = `${rangeData.label}新增`;
+      document.getElementById("analytics-answered-value").textContent = stats.answered.toLocaleString("en-US");
+      document.getElementById("analytics-answered-foot").innerHTML = `<strong>${stats.rate}</strong> 自动解决率`;
+      document.getElementById("analytics-silent-value").textContent = stats.silent.toLocaleString("en-US");
+      document.getElementById("analytics-silent-foot").innerHTML = `<strong class="warn">${silence.knowledge} 个</strong> 知识缺口`;
+      document.getElementById("summary-silent").textContent = stats.silent.toLocaleString("en-US");
+      document.getElementById("summary-knowledge").textContent = silence.knowledge.toLocaleString("en-US");
+      document.getElementById("summary-confidence").textContent = silence.confidence.toLocaleString("en-US");
+      document.getElementById("summary-human").textContent = silence.human.toLocaleString("en-US");
+
+      const rangeTitle = range === "24h" ? "过去 24 小时" : `近 ${rangeData.short}`;
+      document.getElementById("analytics-trend-title").textContent = `${rangeTitle}趋势（折线）`;
+      document.getElementById("analytics-trend-sub").textContent = `${rangeData.label}的发出消息、处理入站、FAQ、新进群与 Logo`;
+      document.getElementById("analytics-calendar-title").textContent = `${rangeData.short}日历复查`;
+      document.getElementById("analytics-calendar-sub").textContent = `颜色表示${rangeData.label}的问答活跃度`;
+      document.getElementById("qa-window-label").textContent = `${rangeData.label}的回答记录和人工处理线索`;
+      document.getElementById("qa-answered-tab").textContent = `已回答 ${stats.answered.toLocaleString("en-US")}`;
+      document.getElementById("qa-silent-tab").textContent = `沉默 ${stats.silent.toLocaleString("en-US")}`;
+
+      document.querySelectorAll("#qa-answered tbody tr, #qa-silent tbody tr").forEach(row => {
+        row.hidden = Number(row.dataset.ageHours || 0) > rangeData.maxAgeHours;
+      });
+
+      const end = new Date(Date.UTC(2026, 7, 16));
+      const start = new Date(end.getTime() - (rangeData.calendarDays - 1) * 86400000);
+      const picker = document.getElementById("analytics-date-picker");
+      picker.min = start.toISOString().slice(0, 10);
+      picker.max = end.toISOString().slice(0, 10);
+      picker.value = end.toISOString().slice(0, 10);
+
+      renderAnalyticsCharts();
+      document.getElementById("analytics-live-status").textContent = `数据范围已切换为${rangeData.label}`;
+      if (announce) showToast(`全部数据已切换为${rangeData.label}`);
+    }
+
+    function ensureCharts(viewName) {
+      requestAnimationFrame(() => {
+        if (viewName === "overview") renderOverviewCharts();
+        if (viewName === "analytics") renderAnalyticsCharts();
+        Object.values(chartInstances).forEach(chart => chart.resize());
+      });
+    }
+
+    function renderIcons() { if (window.lucide) lucide.createIcons({ attrs: { "stroke-width": 1.8 } }); }
+    function showToast(message) {
+      document.getElementById("toast-text").textContent = message;
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+    function navigate(viewName) {
+      document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === `view-${viewName}`));
+      document.querySelectorAll(".nav-item[data-view]").forEach(n => n.classList.toggle("active", n.dataset.view === viewName));
+      document.getElementById("breadcrumb-current").textContent = labels[viewName];
+      sidebar.classList.remove("open");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      ensureCharts(viewName);
+    }
+    document.querySelectorAll("[data-view]").forEach(el => el.addEventListener("click", () => navigate(el.dataset.view)));
+    document.querySelectorAll("[data-nav]").forEach(el => el.addEventListener("click", () => navigate(el.dataset.nav)));
+    document.getElementById("menu-toggle").addEventListener("click", () => sidebar.classList.toggle("open"));
+    document.querySelectorAll(".segmented:not(.analytics-range) button").forEach(btn => btn.addEventListener("click", () => { btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active")); btn.classList.add("active"); showToast(`已切换到${btn.textContent}数据`); }));
+    document.querySelectorAll(".analytics-range button").forEach(button => button.addEventListener("click", () => updateAnalyticsRange(button.dataset.range)));
+    document.getElementById("refresh-btn").addEventListener("click", e => { e.currentTarget.querySelector("svg")?.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 500 }); loadLiveDashboard(true); });
+    document.getElementById("settings-demo").addEventListener("click", () => showToast("设置入口仅管理员可见"));
+    document.getElementById("run-health").addEventListener("click", () => showToast("健康检查已完成：1 项轻微波动"));
+    document.querySelectorAll(".qa-tabs button").forEach(button => button.addEventListener("click", () => {
+      document.querySelectorAll(".qa-tabs button").forEach(item => item.classList.toggle("active", item === button));
+      document.querySelectorAll(".qa-pane").forEach(pane => pane.classList.toggle("active", pane.id === `qa-${button.dataset.qa}`));
+    }));
+    window.addEventListener("resize", () => Object.values(chartInstances).forEach(chart => chart.resize()));
+
+    document.querySelectorAll(".switch").forEach(sw => sw.addEventListener("click", () => { sw.classList.toggle("on"); showToast(sw.classList.contains("on") ? "任务已启用" : "任务已暂停"); }));
+    document.querySelectorAll(".retry-btn").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); btn.disabled = true; const original = btn.innerHTML; btn.textContent = "处理中"; setTimeout(() => { btn.innerHTML = original; btn.disabled = false; renderIcons(); showToast("任务已进入重试队列"); }, 700); }));
+    document.querySelectorAll(".assign-btn").forEach(btn => btn.addEventListener("click", e => { e.stopPropagation(); showToast("已指派给 Roy"); }));
+
+    const drawer = document.getElementById("project-drawer");
+    const backdrop = document.getElementById("drawer-backdrop");
+    function openDrawer(row) {
+      if (row) {
+        document.getElementById("drawer-project-name").textContent = row.querySelector(".project-name")?.textContent || "项目详情";
+        document.getElementById("drawer-project-meta").textContent = `对应 BD：${row.dataset.bd || "-"} · 状态来源：Lark 项目状态`;
+        const stage = document.getElementById("drawer-project-stage");
+        stage.textContent = row.dataset.stageLabel || "-";
+        stage.className = `status ${row.dataset.stage === "live" ? "success" : row.dataset.stage === "test_deploy" ? "wait" : "progress"}`;
+        stage.style.marginLeft = "auto";
+      }
+      drawer.classList.add("open"); backdrop.classList.add("open"); drawer.setAttribute("aria-hidden", "false");
+    }
+    function closeDrawer() { drawer.classList.remove("open"); backdrop.classList.remove("open"); drawer.setAttribute("aria-hidden", "true"); }
+    document.getElementById("drawer-close").addEventListener("click", closeDrawer);
+    backdrop.addEventListener("click", closeDrawer);
+    document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
+    document.querySelectorAll("#project-table tbody tr").forEach(row => row.addEventListener("click", () => openDrawer(row)));
+    document.querySelectorAll("[data-open-project]").forEach(btn => btn.addEventListener("click", () => { navigate("projects"); showToast("这是新建交付入口的交互示意"); }));
+
+    const projectSearch = document.getElementById("project-search");
+    const stageFilter = document.getElementById("stage-filter");
+    const bdFilter = document.getElementById("bd-filter");
+    function filterProjects() {
+      const query = projectSearch.value.trim().toLowerCase();
+      let visible = 0;
+      document.querySelectorAll("#project-table tbody tr").forEach(row => {
+        const matches = (!query || row.dataset.search.includes(query)) && (stageFilter.value === "all" || row.dataset.stage === stageFilter.value) && (bdFilter.value === "all" || row.dataset.bd === bdFilter.value);
+        row.style.display = matches ? "" : "none";
+        if (matches) visible++;
+      });
+      document.getElementById("project-empty").style.display = visible ? "none" : "block";
+    }
+    projectSearch.addEventListener("input", filterProjects);
+    [stageFilter, bdFilter].forEach(el => {
+      el.addEventListener("input", filterProjects);
+      el.addEventListener("change", filterProjects);
+    });
+
+    const liveDashboard = { payload: null, loading: false };
+    const dashboardApiBase = "/dashboard";
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
+    }
+
+    function formatLiveTime(value) {
+      const date = new Date(value || "");
+      if (Number.isNaN(date.getTime())) return "—";
+      return date.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+    }
+
+    function ageHours(value) {
+      const time = new Date(value || "").getTime();
+      return Number.isFinite(time) ? Math.max(0, (Date.now() - time) / 3600000) : 99999;
+    }
+
+    function counterValues(payload, key, dates) {
+      const byDay = ((payload.counters_series || {})[key] || {}).by_day || {};
+      return dates.map(day => Number(byDay[day] || 0));
+    }
+
+    function silenceBreakdown(report) {
+      const values = { knowledge: 0, confidence: 0, human: 0, other: 0 };
+      Object.entries((report?.qa || {}).silence_reasons || {}).forEach(([reason, count]) => {
+        const text = reason.toLowerCase();
+        const n = Number(count || 0);
+        if (/knowledge|missing|no.?match|no.?relevant|coverage|faq|not.?found|缺|知识/.test(text)) values.knowledge += n;
+        else if (/score|confidence|threshold|low|置信|匹配/.test(text)) values.confidence += n;
+        else if (/human|manual|business|blocked|人工|业务|拦截/.test(text)) values.human += n;
+        else values.other += n;
+      });
+      const total = Number((report?.qa?.counts || {}).silent || 0);
+      const assigned = values.knowledge + values.confidence + values.human + values.other;
+      values.other += Math.max(0, total - assigned);
+      return values;
+    }
+
+    function makeLiveRange(payload, range) {
+      const report = (payload.period_reports || {})[range] || payload.daily || {};
+      const wantedDays = range === "24h" ? 2 : range === "7d" ? 7 : 30;
+      const days = (report.window_days || []).slice(-wantedDays);
+      const metrics = report.metrics || {};
+      const progress = report.progress || {};
+      const qaCounts = (report.qa || {}).counts || {};
+      const answered = Number(qaCounts.replied || 0);
+      const silent = Number(qaCounts.silent || 0);
+      const rate = answered + silent ? `${((answered / (answered + silent)) * 100).toFixed(1)}%` : "—";
+      const labels = days.map(day => day.slice(5));
+      const series = {
+        sent: counterValues(payload, "messages_sent", days),
+        processed: counterValues(payload, "messages_processed", days),
+        faq: counterValues(payload, "faq_reply_sessions", days),
+        folder: counterValues(payload, "folder_auto_add_success", days),
+        form: counterValues(payload, "form_dispatch_success", days),
+        logo: counterValues(payload, "logo_fill_success", days),
+        welcome: counterValues(payload, "welcome_sequences_started", days),
+        markLive: counterValues(payload, "mark_live_triggers", days),
+        wallet: counterValues(payload, "wallet_digest_new_projects", days)
+      };
+      const calendarDays = (payload.calendar?.days || []).slice(range === "24h" ? -1 : -wantedDays);
+      const calendarData = calendarDays.map(item => [item.date, Number(item.activity || item.messages_processed || 0)]);
+      return {
+        label: range === "24h" ? "过去 24 小时" : `过去 ${range === "7d" ? "7 天" : "30 天"}`,
+        short: range === "24h" ? "24 小时" : range === "7d" ? "7 天" : "30 天",
+        calendarDays: Math.max(1, calendarData.length || (range === "24h" ? 1 : range === "7d" ? 7 : 30)),
+        maxAgeHours: range === "24h" ? 24 : range === "7d" ? 168 : 720,
+        labels: labels.length ? labels : ["暂无"],
+        stats: {
+          mainnet: Number(progress.today_mainnet_live || 0),
+          testnet: Number(progress.testnet_deploying || 0),
+          groups: Number(metrics.folder_auto_add_success || 0),
+          answered,
+          silent,
+          rate
+        },
+        silence: silenceBreakdown(report),
+        series,
+        calendarData
+      };
+    }
+
+    function hydrateLiveRanges(payload) {
+      ["24h", "7d", "30d"].forEach(range => { analyticsRanges[range] = makeLiveRange(payload, range); });
+    }
+
+    function renderLiveOverview(payload) {
+      const report = payload.period_reports?.["7d"] || payload.daily || {};
+      const progress = report.progress || {};
+      const metrics = report.metrics || {};
+      const projects = payload.projects || {};
+      const rows = projects.rows || [];
+      const liveRows = rows.filter(row => row.stage === "live");
+      const formPending = Number(projects.form_pending || 0);
+      const wallet = payload.snapshot?.wallet_lark || {};
+      const stats = document.querySelectorAll("#view-overview .stats-grid .stat-value");
+      const feet = document.querySelectorAll("#view-overview .stats-grid .stat-foot");
+      if (stats[0]) stats[0].textContent = (Number(progress.mainnet_deploying || 0) + Number(progress.testnet_deploying || 0)).toLocaleString("en-US");
+      if (stats[1]) stats[1].textContent = Number((payload.qa?.counts || {}).silent || 0).toLocaleString("en-US");
+      if (stats[2]) stats[2].textContent = Number(report.bot_messages?.auto_replied || metrics.messages_processed || 0).toLocaleString("en-US");
+      if (stats[3]) stats[3].textContent = formPending.toLocaleString("en-US");
+      if (stats[4]) stats[4].textContent = Number(report.progress?.today_mainnet_live || liveRows.length || 0).toLocaleString("en-US");
+      if (feet[0]) feet[0].innerHTML = `<strong>${rows.length.toLocaleString("en-US")}</strong> Lark 进度表项目`;
+      if (feet[1]) feet[1].innerHTML = `<strong class="danger">${Number((payload.qa?.counts || {}).silent || 0)}</strong> TG 沉默 / 待人工`;
+      if (feet[2]) feet[2].innerHTML = `<strong>${Number(report.bot_messages?.replied || 0)}</strong> 个回答会话`;
+      if (feet[3]) feet[3].innerHTML = `<strong class="warn">${formPending}</strong> 个主网上线后未回收`;
+      if (feet[4]) feet[4].innerHTML = `<strong>${Number(wallet.address_coverage_pct || 0).toFixed(1)}%</strong> 钱包地址覆盖`;
+
+      const pipeline = document.querySelectorAll("#view-overview .pipeline-step .step-count");
+      if (pipeline[0]) pipeline[0].textContent = Number(projects.matched || 0).toLocaleString("en-US");
+      if (pipeline[1]) pipeline[1].textContent = Number(progress.mainnet_deploying || 0).toLocaleString("en-US");
+      if (pipeline[2]) pipeline[2].textContent = Number(progress.today_mainnet_live || 0).toLocaleString("en-US");
+      if (pipeline[3]) pipeline[3].textContent = formPending.toLocaleString("en-US");
+      if (pipeline[4]) pipeline[4].textContent = Math.max(0, Number(wallet.total_rows || 0) - Number(wallet.projects_with_any_address || 0)).toLocaleString("en-US");
+      if (pipeline[5]) pipeline[5].textContent = Number(payload.snapshot?.counters?.wallet_digest_sent?.today || 0).toLocaleString("en-US");
+      const sync = document.querySelector(".sync-status span");
+      if (sync) sync.textContent = `数据更新于 ${formatLiveTime(payload.generated_at)}`;
+      renderLiveWorkflow(payload.workflow || {});
+    }
+
+    function formatRelativeTime(value) {
+      const time = new Date(value || "").getTime();
+      if (!Number.isFinite(time)) return "时间未知";
+      const minutes = Math.max(0, Math.floor((Date.now() - time) / 60000));
+      if (minutes < 1) return "刚刚";
+      if (minutes < 60) return `${minutes} 分钟前`;
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return `${hours} 小时前`;
+      return `${Math.floor(hours / 24)} 天前`;
+    }
+
+    function renderLiveWorkflow(workflow) {
+      const funnel = workflow.funnel || {};
+      const steps = funnel.steps || [];
+      const byKey = Object.fromEntries(steps.map(step => [step.key, step]));
+      document.querySelectorAll("[data-funnel-step]").forEach(node => {
+        const step = byKey[node.dataset.funnelStep] || {};
+        const count = node.querySelector(".step-count");
+        const note = node.querySelector(".step-note");
+        if (count) count.textContent = step.count == null ? "—" : Number(step.count).toLocaleString("en-US");
+        if (note) note.textContent = step.note || "暂无说明";
+        const label = node.querySelector(".step-label");
+        if (label && step.label) label.textContent = step.label;
+      });
+      const funnelSubtitle = document.getElementById("funnel-subtitle");
+      if (funnelSubtitle) {
+        funnelSubtitle.textContent = `当前 ${Number(funnel.total || 0).toLocaleString("en-US")} 条 Lark 项目的实时阶段分布`;
+      }
+
+      const exceptions = workflow.exceptions || [];
+      const exceptionCount = document.getElementById("exception-count");
+      const exceptionSubtitle = document.getElementById("exception-subtitle");
+      const exceptionList = document.getElementById("overview-exception-list");
+      if (exceptionCount) exceptionCount.textContent = `全部 ${Number(workflow.exceptions_total || exceptions.length).toLocaleString("en-US")} 项`;
+      if (exceptionSubtitle) exceptionSubtitle.textContent = exceptions.length ? "按严重程度排序 · 来自真实状态与日志" : "当前没有真实异常记录";
+      if (exceptionList) {
+        exceptionList.innerHTML = exceptions.length ? exceptions.slice(0, 5).map(item => {
+          const severity = ["high", "medium", "low"].includes(item.severity) ? item.severity : "medium";
+          const icon = escapeHtml(item.icon || "triangle-alert");
+          const title = escapeHtml(item.title || "需要人工处理");
+          const meta = escapeHtml(item.meta || "");
+          return `<div class="exception-item"><span class="severity ${severity}"><i data-lucide="${icon}"></i></span><div><div class="exception-title">${title}</div><div class="exception-meta">${meta}</div></div></div>`;
+        }).join("") : `<div class="empty-state" style="display:block;padding:28px 12px">暂无真实异常记录</div>`;
+      }
+      const navBadge = document.getElementById("exceptions-nav-badge");
+      if (navBadge) navBadge.textContent = Number(workflow.exceptions_total || exceptions.length).toLocaleString("en-US");
+      renderExceptionTable(exceptions);
+
+      const activities = workflow.activities || [];
+      const activityList = document.getElementById("recent-activity-list");
+      if (activityList) {
+        activityList.innerHTML = activities.length ? activities.slice(0, 6).map(item => {
+          const icon = escapeHtml(item.icon || "activity");
+          const text = escapeHtml(item.text || "工作流事件");
+          return `<div class="activity"><span class="activity-icon"><i data-lucide="${icon}"></i></span><div class="activity-text">${text}</div><time class="activity-time" title="${escapeHtml(formatLiveTime(item.ts))}">${escapeHtml(formatRelativeTime(item.ts))}</time></div>`;
+        }).join("") : `<div class="empty-state" style="display:block;padding:28px 12px">暂无可追溯的真实工作流事件</div>`;
+      }
+      renderIcons();
+    }
+
+    function renderExceptionTable(exceptions) {
+      const body = document.getElementById("exceptions-table-body");
+      if (!body) return;
+      body.innerHTML = exceptions.length ? exceptions.map(item => {
+        const severity = item.severity === "high" ? "高" : item.severity === "low" ? "低" : "中";
+        const statusClass = item.severity === "high" ? "error" : item.severity === "low" ? "neutral" : "wait";
+        const title = escapeHtml(item.title || "需要人工处理");
+        const meta = escapeHtml(item.meta || "");
+        const project = escapeHtml(item.project || "—");
+        const source = escapeHtml(item.source || "dashboard");
+        return `<tr><td><span class="status ${statusClass}">${severity}</span></td><td><div class="project-name">${title}</div><div class="project-id">${source}</div></td><td>${project}</td><td>${source}</td><td>—</td><td>待指派</td><td>实时快照</td><td>—</td></tr>`;
+      }).join("") : `<tr><td colspan="8">暂无真实异常记录</td></tr>`;
+    }
+
+    function renderLiveProjects(projects) {
+      const rows = projects?.rows || [];
+      const tbody = document.querySelector("#project-table tbody");
+      if (!tbody) return;
+      tbody.innerHTML = rows.map(row => {
+        const stageClass = row.stage === "live" ? "success" : row.stage === "test_deploy" ? "wait" : row.stage === "main_deploy" ? "progress" : "neutral";
+        const bd = row.bd || "未分配";
+        const search = `${row.project || ""} ${bd} ${row.chat_title || ""}`.toLowerCase();
+        const tgLabel = row.tg_bound ? (row.tg_ignored ? "TG 黑名单" : "TG 已绑定") : "TG 未绑定";
+        const tgClass = row.tg_bound ? (row.tg_ignored ? "wait" : "success") : "neutral";
+        const chatMeta = row.chat_title ? `<small class="project-id">${escapeHtml(row.chat_title)}</small>` : "";
+        return `<tr data-stage="${escapeHtml(row.stage)}" data-stage-label="${escapeHtml(row.stage_label)}" data-bd="${escapeHtml(bd)}" data-search="${escapeHtml(search)}" data-chat-id="${escapeHtml(row.chat_id ?? "")}">
+          <td><div class="project-name">${escapeHtml(row.project)}</div><div class="project-id">${escapeHtml(row.record_id)} · 更新 ${escapeHtml(formatLiveTime(row.updated_at))}</div></td>
+          <td><span class="status ${stageClass}">${escapeHtml(row.stage_label)}</span></td>
+          <td><div class="owner-cell"><span class="mini-avatar">${escapeHtml((bd.replace(/^@/, "")[0] || "?").toUpperCase())}</span>${escapeHtml(bd)}</div></td>
+          <td><div class="binding-pair"><span class="status ${tgClass}">${tgLabel}</span><span class="status success">Lark 已匹配</span>${chatMeta}</div></td>
+        </tr>`;
+      }).join("");
+      document.querySelectorAll("#project-table tbody tr").forEach(row => row.addEventListener("click", () => openDrawer(row)));
+      const bds = [...new Set(rows.map(row => row.bd).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+      const current = bdFilter.value;
+      bdFilter.innerHTML = `<option value="all">全部 BD</option>${bds.map(bd => `<option value="${escapeHtml(bd)}">${escapeHtml(bd)}</option>`).join("")}`;
+      bdFilter.value = bds.includes(current) ? current : "all";
+      filterProjects();
+      const projectBadge = document.querySelector('[data-view="projects"] .nav-badge');
+      if (projectBadge) projectBadge.textContent = rows.length.toLocaleString("en-US");
+    }
+
+    function renderLiveQA(payload) {
+      const answered = payload.qa?.answered || [];
+      const silent = payload.qa?.silent || [];
+      const answeredBody = document.querySelector("#qa-answered tbody");
+      const silentBody = document.querySelector("#qa-silent tbody");
+      if (answeredBody) answeredBody.innerHTML = answered.length ? answered.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml((row.reply_text || "").slice(0, 180) || "—")}</td><td><span class="score">${row.score == null ? "—" : `${Math.round(Number(row.score) * 100)}%`}</span></td></tr>`).join("") : `<tr><td colspan="5">暂无真实回答记录</td></tr>`;
+      if (silentBody) silentBody.innerHTML = silent.length ? silent.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml(row.reason || "未分类")}</td><td><span class="score">${row.score == null ? "—" : `${Math.round(Number(row.score) * 100)}%`}</span></td><td><span class="status error">待处理</span></td></tr>`).join("") : `<tr><td colspan="6">暂无沉默记录</td></tr>`;
+    }
+
+    async function loadLiveDashboard(force = false) {
+      if (liveDashboard.loading) return;
+      liveDashboard.loading = true;
+      try {
+        const query = force ? "?refresh=1" : "";
+        const response = await fetch(`${dashboardApiBase}/api/snapshot${query}`, { credentials: "same-origin", cache: "no-store" });
+        if (response.status === 401) {
+          location.href = `${dashboardApiBase}/login?next=${encodeURIComponent(location.pathname)}`;
+          return;
+        }
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json();
+        liveDashboard.payload = payload;
+        hydrateLiveRanges(payload);
+        renderLiveOverview(payload);
+        renderLiveProjects(payload.projects);
+        renderLiveQA(payload);
+        updateAnalyticsRange(activeAnalyticsRange, false);
+        ensureCharts(document.querySelector(".view.active")?.id?.replace("view-", "") || "overview");
+        const status = document.getElementById("analytics-live-status");
+        if (status) status.textContent = `已接入 Lark 与 Telegram，最近更新 ${formatLiveTime(payload.generated_at)}`;
+      } catch (error) {
+        console.warn("live dashboard refresh failed", error);
+        showToast("实时数据暂时不可用，保留上次数据");
+      } finally {
+        liveDashboard.loading = false;
+      }
+    }
+
+    renderIcons();
+    ensureCharts("overview");
+    loadLiveDashboard(true);
+    window.setInterval(() => loadLiveDashboard(true), 60000);
+  </script>
+</body>
+</html>

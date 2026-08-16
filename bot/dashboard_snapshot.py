@@ -818,6 +818,358 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
     return out
 
 
+def _dashboard_path(config: Any, attr: str, default: str) -> Path:
+    raw = str(getattr(config, attr, default) or default)
+    path = Path(raw)
+    return path if path.is_absolute() else ROOT / path
+
+
+def _event_datetime(value: Any) -> datetime | None:
+    """Parse an ISO timestamp or Unix seconds/milliseconds for dashboard feeds."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        try:
+            number = float(value)
+            if number > 10_000_000_000:
+                number /= 1000
+            return datetime.fromtimestamp(number, TZ)
+        except (OverflowError, OSError, ValueError):
+            return None
+    raw = str(value).strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=TZ)
+    return parsed.astimezone(TZ)
+
+
+def _read_jsonl(path: Path, *, max_days: int = 30) -> list[dict[str, Any]]:
+    """Read bounded JSONL rows, ignoring malformed or very old records."""
+    if not path.is_file():
+        return []
+    since = datetime.now(TZ) - timedelta(days=max(int(max_days), 1))
+    rows: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if not isinstance(row, dict):
+                    continue
+                ts = _event_datetime(row.get("ts"))
+                if ts is not None and ts < since:
+                    continue
+                rows.append(row)
+    except OSError:
+        logger.exception("dashboard: failed reading event log %s", path)
+    return rows
+
+
+def _short_workflow_status(status: str) -> str:
+    text = str(status or "").strip()
+    if not text:
+        return "未设置"
+    if "主网上线" in text:
+        return "主网上线"
+    if "主网部署" in text:
+        return "主网部署中"
+    if "测试网部署" in text:
+        return "测试网部署"
+    return text[:60]
+
+
+def _build_recent_workflow_activities(
+    config: Any,
+    *,
+    qa: dict[str, Any] | None = None,
+    rows: list[dict[str, Any]] | None = None,
+) -> list[dict[str, Any]]:
+    """Build named activity rows only from persisted, timestamped evidence."""
+    activities: list[dict[str, Any]] = []
+    for item in (qa or {}).get("answered") or []:
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        chat = str(item.get("chat_title") or "Telegram 群")[:120]
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": "message-square-reply",
+                "kind": "qa",
+                "project": chat,
+                "text": f"Bot 在 {chat} 回复了一条消息",
+                "source": "message_logs",
+            }
+        )
+
+    logo_path = _dashboard_path(
+        config, "workflow_logo_events_file", "data/logo_fill_events.jsonl"
+    )
+    for item in _read_jsonl(logo_path):
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        name = str(item.get("project_name") or item.get("record_id") or "未命名项目")[:120]
+        status = str(item.get("status") or "")
+        if status.startswith("ok"):
+            icon, text = "image", f"{name} 的 Logo 已写入 Lark"
+        elif status.startswith(("err", "fail")):
+            icon, text = "image-off", f"{name} 的 Logo 抓取失败"
+        elif status in {"no_logo", "no_url"}:
+            icon, text = "image-off", f"{name} 未找到可用 Logo"
+        else:
+            continue
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": icon,
+                "kind": "logo",
+                "project": name,
+                "text": text,
+                "source": "logo_fill_events",
+            }
+        )
+
+    deploy_path = _dashboard_path(
+        config,
+        "workflow_deploy_status_watch_state_file",
+        "data/deploy_status_watch_state.json",
+    )
+    deploy_state: dict[str, Any] = {}
+    if deploy_path.is_file():
+        try:
+            raw = json.loads(deploy_path.read_text(encoding="utf-8"))
+            deploy_state = raw if isinstance(raw, dict) else {}
+        except (OSError, json.JSONDecodeError):
+            deploy_state = {}
+    for item in deploy_state.get("events") or []:
+        if not isinstance(item, dict):
+            continue
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        name = str(item.get("name") or item.get("record_id") or "未命名项目")[:120]
+        new_status = _short_workflow_status(str(item.get("to") or ""))
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": "git-branch",
+                "kind": "status",
+                "project": name,
+                "text": f"{name} 状态更新为 {new_status}",
+                "source": "deploy_status_watch",
+            }
+        )
+
+    chase_path = _dashboard_path(
+        config, "workflow_form_chase_state_file", "data/form_chase_state.json"
+    )
+    if chase_path.is_file():
+        try:
+            raw = json.loads(chase_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raw = {}
+        for record in (raw.get("projects") or {}).values() if isinstance(raw, dict) else []:
+            if not isinstance(record, dict):
+                continue
+            name = str(record.get("project_name") or "未命名项目")[:120]
+            first = _event_datetime(record.get("first_sent_at"))
+            if first is not None:
+                activities.append(
+                    {
+                        "ts": first.isoformat(timespec="seconds"),
+                        "icon": "file-check-2",
+                        "kind": "form",
+                        "project": name,
+                        "text": f"{name} 的 Google 表单已发送",
+                        "source": "form_chase_state",
+                    }
+                )
+            reminders = int(record.get("reminders_sent") or 0)
+            last = _event_datetime(record.get("last_sent_at"))
+            if reminders > 0 and last is not None and last != first:
+                activities.append(
+                    {
+                        "ts": last.isoformat(timespec="seconds"),
+                        "icon": "bell-ring",
+                        "kind": "form",
+                        "project": name,
+                        "text": f"{name} 的表单催收已发送（第 {reminders} 次）",
+                        "source": "form_chase_state",
+                    }
+                )
+
+    activities.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
+    return activities[:12]
+
+
+def build_workflow_overview(
+    config: Any,
+    projects: dict[str, Any] | None,
+    snapshot_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Return real funnel, recent activities, and actionable exceptions."""
+    projects = projects or {}
+    snapshot_payload = snapshot_payload or {}
+    rows = [row for row in (projects.get("rows") or []) if isinstance(row, dict)]
+    snap = snapshot_payload.get("snapshot") or {}
+    counters = snap.get("counters") or {}
+    derived = snap.get("derived") or {}
+    qa = snapshot_payload.get("qa") or {}
+    live_rows = [row for row in rows if row.get("stage") == "live"]
+    main_rows = [row for row in rows if row.get("stage") == "main_deploy"]
+    test_rows = [row for row in rows if row.get("stage") == "test_deploy"]
+    form_pending_rows = [row for row in live_rows if not row.get("form_sent")]
+    wallet = snap.get("wallet_lark") or {}
+    wallet_total = wallet.get("total_rows")
+    wallet_with_address = wallet.get("projects_with_any_address")
+    wallet_incomplete = None
+    if wallet_total is not None and wallet_with_address is not None:
+        wallet_incomplete = max(0, int(wallet_total) - int(wallet_with_address))
+
+    technical_rows = [
+        row
+        for row in rows
+        if row.get("stage") == "test_deploy"
+        or any(token in str(row.get("status_raw") or "") for token in ("接入", "对接"))
+    ]
+    notified_week = int((counters.get("wallet_digest_sent") or {}).get("week") or 0)
+    logo_state = derived.get("logo_fill_state") or {}
+    logo_fail = int(logo_state.get("fail") or 0)
+
+    steps = [
+        {
+            "key": "bound",
+            "label": "TG / Lark 已绑定",
+            "count": int(projects.get("matched") or 0),
+            "note": f"共 {len(rows)} 条 Lark 项目记录",
+        },
+        {
+            "key": "technical",
+            "label": "技术接入中",
+            "count": len(technical_rows),
+            "note": "按 Lark 项目状态统计",
+        },
+        {
+            "key": "main_deploy",
+            "label": "主网部署中",
+            "count": len(main_rows),
+            "note": "当前状态为主网部署中",
+        },
+        {
+            "key": "form_pending",
+            "label": "上线后待回收表单",
+            "count": len(form_pending_rows),
+            "note": "主网上线且尚未标记表单已发送",
+        },
+        {
+            "key": "wallet_incomplete",
+            "label": "钱包地址待补齐",
+            "count": wallet_incomplete,
+            "note": "来自 Lark 钱包表",
+        },
+        {
+            "key": "notified",
+            "label": "部门通知成功",
+            "count": notified_week,
+            "note": "过去 7 天 Digest 已发送",
+        },
+    ]
+
+    exceptions: list[dict[str, Any]] = []
+    if projects.get("error"):
+        exceptions.append(
+            {
+                "severity": "high",
+                "icon": "triangle-alert",
+                "title": "Lark 项目数据读取失败",
+                "meta": str(projects.get("error"))[:240],
+                "project": "",
+                "action": None,
+                "source": "dashboard_api",
+            }
+        )
+    for row in rows:
+        if row.get("tg_bound"):
+            continue
+        reason = str(row.get("tg_match_reason") or "未找到群标题匹配")
+        exceptions.append(
+            {
+                "severity": "high" if "ambiguous" in reason else "medium",
+                "icon": "link-2-off",
+                "title": "TG / Lark 未完成绑定",
+                "meta": f"{row.get('project') or row.get('record_id') or '未命名项目'} · {reason}",
+                "project": row.get("project") or "",
+                "action": None,
+                "source": "project_matching",
+            }
+        )
+    for row in form_pending_rows:
+        exceptions.append(
+            {
+                "severity": "high",
+                "icon": "file-clock",
+                "title": "主网上线后待发送表单",
+                "meta": f"{row.get('project') or row.get('record_id') or '未命名项目'} · Lark 状态为主网上线",
+                "project": row.get("project") or "",
+                "action": None,
+                "source": "form_dispatch",
+            }
+        )
+    for row in (qa.get("silent") or [])[:20]:
+        chat = str(row.get("chat_title") or "Telegram 群")
+        reason = str(row.get("reason") or "未分类")
+        exceptions.append(
+            {
+                "severity": "medium",
+                "icon": "message-circle-question",
+                "title": "Bot 未自动回复，待人工判断",
+                "meta": f"{chat} · {reason[:160]}",
+                "project": chat,
+                "action": None,
+                "source": "message_logs",
+            }
+        )
+    if logo_fail:
+        exceptions.append(
+            {
+                "severity": "medium",
+                "icon": "image-off",
+                "title": "Logo 抓取失败",
+                "meta": f"当前 Logo 状态文件记录失败 {logo_fail} 条",
+                "project": "",
+                "action": None,
+                "source": "logo_state",
+            }
+        )
+    severity_order = {"high": 0, "medium": 1, "low": 2}
+    exceptions.sort(key=lambda item: severity_order.get(str(item.get("severity")), 9))
+
+    activities = _build_recent_workflow_activities(config, qa=qa, rows=rows)
+    return {
+        "generated_at": _now_iso(),
+        "funnel": {
+            "total": len(rows),
+            "live": len(live_rows),
+            "test_deploy": len(test_rows),
+            "steps": steps,
+        },
+        "activities": activities,
+        "activities_empty": not activities,
+        "exceptions": exceptions[:50],
+        "exceptions_total": len(exceptions),
+        "exceptions_visible": min(len(exceptions), 5),
+    }
+
+
 def snapshot_path(config: Any | None = None) -> Path:
     raw = getattr(config, "dashboard_snapshot_file", None) if config else None
     path = Path(str(raw or "data/dashboard_snapshot.json"))

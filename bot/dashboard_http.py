@@ -199,7 +199,7 @@ def register_dashboard_routes(
             return denied
         force = (request.rel_url.query.get("refresh") or "") in {"1", "true", "yes"}
         data = await _ensure_snapshot(app["dashboard_config"], force=force)
-        from bot.dashboard_snapshot import build_live_project_rows
+        from bot.dashboard_snapshot import build_live_project_rows, build_workflow_overview
 
         loop = asyncio.get_running_loop()
         projects = await loop.run_in_executor(
@@ -207,6 +207,9 @@ def register_dashboard_routes(
         )
         payload = dict(data)
         payload["projects"] = projects
+        payload["workflow"] = build_workflow_overview(
+            app["dashboard_config"], projects, payload
+        )
         return web.json_response(payload)
 
     async def api_day(request: web.Request) -> web.Response:
