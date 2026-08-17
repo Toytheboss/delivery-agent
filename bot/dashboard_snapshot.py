@@ -1789,11 +1789,18 @@ def _build_recent_workflow_activities(
         "logo_uploaded_lark",
     }
     seen_skip_events: set[tuple[str, str, str]] = set()
+    seen_singleton_kinds: set[str] = set()
     # Read newest-first so legacy retry spam collapses to the latest visible row.
     for item in reversed(_read_jsonl(workflow_events_path)):
         kind = str(item.get("kind") or "automation")
         if kind in dedicated_kinds:
             continue
+        # Routine health checks should not fill the recent-completions feed.
+        # Keep only the newest persisted success while old deployments age out.
+        if kind == "lark_sync_completed":
+            if kind in seen_singleton_kinds:
+                continue
+            seen_singleton_kinds.add(kind)
         if kind == "form_dispatch_skipped":
             skip_key = (
                 kind,

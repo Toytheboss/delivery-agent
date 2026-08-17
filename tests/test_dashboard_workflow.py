@@ -22,9 +22,31 @@ class DashboardWorkflowOverviewTests(unittest.TestCase):
                 + "\n",
                 encoding="utf-8",
             )
+            workflow_path = root / "workflow.jsonl"
+            workflow_path.write_text(
+                "\n".join(
+                    json.dumps(
+                        {
+                            "ts": ts,
+                            "kind": "lark_sync_completed",
+                            "source": "lark_sync",
+                            "text": "Lark 知识库同步完成",
+                            "status": "success",
+                        },
+                        ensure_ascii=False,
+                    )
+                    for ts in (
+                        "2026-08-16T08:00:00+08:00",
+                        "2026-08-16T09:00:00+08:00",
+                    )
+                )
+                + "\n",
+                encoding="utf-8",
+            )
 
             class Config:
                 workflow_logo_events_file = str(logo_path)
+                workflow_events_file = str(workflow_path)
                 workflow_deploy_status_watch_state_file = str(root / "missing.json")
                 workflow_form_chase_state_file = str(root / "missing-chase.json")
 
@@ -65,6 +87,12 @@ class DashboardWorkflowOverviewTests(unittest.TestCase):
             self.assertEqual(steps["wallet_incomplete"]["count"], 1)
             self.assertEqual(overview["exceptions_total"], 2)
             self.assertEqual(overview["activities"][0]["project"], "Demo")
+            sync_rows = [
+                item
+                for item in overview["activities"]
+                if item.get("kind") == "lark_sync_completed"
+            ]
+            self.assertEqual(len(sync_rows), 1)
 
 
 if __name__ == "__main__":

@@ -110,7 +110,7 @@ async def run_lark_sync(config: AppConfig, kb: KnowledgeBase) -> bool:
     app_id, app_secret, wiki_token = creds
     loop = asyncio.get_running_loop()
     try:
-        await loop.run_in_executor(
+        changed = await loop.run_in_executor(
             None,
             sync_lark_wiki,
             config.knowledge_dir,
@@ -127,6 +127,12 @@ async def run_lark_sync(config: AppConfig, kb: KnowledgeBase) -> bool:
             status="failed",
         )
         return False
+
+    if not changed:
+        logging.getLogger(__name__).info(
+            "Lark wiki health check completed; content unchanged"
+        )
+        return True
 
     kb.reload()
     append_event(
