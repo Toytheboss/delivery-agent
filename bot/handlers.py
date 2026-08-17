@@ -403,6 +403,7 @@ class MessageHandler:
                     qa_group=in_qa_group,
                     outcome="replied",
                     reason=reason,
+                    extra={"outbound_logged": True},
                 )
                 logger.info(
                     "Casual reply (%s) in chat %s: %r", reason, chat_id, reply
@@ -493,6 +494,7 @@ class MessageHandler:
                         outcome="replied",
                         reason=f"casual_fallback:{decision.reason}",
                         score=decision.best_score,
+                        extra={"outbound_logged": True},
                     )
                     logger.info(
                         "Casual fallback after FAQ silence (%s) in chat %s: %r",
@@ -587,7 +589,7 @@ class MessageHandler:
                 reason=decision.reason,
                 score=decision.best_score,
                 bubbles=len(bubbles),
-                extra={"footer": bool(footer)},
+                extra={"footer": bool(footer), "outbound_logged": True},
             )
             logger.info(
                 "Replied in chat %s (%s, %d bubble(s)%s)",
@@ -623,7 +625,7 @@ class MessageHandler:
             asyncio.create_task(self._count_outgoing(event))
 
     async def _count_outgoing(self, event: events.NewMessage.Event) -> None:
-        """Count every outbound message from the delivery account (auto + manual)."""
+        """Count and persist every outbound message from the delivery account."""
         try:
             message = event.message
             if not message:
@@ -636,5 +638,18 @@ class MessageHandler:
             if not text and not has_media:
                 return
             inc("messages_sent")
+            reply_to_message_id = getattr(message, "reply_to_msg_id", None)
+            extra = {"media": has_media, "outbound_logged": True}
+            if reply_to_message_id is not None:
+                extra["reply_to_message_id"] = int(reply_to_message_id)
+            log_message_event(
+                kind="outbound",
+                chat_id=getattr(message, "chat_id", None) or getattr(event, "chat_id", None),
+                message_id=getattr(message, "id", None),
+                text=text or "[媒体消息]",
+                outcome="sent",
+                reason="telegram_outgoing",
+                extra=extra,
+            )
         except Exception:  # noqa: BLE001
             logger.exception("Failed counting outgoing message")

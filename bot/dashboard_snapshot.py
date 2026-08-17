@@ -39,6 +39,57 @@ def _message_log_dir(config: Any) -> Path:
     return path if path.is_absolute() else ROOT / path
 
 
+def _outbound_items_from_log_row(row: dict[str, Any]) -> list[dict[str, Any]]:
+    """Return one item for every Telegram message the Bot actually sent.
+
+    New logs persist one ``outbound`` row per Telegram message. Older FAQ logs
+    persisted a whole multi-bubble reply in one row, so expand their reply text
+    to preserve the real historical message count in the dashboard.
+    """
+    kind = str(row.get("kind") or "")
+    outcome = str(row.get("outcome") or "")
+    extra = row.get("extra") if isinstance(row.get("extra"), dict) else {}
+    ts = str(row.get("ts") or "")
+    chat_id = row.get("chat_id")
+    chat_title = str(row.get("chat_title") or "")[:120]
+    message_id = row.get("message_id")
+
+    if kind == "outbound" and outcome == "sent":
+        text = str(row.get("text") or "").strip() or "[媒体消息]"
+        return [
+            {
+                "ts": ts,
+                "chat_id": chat_id,
+                "chat_title": chat_title,
+                "message_id": message_id,
+                "event_id": f"telegram:{message_id}" if message_id is not None else "",
+                "text": text,
+                "synthetic": False,
+            }
+        ]
+
+    # New FAQ/social rows have matching per-message outbound rows. Only expand
+    # legacy reply sessions that predate the unified outgoing-message logger.
+    if outcome != "replied" or bool(extra.get("outbound_logged")):
+        return []
+    reply_text = str(row.get("reply_text") or "").strip()
+    if not reply_text:
+        return []
+    parts = [part.strip() for part in reply_text.split("\n---\n") if part.strip()]
+    return [
+        {
+            "ts": ts,
+            "chat_id": chat_id,
+            "chat_title": chat_title,
+            "message_id": None,
+            "event_id": f"legacy:{message_id}:{index}",
+            "text": part,
+            "synthetic": True,
+        }
+        for index, part in enumerate(parts, 1)
+    ]
+
+
 def _scan_message_logs(
     config: Any,
     *,
@@ -47,15 +98,16 @@ def _scan_message_logs(
     since: datetime | None = None,
     until: datetime | None = None,
 ) -> dict[str, Any]:
-    """Stream JSONL day files; keep newest answered/silent rows + reason counts."""
+    """Stream JSONL day files; keep newest outbound/answered/silent rows."""
     log_dir = _message_log_dir(config)
     days = _day_list(max(int(lookback_days), 1))
     answered: deque[dict[str, Any]] = deque(maxlen=max(int(list_limit), 1))
+    outbound: deque[dict[str, Any]] = deque(maxlen=max(int(list_limit), 1))
     silent: deque[dict[str, Any]] = deque(maxlen=max(int(list_limit), 1))
     reasons: Counter[str] = Counter()
     scanned_files = 0
     scanned_lines = 0
-    replied_n = silent_n = other_n = 0
+    replied_n = sent_n = silent_n = other_n = 0
 
     for day in days:
         path = log_dir / f"messages-{day}.jsonl"
@@ -92,8 +144,14 @@ def _scan_message_logs(
                         "reason": reason[:200],
                         "score": row.get("score"),
                         "kind": row.get("kind") or "",
+                        "extra": row.get("extra") if isinstance(row.get("extra"), dict) else {},
                     }
-                    if outcome == "replied":
+                    outbound_items = _outbound_items_from_log_row(row)
+                    for outbound_item in outbound_items:
+                        outbound.append(outbound_item)
+                    if str(row.get("kind") or "") == "outbound" and outcome == "sent":
+                        sent_n += 1
+                    elif outcome == "replied":
                         replied_n += 1
                         answered.append(item)
                     elif outcome == "silent":
@@ -106,11 +164,13 @@ def _scan_message_logs(
             logger.exception("dashboard: failed reading %s", path)
 
     return {
+        "outbound": list(reversed(outbound)),
         "answered": list(reversed(answered)),
         "silent": list(reversed(silent)),
         "silence_reasons": dict(reasons.most_common(40)),
         "counts": {
             "replied": replied_n,
+            "sent": sent_n,
             "silent": silent_n,
             "other": other_n,
             "lines": scanned_lines,
@@ -999,6 +1059,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         qa_by_chat: dict[int, dict[str, Any]] = defaultdict(
             lambda: {
                 "replied": 0,
+                "sent": 0,
                 "silent": 0,
                 "last_ts": "",
                 "events": deque(maxlen=30),
@@ -1021,26 +1082,45 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                             message_chat_id = int(message.get("chat_id"))
                         except (TypeError, ValueError):
                             continue
-                        outcome = str(message.get("outcome") or "")
-                        if outcome not in {"replied", "silent"}:
-                            continue
                         evidence = qa_by_chat[message_chat_id]
-                        evidence[outcome] += 1
                         message_ts = event_iso(message.get("ts"))
                         if message_ts > str(evidence.get("last_ts") or ""):
                             evidence["last_ts"] = message_ts
-                        text_preview = str(message.get("text") or "").strip()[:80]
-                        if outcome == "replied":
+                        outbound_items = _outbound_items_from_log_row(message)
+                        for outbound_item in outbound_items:
+                            evidence["sent"] += 1
+                            outbound_text = str(outbound_item.get("text") or "").strip()
                             evidence["events"].append(
                                 {
-                                    "kind": "qa_replied",
-                                    "text": "Bot 回答了一条项目问题"
-                                    + (f"：{text_preview}" if text_preview else ""),
-                                    "ts": message_ts,
-                                    "source": "telegram_qa",
+                                    "kind": "telegram_outbound",
+                                    "event_id": str(outbound_item.get("event_id") or ""),
+                                    "text": "Bot 发出一条消息"
+                                    + (f"：{outbound_text[:120]}" if outbound_text else ""),
+                                    "ts": event_iso(outbound_item.get("ts")),
+                                    "source": "telegram_outbound",
                                     "status": "success",
                                 }
                             )
+
+                        outcome = str(message.get("outcome") or "")
+                        if outcome not in {"replied", "silent"}:
+                            continue
+                        evidence[outcome] += 1
+                        text_preview = str(message.get("text") or "").strip()[:80]
+                        if outcome == "replied":
+                            # Physical outbound messages above replace the old
+                            # one-event-per-reply-session representation.
+                            if not outbound_items:
+                                evidence["events"].append(
+                                    {
+                                        "kind": "qa_replied",
+                                        "text": "Bot 回答了一次项目问题"
+                                        + (f"：{text_preview}" if text_preview else ""),
+                                        "ts": message_ts,
+                                        "source": "telegram_qa",
+                                        "status": "success",
+                                    }
+                                )
                         else:
                             reason = str(
                                 message.get("silent_reason")
@@ -1170,6 +1250,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 )
             qa_evidence = qa_by_chat.get(int(chat_id or 0)) or {
                 "replied": 0,
+                "sent": 0,
                 "silent": 0,
                 "last_ts": "",
                 "events": [],
@@ -1178,10 +1259,11 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
 
             # De-duplicate evidence reached through multiple indexes.
             unique_events: list[dict[str, Any]] = []
-            seen_events: set[tuple[str, str, str]] = set()
+            seen_events: set[tuple[str, str, str, str]] = set()
             for item in project_events:
                 event_key = (
                     str(item.get("kind") or "automation"),
+                    str(item.get("event_id") or ""),
                     str(item.get("ts") or ""),
                     str(item.get("text") or ""),
                 )
@@ -1191,8 +1273,9 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 unique_events.append(
                     {
                         "kind": event_key[0],
-                        "ts": event_key[1],
-                        "text": event_key[2] or "自动化任务已执行",
+                        "event_id": event_key[1],
+                        "ts": event_key[2],
+                        "text": event_key[3] or "自动化任务已执行",
                         "source": str(item.get("source") or "workflow_events"),
                         "status": str(item.get("status") or "success"),
                     }
@@ -1203,6 +1286,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 """Add durable workflow evidence when its append-only event is absent."""
                 event_key = (
                     str(item.get("kind") or "automation"),
+                    str(item.get("event_id") or ""),
                     str(item.get("ts") or ""),
                     str(item.get("text") or ""),
                 )
@@ -1212,8 +1296,9 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 unique_events.append(
                     {
                         "kind": event_key[0],
-                        "ts": event_key[1],
-                        "text": event_key[2] or "自动化任务已执行",
+                        "event_id": event_key[1],
+                        "ts": event_key[2],
+                        "text": event_key[3] or "自动化任务已执行",
                         "source": str(item.get("source") or "workflow_state"),
                         "status": str(item.get("status") or "success"),
                     }
@@ -1361,8 +1446,14 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 )
 
             replied_count = int(qa_evidence.get("replied") or 0)
+            sent_count = int(qa_evidence.get("sent") or 0)
             silent_count = int(qa_evidence.get("silent") or 0)
-            qa_detail = f"近30天 Bot 已回答 {replied_count} 条"
+            if sent_count:
+                qa_detail = f"近30天 Bot 已发出 {sent_count} 条消息"
+                if replied_count:
+                    qa_detail += f"，完成 {replied_count} 次自动回复"
+            else:
+                qa_detail = f"近30天 Bot 已回答 {replied_count} 次"
             if silent_count:
                 qa_detail += f"，未自动回复 {silent_count} 条"
             if stage_key in {"live", "main_deploy"}:
@@ -1634,7 +1725,31 @@ def _build_recent_workflow_activities(
 ) -> list[dict[str, Any]]:
     """Build named activity rows only from persisted, timestamped evidence."""
     activities: list[dict[str, Any]] = []
+    for item in (qa or {}).get("outbound") or []:
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        chat = str(item.get("chat_title") or "Telegram 群")[:120]
+        preview = str(item.get("text") or "").strip()[:120]
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": "send",
+                "kind": "telegram_outbound",
+                "project": chat,
+                "text": f"Bot 在 {chat} 发出一条消息"
+                + (f"：{preview}" if preview else ""),
+                "source": "message_logs",
+                "event_id": str(item.get("event_id") or ""),
+            }
+        )
+
+    # Very old rows may not contain reply_text and therefore cannot be expanded
+    # into physical outbound messages. Keep one generic activity for those only.
     for item in (qa or {}).get("answered") or []:
+        extra = item.get("extra") if isinstance(item.get("extra"), dict) else {}
+        if str(item.get("reply_text") or "").strip() or bool(extra.get("outbound_logged")):
+            continue
         ts = _event_datetime(item.get("ts"))
         if ts is None:
             continue
