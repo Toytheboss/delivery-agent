@@ -878,6 +878,13 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "window_until": _now_iso(),
         "window_days": window_days,
         "updated_at": updated_at,
+        # Keep range reports self-contained for the analytics UI.  The
+        # counter series already contains this value, but the period report
+        # previously omitted it and the browser treated the missing field as
+        # zero for every range.
+        "metrics": {
+            "folder_auto_add_success": int(folder.get("today") or 0),
+        },
         "folder_new_groups_today": int(folder.get("today") or 0),
         "logo_fill_today": int(logo_ok.get("today") or 0),
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
