@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -75,7 +76,14 @@ def _outbound_items_from_log_row(row: dict[str, Any]) -> list[dict[str, Any]]:
     reply_text = str(row.get("reply_text") or "").strip()
     if not reply_text:
         return []
-    parts = [part.strip() for part in reply_text.split("\n---\n") if part.strip()]
+    # ``log_message_event`` clips newlines to spaces, so separators can be
+    # persisted as either a line or an inline `` --- `` token.
+    parts = [part.strip() for part in re.split(r"\s+---\s+", reply_text) if part.strip()]
+    expected = int(row.get("bubbles") or 0)
+    if expected > len(parts) and parts:
+        # Preserve the known physical count even for legacy rows whose text
+        # did not retain separators; the complete reply remains visible.
+        parts.extend([parts[-1]] * (expected - len(parts)))
     return [
         {
             "ts": ts,
