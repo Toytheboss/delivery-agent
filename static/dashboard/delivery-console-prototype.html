@@ -180,6 +180,7 @@
     .analytics-range.is-updating { opacity: .72; }
 
     .stats-grid { display: grid; grid-template-columns: repeat(5, minmax(130px, 1fr)); gap: 10px; margin-bottom: 16px; }
+    .analytics-stats-grid { grid-template-columns: repeat(6, minmax(120px, 1fr)); }
     .stat-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; box-shadow: var(--shadow); min-height: 100px; }
     .stat-top { display: flex; justify-content: space-between; align-items: center; color: var(--muted); font-size: 12px; }
     .stat-icon { width: 26px; height: 26px; display: grid; place-items: center; border-radius: 5px; }
@@ -426,6 +427,7 @@
 
     @media (max-width: 1180px) {
       .stats-grid { grid-template-columns: repeat(3, 1fr); }
+      .analytics-stats-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       .automation-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .pipeline-track { grid-template-columns: repeat(3, 1fr); }
     }
@@ -445,6 +447,7 @@
       .page-head { display: block; }
       .page-actions { margin: 12px 0 0; overflow-x: auto; }
       .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .analytics-stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .stat-card { min-height: 92px; }
       .pipeline-track { grid-template-columns: repeat(2, 1fr); }
       .automation-grid { grid-template-columns: 1fr; }
@@ -579,9 +582,10 @@
           </div>
           <div class="sr-only" id="analytics-live-status" aria-live="polite"></div>
 
-          <div class="stats-grid">
+          <div class="stats-grid analytics-stats-grid">
             <div class="stat-card"><div class="stat-top"><span>主网部署</span><span class="stat-icon green"><i data-lucide="rocket"></i></span></div><div class="stat-value" id="analytics-mainnet-value">18</div><div class="stat-foot" id="analytics-mainnet-foot"><strong>+18</strong> 过去 30 天</div></div>
             <div class="stat-card"><div class="stat-top"><span>测试网部署</span><span class="stat-icon blue"><i data-lucide="flask-conical"></i></span></div><div class="stat-value" id="analytics-testnet-value">9</div><div class="stat-foot" id="analytics-testnet-foot"><strong>+9</strong> 过去 30 天</div></div>
+            <div class="stat-card"><div class="stat-top"><span>Lark Track 新增项目</span><span class="stat-icon green"><i data-lucide="clipboard-plus"></i></span></div><div class="stat-value" id="analytics-lark-projects-value">—</div><div class="stat-foot" id="analytics-lark-projects-foot">按录入时间统计</div></div>
             <div class="stat-card"><div class="stat-top"><span>新增 TG 群</span><span class="stat-icon purple"><i data-lucide="messages-square"></i></span></div><div class="stat-value" id="analytics-groups-value">53</div><div class="stat-foot" id="analytics-groups-foot">过去 30 天新增</div></div>
             <div class="stat-card"><div class="stat-top"><span>Bot 已回答</span><span class="stat-icon green"><i data-lucide="message-square-reply"></i></span></div><div class="stat-value" id="analytics-answered-value">3,482</div><div class="stat-foot" id="analytics-answered-foot"><strong>96.2%</strong> 自动解决率</div></div>
             <div class="stat-card"><div class="stat-top"><span>沉默 / 转人工</span><span class="stat-icon amber"><i data-lucide="message-square-warning"></i></span></div><div class="stat-value" id="analytics-silent-value">137</div><div class="stat-foot" id="analytics-silent-foot"><strong class="warn">53 个</strong> 知识缺口</div></div>
@@ -897,6 +901,8 @@
       document.getElementById("analytics-mainnet-foot").innerHTML = `<strong>+${stats.mainnet}</strong> ${rangeData.label}`;
       document.getElementById("analytics-testnet-value").textContent = stats.testnet.toLocaleString("en-US");
       document.getElementById("analytics-testnet-foot").innerHTML = `<strong>+${stats.testnet}</strong> ${rangeData.label}`;
+      document.getElementById("analytics-lark-projects-value").textContent = stats.larkTrackProjects.toLocaleString("en-US");
+      document.getElementById("analytics-lark-projects-foot").innerHTML = `${rangeData.label}按「录入时间」新增`;
       document.getElementById("analytics-groups-value").textContent = stats.groups.toLocaleString("en-US");
       document.getElementById("analytics-groups-foot").textContent = `${rangeData.label}新增`;
       document.getElementById("analytics-answered-value").textContent = stats.answered.toLocaleString("en-US");
@@ -1304,6 +1310,7 @@
         stats: {
           mainnet: Number(progress.today_mainnet_live || 0),
           testnet: Number(progress.testnet_deploying || 0),
+          larkTrackProjects: Number(progress.lark_track_new_projects || metrics.lark_track_new_projects || 0),
           groups: Number(metrics.folder_auto_add_success || 0),
           answered,
           silent,

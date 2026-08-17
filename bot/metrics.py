@@ -596,6 +596,7 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
 # Progress Tracker：用中文前缀匹配飞书选项（完整文案在私有 config，不入库）
 _FIELD_MAINNET_LIVE_TIME = "主网上线时间"
 _FIELD_UPDATE_DATE = "更新日期"
+_FIELD_TRACK_ENTRY_TIME = "录入时间"
 
 
 def _status_kind(status: str) -> str | None:
@@ -642,6 +643,7 @@ def _progress_table_daily_counts(
         "testnet_deploying": 0,
         "testnet_deploying_names": [],
         "projects_with_logo": 0,
+        "lark_track_new_projects": 0,
         "total_rows": 0,
         "window_since": since.isoformat(timespec="seconds"),
         "error": None,
@@ -677,7 +679,8 @@ def _progress_table_daily_counts(
         test_deploy_names: list[str] = []
         for record in records:
             fields = record.get("fields") or {}
-            name = _field_text(fields, name_field) or "(未命名)"
+            raw_name = _field_text(fields, name_field)
+            name = raw_name or "(未命名)"
             status = _field_text(fields, status_field)
             kind = _status_kind(status)
             if kind == "main_deploy":
@@ -688,6 +691,9 @@ def _progress_table_daily_counts(
                 test_deploy_names.append(name)
             if fields.get(logo_field):
                 out["projects_with_logo"] += 1
+            entry_at = _ms_to_datetime(fields.get(_FIELD_TRACK_ENTRY_TIME))
+            if raw_name and _in_time_window(entry_at, since=since):
+                out["lark_track_new_projects"] += 1
             # Must be actually live — 主网上线时间 alone is often a planned date.
             is_live = (live_status and status == live_status) or kind == "live"
             if not is_live:
@@ -884,6 +890,9 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         # zero for every range.
         "metrics": {
             "folder_auto_add_success": int(folder.get("today") or 0),
+            "lark_track_new_projects": int(
+                progress.get("lark_track_new_projects") or 0
+            ),
         },
         "folder_new_groups_today": int(folder.get("today") or 0),
         "logo_fill_today": int(logo_ok.get("today") or 0),
