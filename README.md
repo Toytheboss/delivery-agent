@@ -291,6 +291,9 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 
 More operator detail: [`docs/delivery-operator-whitelist.md`](docs/delivery-operator-whitelist.md).
 
+系统交接、数据库字段、接口、流程、状态文件和排障说明：
+[`docs/delivery-system-reference-zh.md`](docs/delivery-system-reference-zh.md)。
+
 ---
 
 ## Security
