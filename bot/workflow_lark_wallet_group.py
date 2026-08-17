@@ -18,9 +18,11 @@ except ImportError:  # Python < 3.9
 from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.lark_im import send_text_to_chat
 from bot.workflow_form_dispatch import _field_text
+from bot.workflow_events import append_event
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
+WORKFLOW_EVENTS_FILE = "data/workflow_events.jsonl"
 
 ADDRESS_FIELDS = [
     "Contract Addresss/主网合约",
@@ -79,6 +81,55 @@ def _report_date_str(hour: int, now: datetime | None = None) -> str:
 
 def _count_addresses(fields: dict[str, Any]) -> int:
     return sum(1 for name in ADDRESS_FIELDS if _field_text(fields, name))
+
+
+def _append_wallet_event(
+    record_id: str,
+    project_name: str,
+    address_count: int,
+    *,
+    digest_date: str,
+) -> None:
+    """Persist a wallet collection event for the dashboard activity feed."""
+    now = datetime.now(TZ)
+    row = {
+        "ts": now.isoformat(timespec="seconds"),
+        "day": now.strftime("%Y-%m-%d"),
+        "kind": "wallet_collected",
+        "source": "lark_wallet_table",
+        "record_id": record_id,
+        "project_name": project_name or record_id,
+        "address_count": int(address_count),
+        "digest_date": digest_date,
+    }
+    path = ROOT / WORKFLOW_EVENTS_FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except OSError:
+        logger.exception("Lark wallet: failed appending workflow event for %s", record_id)
+
+
+def _logged_wallet_event_ids(path: Path) -> set[str]:
+    """Read record IDs already represented in the append-only wallet event log."""
+    if not path.is_file():
+        return set()
+    out: set[str] = set()
+    try:
+        with path.open("r", encoding="utf-8") as fh:
+            for line in fh:
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(row, dict) and row.get("kind") == "wallet_collected":
+                    rid = str(row.get("record_id") or "").strip()
+                    if rid:
+                        out.add(rid)
+    except OSError:
+        logger.exception("Lark wallet: failed reading workflow event log")
+    return out
 
 
 def _build_digest_text(
@@ -142,6 +193,26 @@ async def sync_wallet_first_seen(config: Any) -> int:
     today = _today_str()
     new_n = 0
 
+    # Migration safety: rows detected today before wallet events were introduced
+    # should still appear in the dashboard's real activity feed.
+    event_path = ROOT / WORKFLOW_EVENTS_FILE
+    logged_event_ids = _logged_wallet_event_ids(event_path)
+    for record in records:
+        rid = str(record.get("record_id") or "")
+        if not rid or rid in logged_event_ids or first_seen.get(rid) != today:
+            continue
+        fields = record.get("fields") or {}
+        project_name = _field_text(fields, "Project name").strip()
+        address_count = _count_addresses(fields)
+        if project_name and address_count:
+            _append_wallet_event(
+                rid,
+                project_name,
+                address_count,
+                digest_date=today,
+            )
+            logged_event_ids.add(rid)
+
     # First run: baseline all current rows so they won't count as "today"
     if not state_path.exists() or not first_seen:
         for record in records:
@@ -160,22 +231,36 @@ async def sync_wallet_first_seen(config: Any) -> int:
     if state.get("last_digest_date") == today:
         assign_day = (datetime.now(TZ) + timedelta(days=1)).strftime("%Y-%m-%d")
 
+    new_events: list[dict[str, Any]] = []
+
     for record in records:
         rid = str(record.get("record_id") or "")
         if not rid or rid in first_seen:
             continue
         fields = record.get("fields") or {}
-        if not _field_text(fields, "Project name"):
+        project_name = _field_text(fields, "Project name").strip()
+        if not project_name:
             continue
-        if _count_addresses(fields) == 0:
+        address_count = _count_addresses(fields)
+        if address_count == 0:
             continue
         first_seen[rid] = assign_day
         new_n += 1
+        new_events.append(
+            {
+                "record_id": rid,
+                "project_name": project_name,
+                "address_count": address_count,
+                "digest_date": assign_day,
+            }
+        )
 
     if new_n:
         state["first_seen"] = first_seen
         state["digested_ids"] = sorted(digested)
         _save_state(state_path, state)
+        for event in new_events:
+            _append_wallet_event(**event)
         try:
             from bot.metrics import inc
 
@@ -303,6 +388,14 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
         chat_id,
         date_str,
         len(projects),
+    )
+    append_event(
+        "wallet_digest_sent",
+        "lark_wallet_digest",
+        text=f"钱包日报已发送（{date_str}，{len(projects)} 个项目）",
+        digest_date=date_str,
+        project_count=len(projects),
+        chat_id=chat_id,
     )
     return True
 

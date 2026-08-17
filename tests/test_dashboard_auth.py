@@ -44,7 +44,11 @@ class DashboardAuthTests(unittest.IsolatedAsyncioTestCase):
             "/dashboard?token=legacy", allow_redirects=False
         )
         self.assertEqual(response.status, 302)
-        self.assertTrue(response.headers["Location"].endswith("/dashboard/login"))
+        self.assertTrue(
+            response.headers["Location"].startswith(
+                "/dashboard/login?next=/dashboard/prototype"
+            )
+        )
         response = await self.client.get("/dashboard/api/settings")
         self.assertEqual(response.status, 401)
 
@@ -59,7 +63,12 @@ class DashboardAuthTests(unittest.IsolatedAsyncioTestCase):
             response = await self.client.get(
                 "/dashboard/settings", allow_redirects=False
             )
-            self.assertEqual(response.status, 200)
+            self.assertEqual(response.status, 302)
+            self.assertTrue(
+                response.headers["Location"].endswith(
+                    "/dashboard/prototype?view=settings"
+                )
+            )
 
     async def test_wrong_password_and_logout(self):
         response = await self.client.post(

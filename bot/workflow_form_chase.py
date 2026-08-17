@@ -21,6 +21,7 @@ from bot.workflow_form_dispatch import (
     _normalize_name,
     build_form_message,
 )
+from bot.workflow_events import append_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -191,6 +192,7 @@ def note_form_sent(
     projects: dict[str, Any] = state.setdefault("projects", {})
     now = time.time()
     existing = projects.get(rid)
+    is_new = not (isinstance(existing, dict) and existing.get("first_sent_at"))
     if isinstance(existing, dict) and existing.get("done"):
         return
     if isinstance(existing, dict) and existing.get("first_sent_at"):
@@ -220,6 +222,15 @@ def note_form_sent(
         chat_id,
         source or "-",
     )
+    if is_new:
+        append_event(
+            "form_sent",
+            "form_chase_tracking",
+            project_name=project_name,
+            text=f"{project_name or rid} 已进入表单催收跟踪",
+            record_id=rid,
+            chat_id=chat_id,
+        )
 
 
 def _find_wallet_fields(
@@ -367,6 +378,16 @@ async def run_form_chase_once(
             missing,
             reminders + 1,
             max_reminders,
+        )
+        append_event(
+            "form_chase_reminder",
+            "form_chase",
+            project_name=project_name,
+            text=f"{project_name or rid} 的表单催收已发送（第 {reminders + 1} 次）",
+            record_id=rid,
+            chat_id=chat_id,
+            reminder_number=reminders + 1,
+            filled_count=filled,
         )
         try:
             from bot.metrics import record_form_outcome

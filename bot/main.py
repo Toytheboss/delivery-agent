@@ -43,6 +43,7 @@ from bot.workflow_live_watch import live_status_watch_loop
 from bot.workflow_live_trigger import startup_live_catchup
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loop
+from bot.workflow_events import append_event
 from bot.workflow_form_chase import form_chase_loop
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -119,9 +120,21 @@ async def run_lark_sync(config: AppConfig, kb: KnowledgeBase) -> bool:
         )
     except Exception:
         logging.getLogger(__name__).exception("Lark wiki sync failed")
+        append_event(
+            "lark_sync_failed",
+            "lark_sync",
+            text="Lark 知识库同步失败",
+            status="failed",
+        )
         return False
 
     kb.reload()
+    append_event(
+        "lark_sync_completed",
+        "lark_sync",
+        text="Lark 知识库同步完成",
+        status="success",
+    )
     return True
 
 

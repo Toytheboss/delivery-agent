@@ -15,6 +15,7 @@ from bot.workflow_form_dispatch import (
     _normalize_name,
     build_folder_title_map,
 )
+from bot.workflow_events import append_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -64,7 +65,7 @@ def _format_wallet_notice(fields: dict[str, Any], field_names: list[str]) -> str
 def _title_matches_notify_target(title: str, wanted: set[str]) -> bool:
     """Match internal notify groups by normalized exact title only.
 
-    Substring matching is unsafe inside Delivery folders: e.g. ``ops`` hits
+    Substring matching is unsafe inside Botchain folders: e.g. ``ops`` hits
     ``FaucetDrops``, ``tech`` hits ``Votechain``, ``finance`` hits partner
     groups whose names merely contain that word.
     """
@@ -200,6 +201,14 @@ async def run_wallet_notify_once(
                 _field_text(fields, "Project name"),
                 record_id,
                 len(notify_chats),
+            )
+            append_event(
+                "wallet_notified",
+                "wallet_notify",
+                project_name=_field_text(fields, "Project name"),
+                text=f"{_field_text(fields, 'Project name') or record_id} 钱包资料已推送至部门群",
+                record_id=record_id,
+                chat_count=len(notify_chats),
             )
 
     if dirty or not state_path.exists():

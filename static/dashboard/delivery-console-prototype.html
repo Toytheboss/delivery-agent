@@ -139,7 +139,6 @@
     }
     .icon-btn:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-subtle); }
     .icon-btn .lucide { width: 17px; height: 17px; }
-    .notify-dot { position: absolute; width: 7px; height: 7px; border-radius: 50%; background: var(--red); top: 6px; right: 6px; border: 1px solid #fff; }
 
     main { padding: 22px 24px 40px; max-width: 1600px; margin: 0 auto; }
     .view { display: none; }
@@ -228,23 +227,8 @@
     .exception-meta { color: var(--muted); font-size: 10px; margin-top: 4px; line-height: 1.45; }
     .exception-action { align-self: center; }
 
-    .connector-grid { display: grid; grid-template-columns: repeat(4, 1fr); }
-    .connector { padding: 14px; border-right: 1px solid var(--line); }
-    .connector:last-child { border-right: 0; }
-    .connector-top { display: flex; align-items: center; gap: 9px; }
-    .connector-logo { width: 30px; height: 30px; border-radius: 6px; display: grid; place-items: center; color: #fff; font-weight: 750; font-size: 11px; }
-    .connector-logo.tg { background: #2798d0; }
-    .connector-logo.lark { background: #3370ff; }
-    .connector-logo.google { background: #da483b; }
-    .connector-logo.ai { background: #5c4ac7; }
-    .connector-name { font-size: 12px; font-weight: 680; }
-    .connector-state { margin-top: 3px; color: var(--muted); font-size: 10px; display: flex; align-items: center; gap: 5px; }
-    .state-dot { width: 6px; height: 6px; border-radius: 50%; background: #2aaa75; }
-    .state-dot.warn { background: #de9420; }
-    .connector-metric { margin-top: 12px; display: flex; justify-content: space-between; color: var(--faint); font-size: 10px; }
-    .connector-metric strong { color: var(--ink); font-weight: 650; }
-
     .activity-list { display: grid; }
+    #recent-activity-list { max-height: 640px; overflow-y: auto; scrollbar-gutter: stable; }
     .activity { padding: 11px 14px; display: grid; grid-template-columns: 26px minmax(0, 1fr) auto; gap: 10px; align-items: center; border-bottom: 1px solid var(--line); }
     .activity:last-child { border-bottom: 0; }
     .activity-icon { width: 25px; height: 25px; border-radius: 50%; background: var(--surface-hover); color: var(--muted); display: grid; place-items: center; }
@@ -259,6 +243,8 @@
     .search input { width: 100%; height: 34px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; padding: 0 10px 0 33px; color: var(--ink); outline: none; }
     .search input:focus, select:focus { border-color: var(--primary); box-shadow: 0 0 0 2px rgba(11, 122, 97, .1); }
     select { height: 34px; border: 1px solid var(--line-strong); border-radius: 6px; background: #fff; color: var(--ink); padding: 0 28px 0 10px; outline: none; }
+    #stage-filter { min-width: 250px; max-width: min(360px, 44vw); }
+    #stage-filter:disabled { color: var(--muted); background: var(--surface-subtle); cursor: wait; }
     .table-panel { overflow: hidden; }
     .table-wrap { overflow: auto; }
     table { width: 100%; border-collapse: collapse; min-width: 900px; }
@@ -353,13 +339,30 @@
     .stage-mark { width: 21px; height: 21px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: #fff; z-index: 1; }
     .stage-mark .lucide { width: 12px; height: 12px; }
     .stage-mark.pending { background: #fff; color: var(--faint); border: 1px solid var(--line-strong); }
+    .stage-mark.active { background: var(--mint); color: var(--deep); border: 1px solid var(--soft); }
+    .stage-mark.warning { background: #fffbeb; color: #b45309; border: 1px solid #fbbf24; }
     .stage-title { font-size: 11px; font-weight: 650; padding-top: 3px; }
     .stage-sub { color: var(--muted); font-size: 9px; margin-top: 3px; }
+    .stage-source { color: var(--faint); }
     .stage-time { color: var(--faint); font-size: 9px; padding-top: 4px; }
     .detail-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
     .detail-field { background: var(--surface-subtle); border: 1px solid var(--line); border-radius: 5px; padding: 9px; }
     .detail-field span { color: var(--faint); font-size: 9px; display: block; }
     .detail-field strong { font-size: 10px; font-weight: 650; display: block; margin-top: 4px; overflow-wrap: anywhere; }
+    .project-event-list { display: grid; gap: 0; max-height: 640px; overflow-y: auto; scrollbar-gutter: stable; }
+    .project-event { display: grid; grid-template-columns: 9px minmax(0, 1fr) auto; gap: 9px; padding: 9px 0; border-bottom: 1px solid var(--line); align-items: start; }
+    .project-event:last-child { border-bottom: 0; }
+    .project-event-dot { width: 7px; height: 7px; margin-top: 4px; border-radius: 50%; background: var(--primary); }
+    .project-event-dot.error { background: var(--danger); }
+    .project-event-dot.warning { background: #f59e0b; }
+    .project-event-text { font-size: 10px; line-height: 1.45; color: var(--ink); }
+    .project-event-source { margin-top: 3px; color: var(--faint); font-size: 9px; }
+    .project-event time { color: var(--faint); font-size: 9px; white-space: nowrap; }
+    .detail-issue-list { display: grid; gap: 8px; }
+    .detail-issue { display: grid; grid-template-columns: 8px minmax(0, 1fr); gap: 8px; align-items: start; padding: 9px 10px; border-radius: 8px; background: #fffbeb; border: 1px solid #fde68a; color: #92400e; font-size: 10px; line-height: 1.45; }
+    .detail-issue.high { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+    .detail-issue.low { background: var(--surface-subtle); border-color: var(--line); color: var(--muted); }
+    .detail-issue-dot { width: 6px; height: 6px; margin-top: 4px; border-radius: 50%; background: currentColor; }
 
     .toast { position: fixed; right: 22px; bottom: 22px; z-index: 70; background: #17201d; color: #fff; border-radius: 6px; padding: 11px 14px; display: flex; align-items: center; gap: 8px; font-size: 11px; box-shadow: 0 10px 30px rgba(12, 20, 17, .22); transform: translateY(20px); opacity: 0; pointer-events: none; transition: .2s ease; }
     .toast.show { transform: translateY(0); opacity: 1; }
@@ -386,11 +389,11 @@
     .segmented button, .qa-tabs button { border-radius: 999px; }
     .stat-card, .panel, .task-card { border-radius: var(--radius); }
     .stat-value { font-family: "Fira Code", ui-monospace, monospace; letter-spacing: 0; }
-    .stat-icon, .task-icon, .severity, .connector-logo { border-radius: 9px; }
+    .stat-icon, .task-icon, .severity { border-radius: 9px; }
     .pipeline-step, .detail-field { border-radius: 10px; }
     .pipeline-step { background: #f8fffb; }
     .pipeline-step.complete { background: #ecfdf5; }
-    .connector-state, .connector-metric, .panel-sub, .stat-foot { color: var(--muted); }
+    .panel-sub, .stat-foot { color: var(--muted); }
     th { background: #f0fdf6; color: var(--muted); }
     tbody tr:hover { background: #f8fffb; }
     .search input, select { border-radius: 999px; }
@@ -434,9 +437,6 @@
       .topbar { padding: 0 14px; }
       main { padding: 18px 14px 32px; }
       .grid-2, .grid-even { grid-template-columns: 1fr; }
-      .connector-grid { grid-template-columns: repeat(2, 1fr); }
-      .connector:nth-child(2) { border-right: 0; }
-      .connector:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
       .sync-status { display: none; }
       .analysis-summary { grid-template-columns: repeat(2, 1fr); }
       .summary-item:nth-child(2) { border-right: 0; }
@@ -453,6 +453,7 @@
       .toolbar { align-items: stretch; }
       .search { min-width: 100%; max-width: none; }
       .toolbar select { flex: 1; min-width: 130px; }
+      #stage-filter { flex-basis: 100%; min-width: 100%; max-width: none; }
       .breadcrumb { max-width: 140px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
       .settings-form-grid, .knowledge-compose, .day-detail-columns { grid-template-columns: 1fr; }
       .day-detail-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -475,7 +476,6 @@
         <button class="nav-item" data-view="projects"><i data-lucide="folder-kanban"></i><span>项目交付</span><b class="nav-badge" style="background:#3d514a">24</b></button>
         <button class="nav-item" data-view="automations"><i data-lucide="workflow"></i><span>自动化任务</span></button>
         <button class="nav-item" data-view="analytics"><i data-lucide="chart-no-axes-combined"></i><span>数据分析</span></button>
-        <button class="nav-item" data-view="exceptions"><i data-lucide="circle-alert"></i><span>异常中心</span><b class="nav-badge" id="exceptions-nav-badge">—</b></button>
       </nav>
       <div class="nav-label">系统</div>
       <nav class="nav-list">
@@ -495,67 +495,56 @@
         <div class="topbar-spacer"></div>
         <div class="sync-status"><i data-lucide="refresh-cw"></i><span>数据更新于 14:32:08</span></div>
         <button class="icon-btn" id="refresh-btn" aria-label="刷新数据" title="刷新数据"><i data-lucide="refresh-cw"></i></button>
-        <button class="icon-btn" aria-label="通知" title="通知"><i data-lucide="bell"></i><span class="notify-dot"></span></button>
       </header>
 
       <main>
         <section class="view active" id="view-overview">
           <div class="page-head">
-            <div><h1>交付运行总览</h1><p>项目流程、自动化任务和跨平台连接状态</p></div>
-            <div class="page-actions"><div class="segmented"><button>今日</button><button class="active">7 天</button><button>30 天</button></div><button class="btn primary" data-open-project="1"><i data-lucide="plus"></i>新建交付</button></div>
+            <div><h1>交付运行总览</h1><p>项目流程与自动化任务运行状态</p></div>
+            <div class="page-actions"><div class="segmented overview-range" role="group" aria-label="总览数据时间范围"><button data-range="24h" aria-pressed="false">24 小时</button><button class="active" data-range="7d" aria-pressed="true">7 天</button><button data-range="30d" aria-pressed="false">30 天</button></div></div>
           </div>
 
           <div class="stats-grid">
-            <div class="stat-card"><div class="stat-top"><span>进行中项目</span><span class="stat-icon green"><i data-lucide="folder-kanban"></i></span></div><div class="stat-value">24</div><div class="stat-foot"><strong>+3</strong> 本周新增</div></div>
-            <div class="stat-card"><div class="stat-top"><span>待人工处理</span><span class="stat-icon red"><i data-lucide="user-round-check"></i></span></div><div class="stat-value">5</div><div class="stat-foot"><strong class="danger">2 个</strong> 已超时</div></div>
-            <div class="stat-card"><div class="stat-top"><span>今日自动化</span><span class="stat-icon blue"><i data-lucide="workflow"></i></span></div><div class="stat-value">1,284</div><div class="stat-foot"><strong>99.2%</strong> 执行成功</div></div>
-            <div class="stat-card"><div class="stat-top"><span>表单待回收</span><span class="stat-icon amber"><i data-lucide="clipboard-clock"></i></span></div><div class="stat-value">9</div><div class="stat-foot"><strong class="warn">4 个</strong> 超过 24h</div></div>
-            <div class="stat-card"><div class="stat-top"><span>本月主网上线</span><span class="stat-icon purple"><i data-lucide="rocket"></i></span></div><div class="stat-value">18</div><div class="stat-foot"><strong>+28.6%</strong> 较上月</div></div>
+            <div class="stat-card"><div class="stat-top"><span id="overview-stat-0-label">部署活动</span><span class="stat-icon green"><i data-lucide="folder-kanban"></i></span></div><div class="stat-value">—</div><div class="stat-foot"><strong>—</strong> 当前范围</div></div>
+            <div class="stat-card"><div class="stat-top"><span id="overview-stat-1-label">沉默 / 转人工</span><span class="stat-icon red"><i data-lucide="user-round-check"></i></span></div><div class="stat-value">—</div><div class="stat-foot"><strong class="danger">—</strong> 当前范围</div></div>
+            <div class="stat-card"><div class="stat-top"><span id="overview-stat-2-label">自动化处理</span><span class="stat-icon blue"><i data-lucide="workflow"></i></span></div><div class="stat-value">—</div><div class="stat-foot"><strong>—</strong> 处理入站</div></div>
+            <div class="stat-card"><div class="stat-top"><span id="overview-stat-3-label">表单发送</span><span class="stat-icon amber"><i data-lucide="clipboard-clock"></i></span></div><div class="stat-value">—</div><div class="stat-foot"><strong class="warn">—</strong> 当前范围</div></div>
+            <div class="stat-card"><div class="stat-top"><span id="overview-stat-4-label">主网上线</span><span class="stat-icon purple"><i data-lucide="rocket"></i></span></div><div class="stat-value">—</div><div class="stat-foot"><strong>—</strong> 当前范围</div></div>
           </div>
 
           <div class="grid-2">
             <section class="panel">
-              <div class="panel-head"><div><h2 class="panel-title">项目交付漏斗</h2><div class="panel-sub" id="funnel-subtitle">正在加载 Lark 项目阶段分布</div></div><div class="spacer"></div><button class="text-link" data-nav="projects">查看项目</button></div>
+              <div class="panel-head"><div><h2 class="panel-title">项目交付漏斗</h2><div class="panel-sub" id="funnel-subtitle">当前实时库存，不受时间范围影响</div></div><div class="spacer"></div><button class="text-link" data-nav="projects">查看项目</button></div>
               <div class="pipeline"><div class="pipeline-track">
                 <div class="pipeline-step complete" data-funnel-step="bound"><div class="step-count">—</div><div class="step-label">TG / Lark 已绑定</div><div class="step-note">等待实时数据</div></div>
                 <div class="pipeline-step" data-funnel-step="technical"><div class="step-count">—</div><div class="step-label">技术接入中</div><div class="step-note">等待实时数据</div></div>
                 <div class="pipeline-step" data-funnel-step="main_deploy"><div class="step-count">—</div><div class="step-label">主网部署中</div><div class="step-note">等待实时数据</div></div>
                 <div class="pipeline-step" data-funnel-step="form_pending"><div class="step-count">—</div><div class="step-label">上线后待回收表单</div><div class="step-note">等待实时数据</div></div>
                 <div class="pipeline-step blocked" data-funnel-step="wallet_incomplete"><div class="step-count">—</div><div class="step-label">钱包地址待补齐</div><div class="step-note">等待实时数据</div></div>
-                <div class="pipeline-step complete" data-funnel-step="notified"><div class="step-count">—</div><div class="step-label">部门通知成功</div><div class="step-note">等待实时数据</div></div>
+                <div class="pipeline-step complete" data-funnel-step="notified"><div class="step-count">—</div><div class="step-label">钱包地址日报已完成</div><div class="step-note">等待实时数据</div></div>
               </div></div>
             </section>
 
             <section class="panel">
-              <div class="panel-head"><div><h2 class="panel-title">需要处理</h2><div class="panel-sub" id="exception-subtitle">正在读取真实异常</div></div><div class="spacer"></div><button class="text-link" data-nav="exceptions" id="exception-count">全部 — 项</button></div>
-              <div class="exception-list" id="overview-exception-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载真实异常…</div></div>
+              <div class="panel-head"><div><h2 class="panel-title">自动化任务</h2><div class="panel-sub" id="overview-automation-subtitle">正在读取任务状态</div></div><div class="spacer"></div><button class="text-link" data-nav="automations">查看全部</button></div>
+              <div class="activity-list" id="overview-task-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载自动化任务…</div></div>
             </section>
           </div>
 
-          <section class="panel" style="margin-bottom:12px">
-            <div class="panel-head"><div><h2 class="panel-title">跨平台连接</h2><div class="panel-sub">最近 15 分钟健康状态</div></div><div class="spacer"></div><button class="icon-btn" title="检查连接" aria-label="检查连接"><i data-lucide="activity"></i></button></div>
-            <div class="connector-grid">
-              <div class="connector"><div class="connector-top"><span class="connector-logo tg">TG</span><div><div class="connector-name">Telegram</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>请求成功率</span><strong>99.98%</strong></div></div>
-              <div class="connector"><div class="connector-top"><span class="connector-logo lark">L</span><div><div class="connector-name">Lark</div><div class="connector-state"><span class="state-dot warn"></span>轻微波动</div></div></div><div class="connector-metric"><span>请求成功率</span><strong>97.61%</strong></div></div>
-              <div class="connector"><div class="connector-top"><span class="connector-logo google">G</span><div><div class="connector-name">Google Forms</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>同步延迟</span><strong>42 秒</strong></div></div>
-              <div class="connector"><div class="connector-top"><span class="connector-logo ai">AI</span><div><div class="connector-name">DeepSeek</div><div class="connector-state"><span class="state-dot"></span>正常</div></div></div><div class="connector-metric"><span>平均响应</span><strong>1.8 秒</strong></div></div>
-            </div>
-          </section>
-
           <div class="grid-even">
             <section class="panel">
-              <div class="panel-head"><div><h2 class="panel-title">近 14 日趋势（折线）</h2><div class="panel-sub">发出消息、处理入站、FAQ、新进群与 Logo</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
+              <div class="panel-head"><div><h2 class="panel-title" id="overview-trend-title">过去 7 天趋势（折线）</h2><div class="panel-sub" id="overview-trend-sub">发出消息、处理入站、FAQ、新进群与 Logo</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
               <div class="chart-pad"><div class="chart compact" id="overview-trend"></div></div>
             </section>
             <section class="panel">
-              <div class="panel-head"><div><h2 class="panel-title">工作流日增量（面积）</h2><div class="panel-sub">表单、Logo、欢迎、Mark live 与新钱包</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
+              <div class="panel-head"><div><h2 class="panel-title" id="overview-flow-title">过去 7 天工作流日增量（面积）</h2><div class="panel-sub" id="overview-flow-sub">表单、Logo、欢迎、Mark live 与新钱包</div></div><div class="spacer"></div><button class="text-link" data-nav="analytics">完整分析</button></div>
               <div class="chart-pad"><div class="chart compact" id="overview-flow"></div></div>
             </section>
           </div>
 
           <div class="grid-even">
-            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">最近完成</h2><div class="panel-sub">来自真实事件日志</div></div></div><div class="activity-list" id="recent-activity-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载真实事件…</div></div></section>
-            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">自动化任务</h2><div class="panel-sub">6 个核心任务</div></div><div class="spacer"></div><button class="text-link" data-nav="automations">查看全部</button></div><div class="activity-list">
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">最近完成</h2><div class="panel-sub" id="recent-activity-subtitle">最近 20 条 · 来自真实事件日志</div></div></div><div class="activity-list" id="recent-activity-list"><div class="empty-state" style="display:block;padding:28px 12px">正在加载真实事件…</div></div></section>
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">自动化任务</h2><div class="panel-sub" id="overview-automation-subtitle-secondary">全部任务实时状态</div></div><div class="spacer"></div><button class="text-link" data-nav="automations">查看全部</button></div><div class="activity-list" id="overview-task-list-secondary">
               <div class="activity"><span class="activity-icon"><i data-lucide="scan-search"></i></span><div class="activity-text"><strong>表单与 Logo 轮询</strong><br><span style="color:var(--muted)">上次 14:30 · 用时 8.4s</span></div><span class="status success">成功</span></div>
               <div class="activity"><span class="activity-icon"><i data-lucide="radio"></i></span><div class="activity-text"><strong>主网上线监听</strong><br><span style="color:var(--muted)">持续运行 · 0 次重连</span></div><span class="status success">运行中</span></div>
               <div class="activity"><span class="activity-icon"><i data-lucide="bell-ring"></i></span><div class="activity-text"><strong>表单催收</strong><br><span style="color:var(--muted)">下次 15:00 · 9 个项目</span></div><span class="status wait">等待</span></div>
@@ -564,35 +553,29 @@
         </section>
 
         <section class="view" id="view-projects">
-          <div class="page-head"><div><h1>项目交付</h1><p>项目状态和对应 BD 均从 Lark 进度表同步</p></div><div class="page-actions"><button class="btn"><i data-lucide="download"></i>导出</button><button class="btn primary" data-open-project="1"><i data-lucide="plus"></i>新建交付</button></div></div>
-          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input id="project-search" type="search" placeholder="搜索项目或对应 BD"></label><select id="stage-filter"><option value="all">全部项目状态</option><option value="main_deploy">主网部署中</option><option value="test_deploy">测试网部署</option><option value="live">主网上线</option></select><select id="bd-filter"><option value="all">全部 BD</option><option>Alice</option><option>Leo</option><option>Mia</option><option>Daniel</option></select><button class="icon-btn" title="更多筛选" aria-label="更多筛选"><i data-lucide="sliders-horizontal"></i></button></div>
+          <div class="page-head"><div><h1>项目交付</h1><p>项目状态和对应 BD 均从 Lark 进度表同步</p></div></div>
+          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input id="project-search" type="search" placeholder="搜索项目或对应 BD"></label><select id="stage-filter" aria-label="按 Lark 项目状态筛选" aria-busy="true" disabled><option value="all">正在同步 Lark 项目状态…</option></select><select id="bd-filter"><option value="all">全部 BD</option><option>Alice</option><option>Leo</option><option>Mia</option><option>Daniel</option></select></div>
           <section class="panel table-panel"><div class="table-wrap"><table id="project-table" class="project-table-compact"><thead><tr><th>项目</th><th>当前阶段 <span class="project-id">Lark · 项目状态</span></th><th>对应 BD <span class="project-id">Lark</span></th><th>TG / Lark 绑定</th></tr></thead><tbody>
-            <tr data-stage="main_deploy" data-stage-label="主网部署中" data-bd="Alice" data-search="helios project helios alice"><td><div class="project-name">Project Helios</div><div class="project-id">DEL-2026-0241</div></td><td><span class="status progress">主网部署中</span></td><td><div class="owner-cell"><span class="mini-avatar">A</span>Alice</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
-            <tr data-stage="live" data-stage-label="主网上线" data-bd="Leo" data-search="nova finance leo"><td><div class="project-name">Nova Finance</div><div class="project-id">DEL-2026-0238</div></td><td><span class="status success">主网上线</span></td><td><div class="owner-cell"><span class="mini-avatar">L</span>Leo</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
-            <tr data-stage="test_deploy" data-stage-label="测试网部署" data-bd="Mia" data-search="manta pay mia"><td><div class="project-name">Manta Pay</div><div class="project-id">DEL-2026-0235</div></td><td><span class="status wait">测试网部署</span></td><td><div class="owner-cell"><span class="mini-avatar">M</span>Mia</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
-            <tr data-stage="main_deploy" data-stage-label="主网部署中" data-bd="Daniel" data-search="orbitx daniel"><td><div class="project-name">OrbitX</div><div class="project-id">DEL-2026-0230</div></td><td><span class="status progress">主网部署中</span></td><td><div class="owner-cell"><span class="mini-avatar">D</span>Daniel</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status error">Lark 同步异常</span></div></td></tr>
-            <tr data-stage="live" data-stage-label="主网上线" data-bd="Alice" data-search="aster network alice"><td><div class="project-name">Aster Network</div><div class="project-id">DEL-2026-0226</div></td><td><span class="status success">主网上线</span></td><td><div class="owner-cell"><span class="mini-avatar">A</span>Alice</div></td><td><div class="binding-pair"><span class="status success">TG 已绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
-            <tr data-stage="test_deploy" data-stage-label="测试网部署" data-bd="Leo" data-search="ember project ember leo"><td><div class="project-name">Project Ember</div><div class="project-id">DEL-2026-0224</div></td><td><span class="status wait">测试网部署</span></td><td><div class="owner-cell"><span class="mini-avatar">L</span>Leo</div></td><td><div class="binding-pair"><span class="status neutral">TG 未绑定</span><span class="status success">Lark 已匹配</span></div></td></tr>
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:28px">正在加载 Lark 与 Telegram 真实项目…</td></tr>
           </tbody></table><div class="empty-state" id="project-empty"><i data-lucide="search-x"></i><div>没有符合条件的项目</div></div></div></section>
         </section>
 
         <section class="view" id="view-automations">
-          <div class="page-head"><div><h1>自动化任务</h1><p>定时任务、监听器和消息工作流的运行状态</p></div><div class="page-actions"><button class="btn" id="run-health"><i data-lucide="stethoscope"></i>运行健康检查</button></div></div>
-          <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(140px,1fr))"><div class="stat-card"><div class="stat-top"><span>已启用</span><span class="stat-icon green"><i data-lucide="power"></i></span></div><div class="stat-value">8</div><div class="stat-foot">共 9 个任务</div></div><div class="stat-card"><div class="stat-top"><span>今日执行</span><span class="stat-icon blue"><i data-lucide="play"></i></span></div><div class="stat-value">1,284</div><div class="stat-foot">最近一次 14:32</div></div><div class="stat-card"><div class="stat-top"><span>失败 / 重试</span><span class="stat-icon red"><i data-lucide="rotate-ccw"></i></span></div><div class="stat-value">3 / 7</div><div class="stat-foot"><strong class="danger">1 个</strong> 需要人工处理</div></div><div class="stat-card"><div class="stat-top"><span>平均耗时</span><span class="stat-icon purple"><i data-lucide="timer"></i></span></div><div class="stat-value">2.4s</div><div class="stat-foot">过去 24 小时</div></div></div>
-          <div class="automation-grid">
+          <div class="page-head"><div><h1>自动化任务</h1><p>定时任务、监听器和消息工作流的运行状态</p></div></div>
+          <div class="stats-grid" style="grid-template-columns:repeat(4,minmax(140px,1fr))"><div class="stat-card"><div class="stat-top"><span>已启用</span><span class="stat-icon green"><i data-lucide="power"></i></span></div><div class="stat-value" id="automation-enabled-value">—</div><div class="stat-foot" id="automation-total-foot">读取任务总数…</div></div><div class="stat-card"><div class="stat-top"><span>今日执行</span><span class="stat-icon blue"><i data-lucide="play"></i></span></div><div class="stat-value" id="automation-today-value">—</div><div class="stat-foot">来自真实计数与事件日志</div></div><div class="stat-card"><div class="stat-top"><span>失败 / 重试</span><span class="stat-icon red"><i data-lucide="rotate-ccw"></i></span></div><div class="stat-value" id="automation-failures-value">—</div><div class="stat-foot" id="automation-failures-foot">失败与重试单独记录</div></div><div class="stat-card"><div class="stat-top"><span>平均耗时</span><span class="stat-icon purple"><i data-lucide="timer"></i></span></div><div class="stat-value" id="automation-duration-value">—</div><div class="stat-foot">当前没有统一耗时埋点</div></div></div>
+          <div class="automation-grid" id="automation-task-grid">
             <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="message-circle"></i></span><div><div class="task-name">交付 Bot 问答</div><div class="task-desc">TG 群内自动回答与人工纠错</div></div><span class="status success">运行中</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>926 次</strong></div><div class="task-metric"><span>成功率</span><strong>99.8%</strong></div><div class="task-metric"><span>平均耗时</span><strong>1.8s</strong></div></div><div class="task-foot"><span class="next">持续监听 · 14:32 心跳</span><button class="switch on" aria-label="启用交付 Bot 问答"></button></div></article>
             <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="scan-search"></i></span><div><div class="task-name">表单与 Logo 轮询</div><div class="task-desc">每 5 分钟抓取并回填 Lark</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>174 次</strong></div><div class="task-metric"><span>成功率</span><strong>98.9%</strong></div><div class="task-metric"><span>上次耗时</span><strong>8.4s</strong></div></div><div class="task-foot"><span class="next">下次运行 14:35</span><button class="btn small retry-btn"><i data-lucide="play"></i>运行</button><button class="switch on"></button></div></article>
             <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="radio"></i></span><div><div class="task-name">主网上线监听</div><div class="task-desc">监听 Lark 状态并触发后续流程</div></div><span class="status success">运行中</span></div><div class="task-metrics"><div class="task-metric"><span>今日变更</span><strong>6 次</strong></div><div class="task-metric"><span>重连</span><strong>0 次</strong></div><div class="task-metric"><span>延迟</span><strong>18s</strong></div></div><div class="task-foot"><span class="next">持续监听 · 14:32 心跳</span><button class="switch on"></button></div></article>
             <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="bell-ring"></i></span><div><div class="task-name">表单自动催收</div><div class="task-desc">按策略向未填写项目发送提醒</div></div><span class="status wait">等待</span></div><div class="task-metrics"><div class="task-metric"><span>待提醒</span><strong>9 个</strong></div><div class="task-metric"><span>今日已发</span><strong>12 次</strong></div><div class="task-metric"><span>回复率</span><strong>41.7%</strong></div></div><div class="task-foot"><span class="next">下次运行 15:00</span><button class="btn small retry-btn"><i data-lucide="play"></i>运行</button><button class="switch on"></button></div></article>
-            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="wallet-cards"></i></span><div><div class="task-name">钱包资料汇总</div><div class="task-desc">汇总钱包并推送部门摘要</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日新增</span><strong>8 条</strong></div><div class="task-metric"><span>待确认</span><strong>2 条</strong></div><div class="task-metric"><span>上次耗时</span><strong>3.1s</strong></div></div><div class="task-foot"><span class="next">下次运行 18:00</span><button class="switch on"></button></div></article>
-            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="send"></i></span><div><div class="task-name">部门通知</div><div class="task-desc">向财务、运营、技术分发完整资料</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>18 条</strong></div><div class="task-metric"><span>成功率</span><strong>100%</strong></div><div class="task-metric"><span>确认率</span><strong>94.4%</strong></div></div><div class="task-foot"><span class="next">事件触发 · 最近 14:30</span><button class="switch on"></button></div></article>
+            <article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="wallet-cards"></i></span><div><div class="task-name">钱包地址日报</div><div class="task-desc">每日午夜汇总并发送钱包地址日报</div></div><span class="status success">成功</span></div><div class="task-metrics"><div class="task-metric"><span>今日新增</span><strong>8 条</strong></div><div class="task-metric"><span>已发送</span><strong>8 条</strong></div><div class="task-metric"><span>上次耗时</span><strong>3.1s</strong></div></div><div class="task-foot"><span class="next">下次运行 00:00</span><button class="switch on"></button></div></article>
           </div>
         </section>
 
         <section class="view" id="view-analytics">
           <div class="page-head">
             <div><h1>数据分析</h1><p>保留原看板的运营趋势、日历复查和问答明细</p></div>
-            <div class="page-actions"><div class="segmented analytics-range" role="group" aria-label="数据时间范围"><button data-range="24h" aria-pressed="false">24 小时</button><button data-range="7d" aria-pressed="false">7 天</button><button class="active" data-range="30d" aria-pressed="true">30 天</button></div><button class="btn"><i data-lucide="download"></i>导出报表</button></div>
+            <div class="page-actions"><div class="segmented analytics-range" role="group" aria-label="数据时间范围"><button data-range="24h" aria-pressed="false">24 小时</button><button data-range="7d" aria-pressed="false">7 天</button><button class="active" data-range="30d" aria-pressed="true">30 天</button></div></div>
           </div>
           <div class="sr-only" id="analytics-live-status" aria-live="polite"></div>
 
@@ -624,7 +607,7 @@
           </section>
 
           <div class="grid-even">
-            <section class="panel"><div class="panel-head"><div><h2 class="panel-title">近 14 日工作流构成</h2><div class="panel-sub">表单、Logo、欢迎、Mark live、新进群与钱包</div></div></div><div class="chart-pad"><div class="chart" id="analysis-workflow"></div></div></section>
+            <section class="panel"><div class="panel-head"><div><h2 class="panel-title" id="analytics-workflow-title">过去 30 天工作流构成</h2><div class="panel-sub" id="analytics-workflow-sub">表单、Logo、欢迎、Mark live、新进群与钱包</div></div></div><div class="chart-pad"><div class="chart" id="analysis-workflow"></div></div></section>
             <section class="panel"><div class="panel-head"><div><h2 class="panel-title">工作流日增量（面积）</h2><div class="panel-sub">各自动化节点的每日增量</div></div></div><div class="chart-pad"><div class="chart" id="analysis-area"></div></div></section>
           </div>
 
@@ -648,22 +631,10 @@
           </section>
         </section>
 
-        <section class="view" id="view-exceptions">
-          <div class="page-head"><div><h1>异常中心</h1><p>统一处理失败任务、资料缺失和人工确认</p></div><div class="page-actions"><button class="btn"><i data-lucide="check-check"></i>批量确认</button></div></div>
-          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索异常或项目"></label><select><option>全部类型</option><option>同步失败</option><option>资料缺失</option><option>等待人工确认</option></select><select><option>全部优先级</option><option>高优先级</option><option>中优先级</option></select></div>
-          <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>优先级</th><th>异常</th><th>项目</th><th>来源</th><th>重试</th><th>负责人</th><th>发生时间</th><th>操作</th></tr></thead><tbody id="exceptions-table-body"><tr><td colspan="8">等待真实异常数据…</td></tr></tbody></table></div></section>
-        </section>
-
         <section class="view" id="view-audit">
-          <div class="page-head"><div><h1>审计日志</h1><p>管理员操作、状态变更和自动化执行记录</p></div><div class="page-actions"><button class="btn"><i data-lucide="download"></i>导出日志</button></div></div>
+          <div class="page-head"><div><h1>审计日志</h1><p>管理员操作、状态变更和自动化执行记录</p></div></div>
           <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索操作者、项目或动作"></label><select><option>全部操作者</option><option>Roy</option><option>Grace</option><option>Josh</option><option>System</option></select><select><option>全部动作</option><option>状态变更</option><option>人工重试</option><option>设置修改</option></select></div>
-          <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>变更内容</th><th>结果</th></tr></thead><tbody>
-            <tr><td>2026-08-16 14:30:18</td><td><div class="owner-cell"><span class="mini-avatar">S</span>System</div></td><td>部门通知</td><td>Aster Network</td><td>推送至 Finance / Ops / Tech</td><td><span class="status success">成功</span></td></tr>
-            <tr><td>2026-08-16 14:21:42</td><td><div class="owner-cell"><span class="mini-avatar">G</span>Grace</div></td><td>状态变更</td><td>Nova Finance</td><td>技术接入中 → 待主网确认</td><td><span class="status success">成功</span></td></tr>
-            <tr><td>2026-08-16 14:08:11</td><td><div class="owner-cell"><span class="mini-avatar">R</span>Roy</div></td><td>人工重试</td><td>Project Helios</td><td>重试 Lark 项目同步</td><td><span class="status error">失败</span></td></tr>
-            <tr><td>2026-08-16 13:54:05</td><td><div class="owner-cell"><span class="mini-avatar">J</span>Josh</div></td><td>资料修正</td><td>Manta Pay</td><td>更新 Logo 来源 URL</td><td><span class="status success">成功</span></td></tr>
-            <tr><td>2026-08-16 13:30:00</td><td><div class="owner-cell"><span class="mini-avatar">S</span>System</div></td><td>表单同步</td><td>OrbitX</td><td>Google Forms → Lark 多维表格</td><td><span class="status success">成功</span></td></tr>
-          </tbody></table></div></section>
+          <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>变更内容</th><th>结果</th></tr></thead><tbody id="audit-log-body"><tr><td colspan="6">正在加载最近 20 条真实自动化事件…</td></tr></tbody></table></div></section>
         </section>
 
         <section class="view" id="view-settings">
@@ -686,27 +657,21 @@
   </div>
 
   <div class="drawer-backdrop" id="drawer-backdrop"></div>
-  <aside class="drawer" id="project-drawer" aria-hidden="true">
-    <div class="drawer-head"><h2>项目详情</h2><button class="icon-btn" id="drawer-close" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
+  <aside class="drawer" id="project-drawer" role="dialog" aria-modal="true" aria-labelledby="project-drawer-title" aria-hidden="true">
+    <div class="drawer-head"><h2 id="project-drawer-title">项目详情</h2><button class="icon-btn" id="drawer-close" aria-label="关闭" title="关闭"><i data-lucide="x"></i></button></div>
     <div class="drawer-body">
-      <div class="detail-top"><div class="detail-logo">PH</div><div><div class="detail-name" id="drawer-project-name">Project Helios</div><div class="detail-meta" id="drawer-project-meta">对应 BD：Alice · 状态来源：Lark 项目状态</div></div><span class="status progress" id="drawer-project-stage" style="margin-left:auto">主网部署中</span></div>
-      <div class="detail-section" style="margin-top:0;border-top:0;padding-top:0"><h3>交付流程</h3><div class="stage-list">
-        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">BD 建群并邀请交付</div><div class="stage-sub">Telegram 群已绑定至 Lark 项目</div></div><time class="stage-time">08-11 10:22</time></div>
-        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">Bot 自动问候</div><div class="stage-sub">欢迎消息发送成功</div></div><time class="stage-time">08-11 10:23</time></div>
-        <div class="stage"><span class="stage-mark"><i data-lucide="check"></i></span><div><div class="stage-title">生态 App 技术接入</div><div class="stage-sub">已回答 18 个问题，人工介入 2 次</div></div><time class="stage-time">进行中</time></div>
-        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">主网上线确认</div><div class="stage-sub">等待交付人员在 Lark 确认</div></div><time class="stage-time">待处理</time></div>
-        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">Google 表单回收</div><div class="stage-sub">主网上线后自动发送</div></div><time class="stage-time">未开始</time></div>
-        <div class="stage"><span class="stage-mark pending"><i data-lucide="circle"></i></span><div><div class="stage-title">部门资料推送</div><div class="stage-sub">钱包等资料齐全后触发</div></div><time class="stage-time">未开始</time></div>
-      </div></div>
-      <div class="detail-section"><h3>跨平台绑定</h3><div class="detail-grid"><div class="detail-field"><span>Telegram 群</span><strong>Botchain · Project Helios</strong></div><div class="detail-field"><span>Lark 记录</span><strong>recC82kA9FQ2</strong></div><div class="detail-field"><span>Google 表单</span><strong>上线后自动创建</strong></div><div class="detail-field"><span>主网状态</span><strong>尚未确认</strong></div></div></div>
-      <div class="detail-section"><h3>待处理事项</h3><div class="exception-item" style="padding:0;border:0"><span class="severity high"><i data-lucide="triangle-alert"></i></span><div><div class="exception-title">Lark 同步连续失败 3 次</div><div class="exception-meta">TLS handshake error · 最近尝试于 14:24</div></div><button class="btn small retry-btn"><i data-lucide="rotate-cw"></i>重试</button></div></div>
+      <div class="detail-top"><div class="detail-logo" id="drawer-project-logo">--</div><div><div class="detail-name" id="drawer-project-name">正在加载项目</div><div class="detail-meta" id="drawer-project-meta">状态来源：Lark / Telegram / 自动化日志</div></div><span class="status neutral" id="drawer-project-stage" style="margin-left:auto">加载中</span></div>
+      <div class="detail-section" style="margin-top:0;border-top:0;padding-top:0"><h3>交付流程</h3><div class="stage-list" id="drawer-stage-list"><div class="empty-state" style="display:block;padding:22px 12px">正在加载真实状态…</div></div></div>
+      <div class="detail-section"><h3>跨平台绑定</h3><div class="detail-grid" id="drawer-binding-grid"></div></div>
+      <div class="detail-section" id="drawer-issues-section" hidden><h3>待处理事项</h3><div class="detail-issue-list" id="drawer-issue-list"></div></div>
+      <div class="detail-section"><h3>项目事件（最近 30 条）</h3><div class="project-event-list" id="drawer-event-list"><div class="empty-state" style="display:block;padding:22px 12px">暂无可追溯事件</div></div></div>
     </div>
   </aside>
 
   <div class="toast" id="toast"><i data-lucide="circle-check"></i><span id="toast-text">操作已完成</span></div>
 
   <script>
-    const labels = { overview: "总览", projects: "项目交付", automations: "自动化任务", analytics: "数据分析", exceptions: "异常中心", audit: "审计日志", settings: "系统设置" };
+    const labels = { overview: "总览", projects: "项目交付", automations: "自动化任务", analytics: "数据分析", audit: "审计日志", settings: "系统设置" };
     const sidebar = document.getElementById("sidebar");
     const toast = document.getElementById("toast");
     let toastTimer;
@@ -729,12 +694,14 @@
       wallet: [0,1,1,1,1,2,1,1,2,1,2,1,1,2]
     };
     let activeAnalyticsRange = "30d";
+    let activeOverviewRange = "7d";
     let analyticsUpdateTimer;
 
     function dateLabels(count) {
-      const end = Date.UTC(2026, 7, 16);
+      const end = new Date();
+      end.setHours(0, 0, 0, 0);
       return Array.from({ length: count }, (_, index) => {
-        const date = new Date(end - (count - 1 - index) * 86400000);
+        const date = new Date(end.getTime() - (count - 1 - index) * 86400000);
         return date.toISOString().slice(5, 10);
       });
     }
@@ -800,29 +767,40 @@
     }
 
     function renderOverviewCharts() {
-      const trend = chartBase();
+      const rangeData = analyticsRanges[activeOverviewRange] || analyticsRanges["7d"];
+      const series = rangeData.series;
+      const trend = chartBase(rangeData.labels);
       trend.color = [GREEN.primary, GREEN.mid, GREEN.deep, GREEN.mint, GREEN.soft];
       trend.legend = { bottom: 0, textStyle: { color: GREEN.muted, fontSize: 9 } };
       trend.series = [
-        { name: "发出消息", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.sent },
-        { name: "处理入站", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.processed },
-        { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.faq },
-        { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.folder },
-        { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: chartSeries.logo }
+        { name: "发出消息", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: series.sent },
+        { name: "处理入站", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: series.processed },
+        { name: "FAQ sessions", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: series.faq },
+        { name: "新进群", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: series.folder },
+        { name: "Logo", type: "line", smooth: true, showSymbol: true, symbolSize: 5, data: series.logo }
       ];
       mountChart("overview-trend", trend);
 
-      const flow = chartBase();
+      const flow = chartBase(rangeData.labels);
       flow.color = [GREEN.primary, GREEN.mid, GREEN.warn, GREEN.deep, GREEN.mint];
       flow.legend = { bottom: 0, textStyle: { color: GREEN.muted, fontSize: 9 } };
       flow.series = [
-        { name: "表单", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: chartSeries.form },
-        { name: "Logo", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: chartSeries.logo },
-        { name: "欢迎", type: "line", stack: "wf", areaStyle: { opacity: .25 }, smooth: true, showSymbol: false, data: chartSeries.welcome },
-        { name: "Mark live", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: chartSeries.markLive },
-        { name: "新钱包项目", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: chartSeries.wallet }
+        { name: "表单", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: series.form },
+        { name: "Logo", type: "line", stack: "wf", areaStyle: { opacity: .35 }, smooth: true, showSymbol: false, data: series.logo },
+        { name: "欢迎", type: "line", stack: "wf", areaStyle: { opacity: .25 }, smooth: true, showSymbol: false, data: series.welcome },
+        { name: "Mark live", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: series.markLive },
+        { name: "新钱包项目", type: "line", stack: "wf", areaStyle: { opacity: .2 }, smooth: true, showSymbol: false, data: series.wallet }
       ];
       mountChart("overview-flow", flow);
+      const short = rangeData.short || "7 天";
+      const trendTitle = document.getElementById("overview-trend-title");
+      const trendSub = document.getElementById("overview-trend-sub");
+      const flowTitle = document.getElementById("overview-flow-title");
+      const flowSub = document.getElementById("overview-flow-sub");
+      if (trendTitle) trendTitle.textContent = `${rangeData.label}趋势（折线）`;
+      if (trendSub) trendSub.textContent = `${rangeData.label}的发出消息、处理入站、FAQ、新进群与 Logo`;
+      if (flowTitle) flowTitle.textContent = `${rangeData.label}工作流日增量（面积）`;
+      if (flowSub) flowSub.textContent = `${rangeData.label}的表单、Logo、欢迎、Mark live 与新钱包`;
     }
 
     function renderAnalyticsCharts() {
@@ -855,7 +833,7 @@
         : [];
       const calendarEnd = correctCalendarData.length
         ? new Date(`${correctCalendarData[correctCalendarData.length - 1][0]}T00:00:00Z`)
-        : new Date(Date.UTC(2026, 7, 16));
+        : new Date();
       const calendarStart = correctCalendarData.length
         ? new Date(`${correctCalendarData[0][0]}T00:00:00Z`)
         : new Date(calendarEnd.getTime() - (rangeData.calendarDays - 1) * 86400000);
@@ -935,6 +913,8 @@
       document.getElementById("analytics-trend-sub").textContent = `${rangeData.label}的发出消息、处理入站、FAQ、新进群与 Logo`;
       document.getElementById("analytics-calendar-title").textContent = `${rangeData.short}日历复查`;
       document.getElementById("analytics-calendar-sub").textContent = `颜色表示${rangeData.label}的问答活跃度`;
+      document.getElementById("analytics-workflow-title").textContent = `${rangeData.label}工作流构成`;
+      document.getElementById("analytics-workflow-sub").textContent = `${rangeData.label}的表单、Logo、欢迎、Mark live、新进群与钱包`;
       document.getElementById("qa-window-label").textContent = `${rangeData.label}的回答记录和人工处理线索`;
       document.getElementById("qa-answered-tab").textContent = `已回答 ${stats.answered.toLocaleString("en-US")}`;
       document.getElementById("qa-silent-tab").textContent = `沉默 ${stats.silent.toLocaleString("en-US")}`;
@@ -943,7 +923,9 @@
         row.hidden = Number(row.dataset.ageHours || 0) > rangeData.maxAgeHours;
       });
 
-      const end = new Date(Date.UTC(2026, 7, 16));
+      const end = rangeData.calendarData?.length
+        ? new Date(`${rangeData.calendarData[rangeData.calendarData.length - 1][0]}T00:00:00Z`)
+        : new Date();
       const start = new Date(end.getTime() - (rangeData.calendarDays - 1) * 86400000);
       const picker = document.getElementById("analytics-date-picker");
       picker.min = start.toISOString().slice(0, 10);
@@ -953,6 +935,20 @@
       renderAnalyticsCharts();
       document.getElementById("analytics-live-status").textContent = `数据范围已切换为${rangeData.label}`;
       if (announce) showToast(`全部数据已切换为${rangeData.label}`);
+    }
+
+    function updateOverviewRange(range, announce = true) {
+      const rangeData = analyticsRanges[range];
+      if (!rangeData) return;
+      activeOverviewRange = range;
+      document.querySelectorAll(".overview-range button").forEach(button => {
+        const selected = button.dataset.range === range;
+        button.classList.toggle("active", selected);
+        button.setAttribute("aria-pressed", selected ? "true" : "false");
+      });
+      renderLiveOverview(liveDashboard.payload || {});
+      renderOverviewCharts();
+      if (announce) showToast(`总览数据已切换为${rangeData.label}`);
     }
 
     function ensureCharts(viewName) {
@@ -977,15 +973,15 @@
       sidebar.classList.remove("open");
       window.scrollTo({ top: 0, behavior: "smooth" });
       ensureCharts(viewName);
+      if (viewName === "settings") loadDashboardSettings();
     }
     document.querySelectorAll("[data-view]").forEach(el => el.addEventListener("click", () => navigate(el.dataset.view)));
     document.querySelectorAll("[data-nav]").forEach(el => el.addEventListener("click", () => navigate(el.dataset.nav)));
     document.getElementById("menu-toggle").addEventListener("click", () => sidebar.classList.toggle("open"));
-    document.querySelectorAll(".segmented:not(.analytics-range) button").forEach(btn => btn.addEventListener("click", () => { btn.parentElement.querySelectorAll("button").forEach(b => b.classList.remove("active")); btn.classList.add("active"); showToast(`已切换到${btn.textContent}数据`); }));
+    document.querySelectorAll(".overview-range button").forEach(button => button.addEventListener("click", () => updateOverviewRange(button.dataset.range)));
     document.querySelectorAll(".analytics-range button").forEach(button => button.addEventListener("click", () => updateAnalyticsRange(button.dataset.range)));
     document.getElementById("refresh-btn").addEventListener("click", e => { e.currentTarget.querySelector("svg")?.animate([{ transform: "rotate(0deg)" }, { transform: "rotate(360deg)" }], { duration: 500 }); loadLiveDashboard(true); });
     document.getElementById("settings-demo").addEventListener("click", () => showToast("设置入口仅管理员可见"));
-    document.getElementById("run-health").addEventListener("click", () => showToast("健康检查已完成：1 项轻微波动"));
     document.querySelectorAll(".qa-tabs button").forEach(button => button.addEventListener("click", () => {
       document.querySelectorAll(".qa-tabs button").forEach(item => item.classList.toggle("active", item === button));
       document.querySelectorAll(".qa-pane").forEach(pane => pane.classList.toggle("active", pane.id === `qa-${button.dataset.qa}`));
@@ -998,24 +994,91 @@
 
     const drawer = document.getElementById("project-drawer");
     const backdrop = document.getElementById("drawer-backdrop");
-    function openDrawer(row) {
-      if (row) {
-        document.getElementById("drawer-project-name").textContent = row.querySelector(".project-name")?.textContent || "项目详情";
-        document.getElementById("drawer-project-meta").textContent = `对应 BD：${row.dataset.bd || "-"} · 状态来源：Lark 项目状态`;
-        const stage = document.getElementById("drawer-project-stage");
-        stage.textContent = row.dataset.stageLabel || "-";
-        stage.className = `status ${row.dataset.stage === "live" ? "success" : row.dataset.stage === "test_deploy" ? "wait" : "progress"}`;
-        stage.style.marginLeft = "auto";
-      }
-      drawer.classList.add("open"); backdrop.classList.add("open"); drawer.setAttribute("aria-hidden", "false");
+    const liveProjectRows = new Map();
+    let drawerTrigger = null;
+
+    function projectInitials(name) {
+      const words = String(name || "").trim().split(/\s+/).filter(Boolean);
+      if (!words.length) return "--";
+      return (words.length > 1 ? `${words[0][0]}${words[1][0]}` : words[0].slice(0, 2)).toUpperCase();
     }
-    function closeDrawer() { drawer.classList.remove("open"); backdrop.classList.remove("open"); drawer.setAttribute("aria-hidden", "true"); }
+
+    function drawerStepTime(item) {
+      if (item.ts) return formatLiveTime(item.ts);
+      if (item.state === "done") return "已完成";
+      if (item.state === "active") return "进行中";
+      if (item.state === "warning") return "需处理";
+      return "未开始";
+    }
+
+    function renderProjectDrawer(project) {
+      const name = project.project || "项目详情";
+      document.getElementById("drawer-project-logo").textContent = projectInitials(name);
+      document.getElementById("drawer-project-name").textContent = name;
+      document.getElementById("drawer-project-meta").textContent = `对应 BD：${project.bd || "未分配"} · 交付：${project.delivery || "未分配"} · 真实数据`;
+
+      const stage = document.getElementById("drawer-project-stage");
+      stage.textContent = project.stage_label || "未设置";
+      stage.className = `status ${project.stage === "live" ? "success" : project.stage === "test_deploy" ? "wait" : project.stage === "main_deploy" ? "progress" : "neutral"}`;
+      stage.style.marginLeft = "auto";
+
+      const stepIcons = { done: "check", active: "loader-circle", warning: "triangle-alert", pending: "circle" };
+      const steps = Array.isArray(project.delivery_steps) ? project.delivery_steps : [];
+      document.getElementById("drawer-stage-list").innerHTML = steps.length ? steps.map(item => {
+        const state = ["done", "active", "warning", "pending"].includes(item.state) ? item.state : "pending";
+        const markClass = state === "done" ? "" : state;
+        const source = item.source ? `<span class="stage-source"> · ${escapeHtml(item.source)}</span>` : "";
+        return `<div class="stage"><span class="stage-mark ${markClass}" aria-label="${escapeHtml(drawerStepTime(item))}"><i data-lucide="${stepIcons[state]}"></i></span><div><div class="stage-title">${escapeHtml(item.title || "交付节点")}</div><div class="stage-sub">${escapeHtml(item.detail || "暂无详情")}${source}</div></div><time class="stage-time" title="${escapeHtml(item.ts ? formatLiveTime(item.ts) : drawerStepTime(item))}">${escapeHtml(drawerStepTime(item))}</time></div>`;
+      }).join("") : `<div class="empty-state" style="display:block;padding:22px 12px">暂无可用的交付状态</div>`;
+
+      const formLabel = project.form_completed ? "资料已回收" : project.form_sent ? "已发送，待回收" : "尚未发送";
+      const bindings = [
+        ["Telegram 群", project.chat_title || "未匹配"],
+        ["Lark 记录", project.record_id || "未匹配"],
+        ["Google 表单", formLabel],
+        ["主网状态", project.stage_label || "未设置"],
+      ];
+      document.getElementById("drawer-binding-grid").innerHTML = bindings.map(([label, value]) => `<div class="detail-field"><span>${escapeHtml(label)}</span><strong>${escapeHtml(value)}</strong></div>`).join("");
+
+      const issues = Array.isArray(project.issues) ? project.issues : [];
+      const issueSection = document.getElementById("drawer-issues-section");
+      issueSection.hidden = !issues.length;
+      document.getElementById("drawer-issue-list").innerHTML = issues.map(item => `<div class="detail-issue ${escapeHtml(item.level || "medium")}"><span class="detail-issue-dot"></span><span>${escapeHtml(item.text || "需要人工处理")}</span></div>`).join("");
+
+      const events = Array.isArray(project.project_events) ? project.project_events : [];
+      document.getElementById("drawer-event-list").innerHTML = events.length ? events.map(item => {
+        const status = ["error", "failed", "fail"].includes(String(item.status || "").toLowerCase()) ? "error" : String(item.status || "").toLowerCase() === "warning" ? "warning" : "";
+        return `<div class="project-event"><span class="project-event-dot ${status}"></span><div><div class="project-event-text">${escapeHtml(item.text || "自动化任务已执行")}</div><div class="project-event-source">${escapeHtml(item.source || "自动化日志")}</div></div><time title="${escapeHtml(formatLiveTime(item.ts))}">${escapeHtml(formatRelativeTime(item.ts))}</time></div>`;
+      }).join("") : `<div class="empty-state" style="display:block;padding:22px 12px">暂无可追溯的真实事件</div>`;
+      renderIcons();
+    }
+
+    function openDrawer(row) {
+      if (!row) return;
+      drawerTrigger = row;
+      const project = liveProjectRows.get(row.dataset.recordId);
+      if (project) renderProjectDrawer(project);
+      drawer.classList.add("open"); backdrop.classList.add("open"); drawer.setAttribute("aria-hidden", "false");
+      document.getElementById("drawer-close").focus();
+    }
+    function closeDrawer() { drawer.classList.remove("open"); backdrop.classList.remove("open"); drawer.setAttribute("aria-hidden", "true"); drawerTrigger?.focus(); }
     document.getElementById("drawer-close").addEventListener("click", closeDrawer);
     backdrop.addEventListener("click", closeDrawer);
     document.addEventListener("keydown", e => { if (e.key === "Escape") closeDrawer(); });
-    document.querySelectorAll("#project-table tbody tr").forEach(row => row.addEventListener("click", () => openDrawer(row)));
-    document.querySelectorAll("[data-open-project]").forEach(btn => btn.addEventListener("click", () => { navigate("projects"); showToast("这是新建交付入口的交互示意"); }));
-
+    function bindProjectRowInteractions() {
+      document.querySelectorAll("#project-table tbody tr").forEach(row => {
+        if (!row.dataset.recordId) return;
+        row.tabIndex = 0;
+        row.addEventListener("click", () => openDrawer(row));
+        row.addEventListener("keydown", event => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault();
+            openDrawer(row);
+          }
+        });
+      });
+    }
+    bindProjectRowInteractions();
     const projectSearch = document.getElementById("project-search");
     const stageFilter = document.getElementById("stage-filter");
     const bdFilter = document.getElementById("bd-filter");
@@ -1023,7 +1086,7 @@
       const query = projectSearch.value.trim().toLowerCase();
       let visible = 0;
       document.querySelectorAll("#project-table tbody tr").forEach(row => {
-        const matches = (!query || row.dataset.search.includes(query)) && (stageFilter.value === "all" || row.dataset.stage === stageFilter.value) && (bdFilter.value === "all" || row.dataset.bd === bdFilter.value);
+        const matches = (!query || row.dataset.search.includes(query)) && (stageFilter.value === "all" || row.dataset.statusRaw === stageFilter.value) && (bdFilter.value === "all" || row.dataset.bd === bdFilter.value);
         row.style.display = matches ? "" : "none";
         if (matches) visible++;
       });
@@ -1037,10 +1100,144 @@
 
     const liveDashboard = { payload: null, loading: false };
     const dashboardApiBase = "/dashboard";
+    const settingsState = { loaded: false, loading: false };
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>'"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" }[char]));
     }
+
+    async function dashboardApi(path, options = {}) {
+      const response = await fetch(`${dashboardApiBase}${path}`, {
+        credentials: "same-origin",
+        cache: "no-store",
+        ...options,
+        headers: {
+          "Content-Type": "application/json",
+          ...(options.headers || {})
+        }
+      });
+      if (response.status === 401) {
+        location.href = `${dashboardApiBase}/login?next=${encodeURIComponent(location.pathname)}`;
+        throw new Error("登录已过期");
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      return response.json();
+    }
+
+    function renderDashboardSettings(fields) {
+      const root = document.getElementById("settings-form");
+      root.innerHTML = (fields || []).map(field => {
+        const id = `setting-${String(field.key || "").replace(/[^a-zA-Z0-9]/g, "_")}`;
+        if (field.type === "bool") {
+          return `<div class="settings-field bool" data-key="${escapeHtml(field.key)}" data-type="bool"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" type="checkbox" ${field.value ? "checked" : ""}></div>`;
+        }
+        if (field.type === "str_list") {
+          const value = Array.isArray(field.value) ? field.value.join("\n") : (field.value || "");
+          return `<div class="settings-field" data-key="${escapeHtml(field.key)}" data-type="str_list"><label for="${id}">${escapeHtml(field.label)}</label><textarea id="${id}">${escapeHtml(value)}</textarea><div class="settings-hint">每行一项</div></div>`;
+        }
+        const inputType = field.type === "int" || field.type === "float" ? "number" : "text";
+        const step = field.type === "float" ? "0.01" : "1";
+        return `<div class="settings-field" data-key="${escapeHtml(field.key)}" data-type="${escapeHtml(field.type)}"><label for="${id}">${escapeHtml(field.label)}</label><input id="${id}" type="${inputType}" step="${step}" value="${escapeHtml(field.value)}"></div>`;
+      }).join("") || `<div class="settings-field"><div class="settings-hint">暂无可编辑设置</div></div>`;
+    }
+
+    function collectDashboardSettings() {
+      const values = {};
+      document.querySelectorAll("#settings-form .settings-field[data-key]").forEach(field => {
+        const input = field.querySelector("input, textarea, select");
+        if (!input) return;
+        const type = field.dataset.type;
+        if (type === "bool") values[field.dataset.key] = input.checked;
+        else if (type === "int") values[field.dataset.key] = Number.parseInt(input.value, 10);
+        else if (type === "float") values[field.dataset.key] = Number.parseFloat(input.value);
+        else values[field.dataset.key] = input.value;
+      });
+      return values;
+    }
+
+    function renderDashboardLearned(items) {
+      const root = document.getElementById("learned-list");
+      root.innerHTML = (items || []).map(item => `<div class="learned-item"><div><strong>${escapeHtml(item.name)}</strong><div class="settings-hint">${escapeHtml(formatLiveTime(item.mtime))} · ${Number(item.chars || 0).toLocaleString("en-US")} 字符</div><div style="margin-top:6px">${escapeHtml(item.preview || "")}</div></div><button class="btn small" data-learned-delete="${escapeHtml(item.name)}">删除</button></div>`).join("") || `<div class="settings-field"><div class="settings-hint">暂无学习记录</div></div>`;
+      root.querySelectorAll("[data-learned-delete]").forEach(button => button.addEventListener("click", async () => {
+        if (!window.confirm(`删除 ${button.dataset.learnedDelete}？`)) return;
+        try {
+          await dashboardApi(`/api/learned/${encodeURIComponent(button.dataset.learnedDelete)}`, { method: "DELETE" });
+          settingsState.loaded = false;
+          await loadDashboardSettings(true);
+          showToast("学习记录已删除");
+        } catch (error) {
+          showToast(`删除失败：${error.message || error}`);
+        }
+      }));
+    }
+
+    async function loadDashboardSettings(force = false) {
+      if (settingsState.loading || (settingsState.loaded && !force)) return;
+      settingsState.loading = true;
+      const meta = document.getElementById("settings-meta");
+      meta.textContent = "加载中…";
+      try {
+        const [settings, learned] = await Promise.all([
+          dashboardApi("/api/settings"),
+          dashboardApi("/api/learned")
+        ]);
+        renderDashboardSettings(settings.fields || []);
+        renderDashboardLearned(learned.items || []);
+        meta.textContent = `运行时覆盖文件：${settings.overrides_path || "data/runtime_overrides.yaml"} · ${(settings.fields || []).length} 项`;
+        settingsState.loaded = true;
+      } catch (error) {
+        meta.textContent = `加载失败：${error.message || error}`;
+        document.getElementById("settings-form").innerHTML = `<div class="settings-field"><div class="settings-hint">请刷新页面后重试</div></div>`;
+      } finally {
+        settingsState.loading = false;
+      }
+    }
+
+    document.getElementById("settings-save").addEventListener("click", async () => {
+      const button = document.getElementById("settings-save");
+      button.disabled = true;
+      try {
+        const result = await dashboardApi("/api/settings", { method: "PUT", body: JSON.stringify({ values: collectDashboardSettings() }) });
+        renderDashboardSettings(result.settings?.fields || []);
+        document.getElementById("settings-meta").textContent = `已保存 ${(result.applied || []).length} 项 · ${result.settings?.overrides_path || "data/runtime_overrides.yaml"}`;
+        showToast(`已保存 ${(result.applied || []).length} 项设置`);
+      } catch (error) {
+        showToast(`保存失败：${error.message || error}`);
+      } finally {
+        button.disabled = false;
+      }
+    });
+
+    document.getElementById("settings-reload-kb").addEventListener("click", async () => {
+      try {
+        const result = await dashboardApi("/api/knowledge/reload", { method: "POST", body: "{}" });
+        showToast(`知识库已重载：${Number(result.chunks || 0)} chunks`);
+      } catch (error) {
+        showToast(`重载失败：${error.message || error}`);
+      }
+    });
+
+    document.getElementById("settings-learn").addEventListener("click", async () => {
+      const content = document.getElementById("learn-content").value.trim();
+      if (!content) { showToast("请先填写知识正文"); return; }
+      try {
+        await dashboardApi("/api/learned", {
+          method: "POST",
+          body: JSON.stringify({
+            content,
+            related_question: document.getElementById("learn-q").value.trim(),
+            sync_lark: document.getElementById("learn-lark").checked
+          })
+        });
+        document.getElementById("learn-content").value = "";
+        document.getElementById("learn-q").value = "";
+        settingsState.loaded = false;
+        await loadDashboardSettings(true);
+        showToast("知识已保存并重载");
+      } catch (error) {
+        showToast(`保存失败：${error.message || error}`);
+      }
+    });
 
     function formatLiveTime(value) {
       const date = new Date(value || "");
@@ -1123,26 +1320,44 @@
     }
 
     function renderLiveOverview(payload) {
-      const report = payload.period_reports?.["7d"] || payload.daily || {};
+      const rangeData = analyticsRanges[activeOverviewRange] || analyticsRanges["7d"];
+      const report = payload.period_reports?.[activeOverviewRange] || payload.daily || {};
       const progress = report.progress || {};
-      const metrics = report.metrics || {};
       const projects = payload.projects || {};
       const rows = projects.rows || [];
-      const liveRows = rows.filter(row => row.stage === "live");
-      const formPending = Number(projects.form_pending || 0);
       const wallet = payload.snapshot?.wallet_lark || {};
+      const formPending = Number(projects.form_pending || 0);
+      const rangeSeries = rangeData.series || {};
+      const sum = values => (values || []).reduce((total, value) => total + Number(value || 0), 0);
+      const deploymentEvents = Number(rangeData.stats?.mainnet || 0) + Number(rangeData.stats?.testnet || 0);
+      const silent = Number(rangeData.stats?.silent || 0);
+      const processed = sum(rangeSeries.processed);
+      const formSent = sum(rangeSeries.form);
+      const mainnetLive = Number(rangeData.stats?.mainnet || 0);
+      const rangeLabel = rangeData.short || "当前范围";
       const stats = document.querySelectorAll("#view-overview .stats-grid .stat-value");
       const feet = document.querySelectorAll("#view-overview .stats-grid .stat-foot");
-      if (stats[0]) stats[0].textContent = (Number(progress.mainnet_deploying || 0) + Number(progress.testnet_deploying || 0)).toLocaleString("en-US");
-      if (stats[1]) stats[1].textContent = Number((payload.qa?.counts || {}).silent || 0).toLocaleString("en-US");
-      if (stats[2]) stats[2].textContent = Number(report.bot_messages?.auto_replied || metrics.messages_processed || 0).toLocaleString("en-US");
-      if (stats[3]) stats[3].textContent = formPending.toLocaleString("en-US");
-      if (stats[4]) stats[4].textContent = Number(report.progress?.today_mainnet_live || liveRows.length || 0).toLocaleString("en-US");
-      if (feet[0]) feet[0].innerHTML = `<strong>${rows.length.toLocaleString("en-US")}</strong> Lark 进度表项目`;
-      if (feet[1]) feet[1].innerHTML = `<strong class="danger">${Number((payload.qa?.counts || {}).silent || 0)}</strong> TG 沉默 / 待人工`;
-      if (feet[2]) feet[2].innerHTML = `<strong>${Number(report.bot_messages?.replied || 0)}</strong> 个回答会话`;
-      if (feet[3]) feet[3].innerHTML = `<strong class="warn">${formPending}</strong> 个主网上线后未回收`;
-      if (feet[4]) feet[4].innerHTML = `<strong>${Number(wallet.address_coverage_pct || 0).toFixed(1)}%</strong> 钱包地址覆盖`;
+      const labels = [
+        `${rangeLabel}部署活动`,
+        `${rangeLabel}沉默 / 转人工`,
+        `${rangeLabel}自动化处理`,
+        `${rangeLabel}表单发送`,
+        `${rangeLabel}主网上线`,
+      ];
+      labels.forEach((label, index) => {
+        const node = document.getElementById(`overview-stat-${index}-label`);
+        if (node) node.textContent = label;
+      });
+      if (stats[0]) stats[0].textContent = deploymentEvents.toLocaleString("en-US");
+      if (stats[1]) stats[1].textContent = silent.toLocaleString("en-US");
+      if (stats[2]) stats[2].textContent = processed.toLocaleString("en-US");
+      if (stats[3]) stats[3].textContent = formSent.toLocaleString("en-US");
+      if (stats[4]) stats[4].textContent = mainnetLive.toLocaleString("en-US");
+      if (feet[0]) feet[0].innerHTML = `<strong>${deploymentEvents}</strong> 主网 / 测试网活动`;
+      if (feet[1]) feet[1].innerHTML = `<strong class="danger">${silent}</strong> TG 沉默 / 待人工`;
+      if (feet[2]) feet[2].innerHTML = `<strong>${processed}</strong> 条处理入站`;
+      if (feet[3]) feet[3].innerHTML = `<strong class="warn">${formSent}</strong> 次表单发送`;
+      if (feet[4]) feet[4].innerHTML = `<strong>${mainnetLive}</strong> 条主网上线记录`;
 
       const pipeline = document.querySelectorAll("#view-overview .pipeline-step .step-count");
       if (pipeline[0]) pipeline[0].textContent = Number(projects.matched || 0).toLocaleString("en-US");
@@ -1150,10 +1365,12 @@
       if (pipeline[2]) pipeline[2].textContent = Number(progress.today_mainnet_live || 0).toLocaleString("en-US");
       if (pipeline[3]) pipeline[3].textContent = formPending.toLocaleString("en-US");
       if (pipeline[4]) pipeline[4].textContent = Math.max(0, Number(wallet.total_rows || 0) - Number(wallet.projects_with_any_address || 0)).toLocaleString("en-US");
-      if (pipeline[5]) pipeline[5].textContent = Number(payload.snapshot?.counters?.wallet_digest_sent?.today || 0).toLocaleString("en-US");
+      if (pipeline[5]) pipeline[5].textContent = rows.filter(row => row.wallet_digest_completed).length.toLocaleString("en-US");
       const sync = document.querySelector(".sync-status span");
       if (sync) sync.textContent = `数据更新于 ${formatLiveTime(payload.generated_at)}`;
-      renderLiveWorkflow(payload.workflow || {});
+      renderLiveWorkflow(payload.workflow || {}, rangeData);
+      renderLiveAutomations(payload.automation || {}, rangeData);
+      renderOverviewCharts();
     }
 
     function formatRelativeTime(value) {
@@ -1167,7 +1384,71 @@
       return `${Math.floor(hours / 24)} 天前`;
     }
 
-    function renderLiveWorkflow(workflow) {
+    function renderLiveAutomations(automation, rangeData = null) {
+      const tasks = automation?.tasks || [];
+      const enabled = Number(automation?.enabled || 0);
+      const total = Number(automation?.total || tasks.length || 0);
+      const today = Number(automation?.today_executions || 0);
+      const failures = Number(automation?.failures || 0);
+      const enabledNode = document.getElementById("automation-enabled-value");
+      const totalFoot = document.getElementById("automation-total-foot");
+      const todayNode = document.getElementById("automation-today-value");
+      const failuresNode = document.getElementById("automation-failures-value");
+      const failuresFoot = document.getElementById("automation-failures-foot");
+      const durationNode = document.getElementById("automation-duration-value");
+      if (enabledNode) enabledNode.textContent = enabled.toLocaleString("en-US");
+      if (totalFoot) totalFoot.textContent = `共 ${total.toLocaleString("en-US")} 个任务`;
+      if (todayNode) todayNode.textContent = today.toLocaleString("en-US");
+      if (failuresNode) failuresNode.textContent = failures.toLocaleString("en-US");
+      if (failuresFoot) failuresFoot.textContent = automation?.retries == null ? "当前未单独记录重试" : `${automation.retries} 次重试`;
+      if (durationNode) durationNode.textContent = automation?.avg_duration == null ? "—" : `${automation.avg_duration}s`;
+
+      const statusClass = task => task.enabled ? (task.status === "等待" ? "wait" : "success") : "neutral";
+      const cardHtml = tasks.map(task => `<article class="task-card"><div class="task-head"><span class="task-icon"><i data-lucide="${escapeHtml(task.icon || "workflow")}"></i></span><div><div class="task-name">${escapeHtml(task.label)}</div><div class="task-desc">${escapeHtml(task.description || "")}</div></div><span class="status ${statusClass(task)}">${escapeHtml(task.status || (task.enabled ? "运行中" : "已关闭"))}</span></div><div class="task-metrics"><div class="task-metric"><span>今日</span><strong>${Number(task.today || 0).toLocaleString("en-US")} 次</strong></div><div class="task-metric"><span>成功率</span><strong>${escapeHtml(task.success_rate || "—")}</strong></div><div class="task-metric"><span>运行方式</span><strong title="${escapeHtml(task.detail || "")}">${escapeHtml(task.mode || "—")}</strong></div></div><div class="task-foot"><span class="next">${escapeHtml(task.detail || "暂无额外事件")}</span><span class="status ${statusClass(task)}">${task.enabled ? "已纳入监控" : "未启用"}</span></div></article>`).join("");
+      const grid = document.getElementById("automation-task-grid");
+      if (grid) grid.innerHTML = cardHtml || `<div class="empty-state">暂无自动化任务配置</div>`;
+
+      const rangeTaskValues = rangeData ? {
+        tg_qa: (rangeData.series?.processed || []).reduce((a, b) => a + Number(b || 0), 0),
+        welcome: (rangeData.series?.welcome || []).reduce((a, b) => a + Number(b || 0), 0),
+        folder_add: (rangeData.series?.folder || []).reduce((a, b) => a + Number(b || 0), 0),
+        form_dispatch: (rangeData.series?.form || []).reduce((a, b) => a + Number(b || 0), 0),
+        logo_fill: (rangeData.series?.logo || []).reduce((a, b) => a + Number(b || 0), 0),
+        status_watch: (rangeData.series?.markLive || []).reduce((a, b) => a + Number(b || 0), 0),
+        wallet_digest: (rangeData.series?.wallet || []).reduce((a, b) => a + Number(b || 0), 0),
+      } : null;
+      const compact = tasks.slice(0, 3).map(task => {
+        const count = rangeTaskValues && Object.prototype.hasOwnProperty.call(rangeTaskValues, task.key)
+          ? rangeTaskValues[task.key]
+          : Number(task.today || 0);
+        const periodLabel = rangeData?.short || "今日";
+        return `<div class="activity"><span class="activity-icon"><i data-lucide="${escapeHtml(task.icon || "workflow")}"></i></span><div class="activity-text"><strong>${escapeHtml(task.label)}</strong><br><span style="color:var(--muted)">${count.toLocaleString("en-US")} 次 · ${escapeHtml(periodLabel)} · ${escapeHtml(task.mode || "—")}</span></div><span class="status ${statusClass(task)}">${escapeHtml(task.status || "—")}</span></div>`;
+      }).join("");
+      ["overview-task-list", "overview-task-list-secondary"].forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.innerHTML = compact || `<div class="empty-state">暂无自动化任务</div>`;
+      });
+      ["overview-automation-subtitle", "overview-automation-subtitle-secondary"].forEach(id => {
+        const node = document.getElementById(id);
+        if (node) node.textContent = `${enabled} / ${total} 个任务已启用 · 来自真实配置`;
+      });
+      renderIcons();
+    }
+
+    function renderAuditLogs(activities) {
+      const body = document.getElementById("audit-log-body");
+      if (!body) return;
+      const rows = (activities || []).slice(0, 20);
+      body.innerHTML = rows.length ? rows.map(item => {
+        const status = ["failed", "fail", "error"].includes(String(item.status || "").toLowerCase()) ? "error" : "success";
+        const result = status === "error" ? "失败" : "已记录";
+        const action = item.kind || item.source || "自动化动作";
+        const project = item.project || "系统";
+        return `<tr><td>${escapeHtml(formatLiveTime(item.ts))}</td><td><div class="owner-cell"><span class="mini-avatar">S</span>System</div></td><td>${escapeHtml(action)}</td><td>${escapeHtml(project)}</td><td>${escapeHtml(item.text || "—")}</td><td><span class="status ${status}">${result}</span></td></tr>`;
+      }).join("") : `<tr><td colspan="6">暂无真实自动化事件</td></tr>`;
+    }
+
+    function renderLiveWorkflow(workflow, rangeData = null) {
       const funnel = workflow.funnel || {};
       const steps = funnel.steps || [];
       const byKey = Object.fromEntries(steps.map(step => [step.key, step]));
@@ -1204,15 +1485,22 @@
       if (navBadge) navBadge.textContent = Number(workflow.exceptions_total || exceptions.length).toLocaleString("en-US");
       renderExceptionTable(exceptions);
 
-      const activities = workflow.activities || [];
+      const maxAgeHours = Number(rangeData?.maxAgeHours || 720);
+      const activities = (workflow.activities || []).filter(item => ageHours(item.ts) <= maxAgeHours);
       const activityList = document.getElementById("recent-activity-list");
+      const activitySubtitle = document.getElementById("recent-activity-subtitle");
+      const visibleActivities = activities.slice(0, 20);
+      if (activitySubtitle) {
+        activitySubtitle.textContent = `当前范围最近 ${visibleActivities.length} 条 · 来自真实事件日志`;
+      }
       if (activityList) {
-        activityList.innerHTML = activities.length ? activities.slice(0, 6).map(item => {
+        activityList.innerHTML = visibleActivities.length ? visibleActivities.map(item => {
           const icon = escapeHtml(item.icon || "activity");
           const text = escapeHtml(item.text || "工作流事件");
           return `<div class="activity"><span class="activity-icon"><i data-lucide="${icon}"></i></span><div class="activity-text">${text}</div><time class="activity-time" title="${escapeHtml(formatLiveTime(item.ts))}">${escapeHtml(formatRelativeTime(item.ts))}</time></div>`;
         }).join("") : `<div class="empty-state" style="display:block;padding:28px 12px">暂无可追溯的真实工作流事件</div>`;
       }
+      renderAuditLogs(activities);
       renderIcons();
     }
 
@@ -1232,23 +1520,32 @@
 
     function renderLiveProjects(projects) {
       const rows = projects?.rows || [];
+      const statusOptions = (projects?.status_options || []).filter(item => String(item?.name || "").trim());
       const tbody = document.querySelector("#project-table tbody");
       if (!tbody) return;
+      const selectedStatus = stageFilter.value;
+      stageFilter.innerHTML = `<option value="all">全部项目状态</option>${statusOptions.map(item => `<option value="${escapeHtml(item.name)}">${escapeHtml(item.name)}</option>`).join("")}`;
+      stageFilter.disabled = false;
+      stageFilter.setAttribute("aria-busy", "false");
+      stageFilter.value = statusOptions.some(item => item.name === selectedStatus) ? selectedStatus : "all";
+      liveProjectRows.clear();
+      rows.forEach(row => liveProjectRows.set(String(row.record_id || ""), row));
       tbody.innerHTML = rows.map(row => {
         const stageClass = row.stage === "live" ? "success" : row.stage === "test_deploy" ? "wait" : row.stage === "main_deploy" ? "progress" : "neutral";
         const bd = row.bd || "未分配";
         const search = `${row.project || ""} ${bd} ${row.chat_title || ""}`.toLowerCase();
-        const tgLabel = row.tg_bound ? (row.tg_ignored ? "TG 黑名单" : "TG 已绑定") : "TG 未绑定";
-        const tgClass = row.tg_bound ? (row.tg_ignored ? "wait" : "success") : "neutral";
-        const chatMeta = row.chat_title ? `<small class="project-id">${escapeHtml(row.chat_title)}</small>` : "";
-        return `<tr data-stage="${escapeHtml(row.stage)}" data-stage-label="${escapeHtml(row.stage_label)}" data-bd="${escapeHtml(bd)}" data-search="${escapeHtml(search)}" data-chat-id="${escapeHtml(row.chat_id ?? "")}">
+        const tgLabel = row.tg_bound ? (row.tg_ambiguous ? "TG 待确认" : row.tg_ignored ? "TG 黑名单" : "TG 已绑定") : "TG 未绑定";
+        const tgClass = row.tg_bound ? (row.tg_ambiguous || row.tg_ignored ? "wait" : "success") : "neutral";
+        const candidateMeta = row.tg_ambiguous ? ` · ${Number(row.tg_match_count || 0)} 个候选群` : "";
+        const chatMeta = row.chat_title ? `<small class="project-id">${escapeHtml(row.chat_title)}${candidateMeta}</small>` : "";
+        return `<tr data-record-id="${escapeHtml(row.record_id)}" data-stage="${escapeHtml(row.stage)}" data-stage-label="${escapeHtml(row.stage_label)}" data-status-raw="${escapeHtml(row.status_raw || "")}" data-bd="${escapeHtml(bd)}" data-search="${escapeHtml(search)}" data-chat-id="${escapeHtml(row.chat_id ?? "")}">
           <td><div class="project-name">${escapeHtml(row.project)}</div><div class="project-id">${escapeHtml(row.record_id)} · 更新 ${escapeHtml(formatLiveTime(row.updated_at))}</div></td>
           <td><span class="status ${stageClass}">${escapeHtml(row.stage_label)}</span></td>
           <td><div class="owner-cell"><span class="mini-avatar">${escapeHtml((bd.replace(/^@/, "")[0] || "?").toUpperCase())}</span>${escapeHtml(bd)}</div></td>
           <td><div class="binding-pair"><span class="status ${tgClass}">${tgLabel}</span><span class="status success">Lark 已匹配</span>${chatMeta}</div></td>
         </tr>`;
       }).join("");
-      document.querySelectorAll("#project-table tbody tr").forEach(row => row.addEventListener("click", () => openDrawer(row)));
+      bindProjectRowInteractions();
       const bds = [...new Set(rows.map(row => row.bd).filter(Boolean))].sort((a, b) => a.localeCompare(b));
       const current = bdFilter.value;
       bdFilter.innerHTML = `<option value="all">全部 BD</option>${bds.map(bd => `<option value="${escapeHtml(bd)}">${escapeHtml(bd)}</option>`).join("")}`;
@@ -1297,9 +1594,14 @@
     }
 
     renderIcons();
-    ensureCharts("overview");
+    const initialView = new URLSearchParams(location.search).get("view");
+    if (initialView && labels[initialView]) navigate(initialView);
+    else ensureCharts("overview");
     loadLiveDashboard(true);
-    window.setInterval(() => loadLiveDashboard(true), 60000);
+    // Keep live project rows fresh every minute without forcing the heavier
+    // aggregate snapshot rebuild. The refresh button remains the explicit
+    // force-refresh path for administrators.
+    window.setInterval(() => loadLiveDashboard(false), 60000);
   </script>
 </body>
 </html>

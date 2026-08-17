@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from bot.knowledge import KnowledgeBase
 
 logger = logging.getLogger(__name__)
+from bot.workflow_events import append_event
 
 
 def _webhook_secret(config: AppConfig) -> str:
@@ -189,6 +190,19 @@ async def start_live_webhook_server(
             except Exception:  # noqa: BLE001
                 pass
         code = 200 if not result.get("error") else 422
+        append_event(
+            "live_webhook_processed" if not result.get("error") else "live_webhook_failed",
+            "lark_webhook",
+            project_name=project_name or record_id or "",
+            text=(
+                f"{project_name or record_id or '项目'} 主网上线 Webhook 已处理"
+                if not result.get("error")
+                else f"{project_name or record_id or '项目'} 主网上线 Webhook 处理失败"
+            ),
+            status="success" if not result.get("error") else "failed",
+            record_id=record_id,
+            error=str(result.get("error") or "")[:240],
+        )
         return web.json_response(result, status=code)
 
     app = web.Application()

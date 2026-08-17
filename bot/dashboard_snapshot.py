@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 import os
-from collections import Counter, deque
+from collections import Counter, defaultdict, deque
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -44,6 +44,8 @@ def _scan_message_logs(
     *,
     lookback_days: int,
     list_limit: int,
+    since: datetime | None = None,
+    until: datetime | None = None,
 ) -> dict[str, Any]:
     """Stream JSONL day files; keep newest answered/silent rows + reason counts."""
     log_dir = _message_log_dir(config)
@@ -66,13 +68,20 @@ def _scan_message_logs(
                     line = line.strip()
                     if not line:
                         continue
-                    scanned_lines += 1
                     try:
                         row = json.loads(line)
                     except json.JSONDecodeError:
                         continue
                     if not isinstance(row, dict):
                         continue
+                    if since is not None or until is not None:
+                        event_dt = _event_datetime(row.get("ts"))
+                        if event_dt is not None and (
+                            (since is not None and event_dt < since)
+                            or (until is not None and event_dt > until)
+                        ):
+                            continue
+                    scanned_lines += 1
                     outcome = str(row.get("outcome") or "")
                     reason = str(row.get("reason") or "") or "(empty)"
                     item = {
@@ -670,12 +679,37 @@ def build_dashboard_snapshot(
     daily = period_reports.get("24h") or {"error": "missing_24h"}
 
     qa = _scan_message_logs(config, lookback_days=lookback, list_limit=limit)
+    qa_24h = _scan_message_logs(
+        config,
+        lookback_days=2,
+        list_limit=limit,
+        since=datetime.now(TZ) - timedelta(hours=24),
+    )
     series = _counter_series(config)
     calendar = build_calendar_activity(config, days=calendar_days)
     ranges = {
         "7": build_range_summary(config, 7, series=series, list_limit=limit),
         "30": build_range_summary(config, 30, series=series, list_limit=limit),
     }
+    # Keep the rolling range reports and the analytics page on the same real
+    # message-log source for silence counts and reason breakdowns.
+    period_reports.setdefault("24h", {})["qa"] = {
+        "counts": qa_24h.get("counts") or {},
+        "silence_reasons": qa_24h.get("silence_reasons") or {},
+        "answered": qa_24h.get("answered") or [],
+        "silent": qa_24h.get("silent") or [],
+        "list_limit": limit,
+    }
+    period_reports.setdefault("7d", {})["qa"] = ranges["7"].get("qa") or {}
+    period_reports.setdefault("30d", {})["qa"] = ranges["30"].get("qa") or {}
+    automation = build_automation_tasks(
+        config,
+        {
+            "snapshot": snap,
+            "qa": qa,
+            "generated_at": _now_iso(),
+        },
+    )
 
     return {
         "generated_at": _now_iso(),
@@ -693,6 +727,7 @@ def build_dashboard_snapshot(
         "qa": qa,
         "calendar": calendar,
         "ranges": ranges,
+        "automation": automation,
     }
 
 
@@ -706,6 +741,9 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         "generated_at": _now_iso(),
         "total": 0,
         "matched": 0,
+        "matched_unique": 0,
+        "ambiguous": 0,
+        "status_options": [],
         "rows": [],
         "error": None,
     }
@@ -716,8 +754,12 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         return out
 
     try:
-        from bot.lark_bitable import get_tenant_access_token, list_records
-        from bot.workflow_form_dispatch import _field_text, match_project_to_chat
+        from bot.lark_bitable import get_tenant_access_token, list_fields, list_records
+        from bot.workflow_form_dispatch import (
+            _field_text,
+            _normalize_name,
+            find_project_chat_matches,
+        )
 
         token = get_tenant_access_token(app_id, app_secret)
         records = list_records(
@@ -725,6 +767,299 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             str(getattr(config, "workflow_base_app_token", "")),
             str(getattr(config, "workflow_progress_table_id", "")),
         )
+        status_field_name = str(
+            getattr(config, "workflow_status_field", "项目状态") or "项目状态"
+        )
+        status_options: list[dict[str, Any]] = []
+        try:
+            field_defs = list_fields(
+                token,
+                str(getattr(config, "workflow_base_app_token", "")),
+                str(getattr(config, "workflow_progress_table_id", "")),
+            )
+            status_field_def = next(
+                (
+                    field
+                    for field in field_defs
+                    if str(field.get("field_name") or "") == status_field_name
+                ),
+                None,
+            )
+            for option in ((status_field_def or {}).get("property") or {}).get("options") or []:
+                option_name = str(option.get("name") or "").strip()
+                if not option_name:
+                    continue
+                status_options.append(
+                    {
+                        "id": str(option.get("id") or ""),
+                        "name": option_name,
+                        "color": option.get("color"),
+                        "source": "lark_field",
+                    }
+                )
+        except Exception:  # noqa: BLE001
+            logger.exception("dashboard: failed loading Lark status field options")
+
+        def load_state(attr: str, default: str) -> dict[str, Any]:
+            path = _dashboard_path(config, attr, default)
+            if not path.is_file():
+                return {}
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError, TypeError):
+                return {}
+            return raw if isinstance(raw, dict) else {}
+
+        def event_iso(value: Any) -> str:
+            parsed = _event_datetime(value)
+            return parsed.isoformat(timespec="seconds") if parsed is not None else ""
+
+        def project_key(value: Any) -> str:
+            return _normalize_name(str(value or ""))
+
+        def step(
+            key: str,
+            title: str,
+            state: str,
+            detail: str,
+            *,
+            ts: Any = None,
+            source: str = "",
+        ) -> dict[str, Any]:
+            return {
+                "key": key,
+                "title": title,
+                "state": state,
+                "detail": detail,
+                "ts": event_iso(ts),
+                "source": source,
+            }
+
+        # Durable workflow state is the source of truth for completion.  Event
+        # logs provide timestamps and audit evidence where available.  Keeping
+        # both prevents old projects from reverting to "pending" merely because
+        # their event predates the append-only event feed.
+        form_dispatch_state = load_state(
+            "workflow_state_file", "data/form_dispatch_state.json"
+        )
+        form_chase_state = load_state(
+            "workflow_form_chase_state_file", "data/form_chase_state.json"
+        )
+        welcome_state = load_state(
+            "welcome_state_file", "data/group_welcome_state.json"
+        )
+        logo_state = load_state(
+            "workflow_logo_state_file", "data/logo_fill_state.json"
+        )
+        wallet_digest_state = load_state(
+            "workflow_lark_digest_state_file", "data/lark_wallet_digest_state.json"
+        )
+        sent_ids = {
+            str(item) for item in (form_dispatch_state.get("sent_record_ids") or [])
+        }
+        greeted_chat_ids: set[int] = set()
+        for item in welcome_state.get("greeted_chat_ids") or []:
+            try:
+                greeted_chat_ids.add(int(item))
+            except (TypeError, ValueError):
+                continue
+        logo_results = {
+            str(key): str(value)
+            for key, value in (logo_state.get("results") or {}).items()
+        }
+        digested_wallet_ids = {
+            str(item) for item in (wallet_digest_state.get("digested_ids") or [])
+        }
+        wallet_first_seen = {
+            str(key): str(value)
+            for key, value in (wallet_digest_state.get("first_seen") or {}).items()
+        }
+
+        # The wallet digest state stores wallet-table record IDs, so fetch that
+        # table once and join it by the normalized project name.
+        wallet_records: list[dict[str, Any]] = []
+        wallet_table_id = str(getattr(config, "workflow_wallet_table_id", "") or "")
+        if wallet_table_id:
+            try:
+                wallet_records = list_records(
+                    token,
+                    str(getattr(config, "workflow_base_app_token", "")),
+                    wallet_table_id,
+                )
+            except Exception:  # noqa: BLE001
+                logger.exception("dashboard: wallet table join failed")
+        wallet_by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for wallet_record in wallet_records:
+            wallet_fields = wallet_record.get("fields") or {}
+            wallet_name = _field_text(wallet_fields, "Project name")
+            if project_key(wallet_name):
+                wallet_by_name[project_key(wallet_name)].append(wallet_record)
+
+        chase_by_name: dict[str, dict[str, Any]] = {}
+        chase_projects = form_chase_state.get("projects") or {}
+        if isinstance(chase_projects, dict):
+            for meta in chase_projects.values():
+                if not isinstance(meta, dict):
+                    continue
+                key = project_key(meta.get("project_name"))
+                if key:
+                    chase_by_name[key] = meta
+
+        # Index all persisted workflow evidence by record, TG chat, and exact
+        # normalized project name.  Name matching here is intentionally exact;
+        # fuzzy matching is used only when binding Lark projects to TG groups.
+        indexed_events: list[dict[str, Any]] = []
+        workflow_events_path = _dashboard_path(
+            config, "workflow_events_file", "data/workflow_events.jsonl"
+        )
+        for item in _read_jsonl(workflow_events_path, max_days=3650):
+            kind = str(item.get("kind") or "automation")
+            event_text = str(item.get("text") or "").strip()
+            if not event_text and kind == "wallet_collected":
+                address_count = int(item.get("address_count") or 0)
+                count_text = f"（{address_count} 个地址字段）" if address_count else ""
+                event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包地址已自动收集到 Lark{count_text}"
+            elif not event_text and kind == "wallet_notified":
+                event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包资料已推送至部门群"
+            indexed_events.append(
+                {
+                    **item,
+                    "kind": kind,
+                    "text": event_text,
+                    "ts": event_iso(item.get("ts")),
+                    "source": str(item.get("source") or "workflow_events"),
+                    "status": str(item.get("status") or "success"),
+                }
+            )
+
+        logo_events_path = _dashboard_path(
+            config, "workflow_logo_events_file", "data/logo_fill_events.jsonl"
+        )
+        for item in _read_jsonl(logo_events_path, max_days=3650):
+            logo_status = str(item.get("status") or "")
+            if logo_status.startswith("ok"):
+                logo_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的 Logo 已写入 Lark"
+                status = "success"
+            elif logo_status in {"no_logo", "no_url"}:
+                logo_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 未找到可用 Logo"
+                status = "warning"
+            else:
+                logo_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的 Logo 处理失败"
+                status = "error"
+            indexed_events.append(
+                {
+                    **item,
+                    "kind": "logo_uploaded_lark",
+                    "text": logo_text,
+                    "ts": event_iso(item.get("ts")),
+                    "source": "logo_fill",
+                    "status": status,
+                }
+            )
+
+        deploy_state = load_state(
+            "workflow_deploy_status_watch_state_file",
+            "data/deploy_status_watch_state.json",
+        )
+        for item in deploy_state.get("events") or []:
+            if not isinstance(item, dict):
+                continue
+            status_text = _short_workflow_status(str(item.get("to") or ""))
+            indexed_events.append(
+                {
+                    "kind": "lark_status_changed",
+                    "record_id": str(item.get("record_id") or ""),
+                    "project_name": str(item.get("name") or ""),
+                    "text": f"{item.get('name') or item.get('record_id') or '项目'} 状态更新为 {status_text}",
+                    "ts": event_iso(item.get("ts")),
+                    "source": "lark_status",
+                    "status": "success",
+                }
+            )
+
+        events_by_record: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        events_by_chat: dict[int, list[dict[str, Any]]] = defaultdict(list)
+        events_by_name: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for item in indexed_events:
+            record_id = str(item.get("record_id") or "")
+            if record_id:
+                events_by_record[record_id].append(item)
+            try:
+                event_chat_id = int(item.get("chat_id"))
+            except (TypeError, ValueError):
+                event_chat_id = 0
+            if event_chat_id:
+                events_by_chat[event_chat_id].append(item)
+            name_key = project_key(item.get("project_name"))
+            if name_key:
+                events_by_name[name_key].append(item)
+
+        # Per-project Telegram QA evidence for the latest 30 days. We count
+        # every row but retain only the newest 30 events per chat for the drawer.
+        qa_by_chat: dict[int, dict[str, Any]] = defaultdict(
+            lambda: {
+                "replied": 0,
+                "silent": 0,
+                "last_ts": "",
+                "events": deque(maxlen=30),
+            }
+        )
+        for day in _day_list(30):
+            message_path = _message_log_dir(config) / f"messages-{day}.jsonl"
+            if not message_path.is_file():
+                continue
+            try:
+                with message_path.open("r", encoding="utf-8") as fh:
+                    for line in fh:
+                        try:
+                            message = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        if not isinstance(message, dict):
+                            continue
+                        try:
+                            message_chat_id = int(message.get("chat_id"))
+                        except (TypeError, ValueError):
+                            continue
+                        outcome = str(message.get("outcome") or "")
+                        if outcome not in {"replied", "silent"}:
+                            continue
+                        evidence = qa_by_chat[message_chat_id]
+                        evidence[outcome] += 1
+                        message_ts = event_iso(message.get("ts"))
+                        if message_ts > str(evidence.get("last_ts") or ""):
+                            evidence["last_ts"] = message_ts
+                        text_preview = str(message.get("text") or "").strip()[:80]
+                        if outcome == "replied":
+                            evidence["events"].append(
+                                {
+                                    "kind": "qa_replied",
+                                    "text": "Bot 回答了一条项目问题"
+                                    + (f"：{text_preview}" if text_preview else ""),
+                                    "ts": message_ts,
+                                    "source": "telegram_qa",
+                                    "status": "success",
+                                }
+                            )
+                        else:
+                            reason = str(
+                                message.get("silent_reason")
+                                or message.get("reason")
+                                or ""
+                            ).strip()
+                            evidence["events"].append(
+                                {
+                                    "kind": "qa_silent",
+                                    "text": "Bot 未自动回复一条项目问题"
+                                    + (f"：{text_preview}" if text_preview else "")
+                                    + (f"（{reason}）" if reason else ""),
+                                    "ts": message_ts,
+                                    "source": "telegram_qa",
+                                    "status": "warning",
+                                }
+                            )
+            except OSError:
+                logger.exception("dashboard: failed reading project QA evidence %s", message_path)
 
         title_cache: dict[int, str] = {}
         cache_path = ROOT / "data" / "folder_title_cache.json"
@@ -739,7 +1074,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 if str(title or "").strip():
                     title_cache[chat_id] = str(title).strip()
 
-        status_field = str(getattr(config, "workflow_status_field", "项目状态") or "项目状态")
+        status_field = status_field_name
         name_field = str(
             getattr(config, "workflow_project_name_field", "项目名称 Project Name")
             or "项目名称 Project Name"
@@ -767,14 +1102,388 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 continue
             status_raw = _field_text(fields, status_field)
             stage_key, stage_label = stage(status_raw)
-            chat_id, match_reason = match_project_to_chat(name, title_cache)
-            chat_title = title_cache.get(chat_id) if chat_id is not None else ""
+            chat_matches = find_project_chat_matches(name, title_cache)
+            chat_id = chat_matches[0][0] if chat_matches else None
+            chat_title = chat_matches[0][1] if chat_matches else ""
+            match_reason = chat_matches[0][3] if chat_matches else "no fuzzy title match"
+            if len(chat_matches) > 1:
+                match_reason = f"ambiguous fuzzy title matches: {[item[0] for item in chat_matches]}"
             bd = _field_text(fields, bd_field)
             delivery = _field_text(fields, delivery_field)
             updated = fields.get(update_field)
+            record_id = str(record.get("record_id") or "")
+            name_key = project_key(name)
+            wallet_candidates = wallet_by_name.get(name_key) or []
+            wallet_record = max(
+                wallet_candidates,
+                key=lambda item: sum(
+                    1
+                    for value in (item.get("fields") or {}).values()
+                    if _field_text({"value": value}, "value")
+                ),
+                default=None,
+            )
+            wallet_record_id = str((wallet_record or {}).get("record_id") or "")
+            wallet_fields = (wallet_record or {}).get("fields") or {}
+            chase_meta = (
+                chase_projects.get(record_id)
+                if isinstance(chase_projects, dict)
+                else None
+            )
+            if not isinstance(chase_meta, dict):
+                chase_meta = chase_by_name.get(name_key) or {}
+
+            project_events: list[dict[str, Any]] = []
+            project_events.extend(events_by_record.get(record_id) or [])
+            if wallet_record_id and wallet_record_id != record_id:
+                project_events.extend(events_by_record.get(wallet_record_id) or [])
+            if chat_id:
+                project_events.extend(events_by_chat.get(int(chat_id)) or [])
+            project_events.extend(events_by_name.get(name_key) or [])
+            digest_date = wallet_first_seen.get(wallet_record_id, "")
+            digest_completed = bool(
+                wallet_record_id in digested_wallet_ids
+                and digest_date
+                and digest_date != "baseline"
+            )
+            digest_event = next(
+                (
+                    item
+                    for item in reversed(indexed_events)
+                    if str(item.get("kind") or "") == "wallet_digest_sent"
+                    and str(item.get("digest_date") or "") == digest_date
+                ),
+                None,
+            )
+            if digest_completed:
+                project_events.append(
+                    {
+                        "kind": "wallet_digest_completed",
+                        "text": (
+                            f"{name} 的钱包地址已纳入午夜日报"
+                            + ("" if digest_event else "（历史状态无时间）")
+                        ),
+                        "ts": str((digest_event or {}).get("ts") or ""),
+                        "source": "Lark 钱包地址日报",
+                        "status": "success",
+                    }
+                )
+            qa_evidence = qa_by_chat.get(int(chat_id or 0)) or {
+                "replied": 0,
+                "silent": 0,
+                "last_ts": "",
+                "events": [],
+            }
+            project_events.extend(list(qa_evidence.get("events") or []))
+
+            # De-duplicate evidence reached through multiple indexes.
+            unique_events: list[dict[str, Any]] = []
+            seen_events: set[tuple[str, str, str]] = set()
+            for item in project_events:
+                event_key = (
+                    str(item.get("kind") or "automation"),
+                    str(item.get("ts") or ""),
+                    str(item.get("text") or ""),
+                )
+                if event_key in seen_events:
+                    continue
+                seen_events.add(event_key)
+                unique_events.append(
+                    {
+                        "kind": event_key[0],
+                        "ts": event_key[1],
+                        "text": event_key[2] or "自动化任务已执行",
+                        "source": str(item.get("source") or "workflow_events"),
+                        "status": str(item.get("status") or "success"),
+                    }
+                )
+            unique_events.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
+
+            def add_unique_event(item: dict[str, Any]) -> None:
+                """Add durable workflow evidence when its append-only event is absent."""
+                event_key = (
+                    str(item.get("kind") or "automation"),
+                    str(item.get("ts") or ""),
+                    str(item.get("text") or ""),
+                )
+                if event_key in seen_events:
+                    return
+                seen_events.add(event_key)
+                unique_events.append(
+                    {
+                        "kind": event_key[0],
+                        "ts": event_key[1],
+                        "text": event_key[2] or "自动化任务已执行",
+                        "source": str(item.get("source") or "workflow_state"),
+                        "status": str(item.get("status") or "success"),
+                    }
+                )
+
+            def latest_event(*kinds: str) -> dict[str, Any] | None:
+                wanted = set(kinds)
+                return next(
+                    (item for item in unique_events if str(item.get("kind")) in wanted),
+                    None,
+                )
+
+            bound_event = latest_event("folder_chat_added", "welcome_sequence_sent")
+            welcome_event = latest_event("welcome_sequence_sent")
+            mainnet_event = latest_event("lark_status_changed")
+            form_event = latest_event("form_sent")
+            logo_event = latest_event("logo_uploaded_lark")
+            wallet_digest_event = latest_event("wallet_digest_completed")
+            form_sent = record_id in sent_ids or bool(chase_meta)
+            form_done = bool(chase_meta.get("done"))
+            form_completed_at = chase_meta.get("completed_at")
+            logo_status = logo_results.get(record_id, "")
+            logo_done = logo_status.startswith("ok") or logo_status == "baseline_has_logo"
+            # A project completes the final delivery step only after both
+            # prerequisites are true: its Google Form data is complete and its
+            # wallet row was included in a successfully sent midnight digest.
+            wallet_digest_completed = bool(form_done and digest_completed)
+            welcome_done = bool(
+                welcome_event or (chat_id and int(chat_id) in greeted_chat_ids)
+            )
+
+            # Durable state is still valid evidence when an older run predates
+            # the append-only event log. Add it to the same timeline without
+            # inventing a timestamp.
+            if chat_matches and len(chat_matches) == 1 and not bound_event:
+                add_unique_event(
+                    {
+                        "kind": "folder_chat_added",
+                        "text": f"Telegram 群已与 {name} 项目绑定（历史状态无时间）",
+                        "source": "Telegram / Lark 绑定状态",
+                    }
+                )
+            if form_sent and not form_event:
+                add_unique_event(
+                    {
+                        "kind": "form_sent",
+                        "text": "Google 表单已发送（历史状态无时间）",
+                        "ts": chase_meta.get("first_sent_at") or "",
+                        "source": "Google 表单状态",
+                    }
+                )
+            if form_done and not latest_event("form_completed"):
+                add_unique_event(
+                    {
+                        "kind": "form_completed",
+                        "text": "Google 表单资料已回收（历史状态无时间）",
+                        "ts": form_completed_at or "",
+                        "source": "Lark 钱包表",
+                    }
+                )
+            if welcome_done and not welcome_event:
+                add_unique_event(
+                    {
+                        "kind": "welcome_sequence_sent",
+                        "text": "Bot 自动问候已完成（历史状态无时间）",
+                        "source": "Telegram 欢迎状态",
+                    }
+                )
+            if logo_done and not logo_event:
+                add_unique_event(
+                    {
+                        "kind": "logo_uploaded_lark",
+                        "text": "项目 Logo 已写入 Lark（历史状态无时间）",
+                        "source": "Lark Logo 回填状态",
+                    }
+                )
+            if stage_key == "live" and not mainnet_event:
+                add_unique_event(
+                    {
+                        "kind": "lark_status_changed",
+                        "text": "Lark 项目状态为主网上线（历史状态无事件时间）",
+                        "ts": event_iso(updated),
+                        "source": "Lark 项目状态",
+                    }
+                )
+            unique_events.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
+            delivery_steps: list[dict[str, Any]] = []
+            if chat_matches:
+                delivery_steps.append(
+                    step(
+                        "group_bound",
+                        "BD 建群并绑定项目",
+                        "warning" if len(chat_matches) > 1 else "done",
+                        (
+                            f"找到 {len(chat_matches)} 个 TG 候选群，需管理员确认"
+                            if len(chat_matches) > 1
+                            else f"Telegram 群已绑定：{chat_title}"
+                        ),
+                        ts=(bound_event or {}).get("ts"),
+                        source="Telegram / Lark",
+                    )
+                )
+            else:
+                delivery_steps.append(
+                    step(
+                        "group_bound",
+                        "BD 建群并绑定项目",
+                        "pending",
+                        "尚未匹配到 Telegram 项目群",
+                        source="Telegram / Lark",
+                    )
+                )
+
+            if chat_id and int(chat_id) in ignored_ids:
+                delivery_steps.append(
+                    step(
+                        "welcome",
+                        "Bot 自动问候",
+                        "warning",
+                        "该群在自动回复黑名单，不发送欢迎消息",
+                        source="Telegram",
+                    )
+                )
+            elif welcome_done:
+                delivery_steps.append(
+                    step(
+                        "welcome",
+                        "Bot 自动问候",
+                        "done",
+                        "欢迎消息已发送"
+                        + ("" if welcome_event else "（历史状态无时间）"),
+                        ts=(welcome_event or {}).get("ts"),
+                        source="Telegram",
+                    )
+                )
+            else:
+                delivery_steps.append(
+                    step(
+                        "welcome",
+                        "Bot 自动问候",
+                        "active" if chat_matches else "pending",
+                        "等待 Bot 发送欢迎消息" if chat_matches else "需先绑定 Telegram 群",
+                        source="Telegram",
+                    )
+                )
+
+            replied_count = int(qa_evidence.get("replied") or 0)
+            silent_count = int(qa_evidence.get("silent") or 0)
+            qa_detail = f"近30天 Bot 已回答 {replied_count} 条"
+            if silent_count:
+                qa_detail += f"，未自动回复 {silent_count} 条"
+            if stage_key in {"live", "main_deploy"}:
+                technical_state = "done"
+            elif stage_key == "test_deploy" or replied_count:
+                technical_state = "active"
+            else:
+                technical_state = "pending"
+            delivery_steps.append(
+                step(
+                    "technical_support",
+                    "生态 App 技术接入",
+                    technical_state,
+                    qa_detail,
+                    ts=qa_evidence.get("last_ts"),
+                    source="Telegram 问答日志",
+                )
+            )
+
+            if stage_key == "live":
+                delivery_steps.append(
+                    step(
+                        "mainnet_live",
+                        "主网上线确认",
+                        "done",
+                        "交付人员已在 Lark 标记主网上线",
+                        ts=(mainnet_event or {}).get("ts") or updated,
+                        source="Lark 项目状态",
+                    )
+                )
+            else:
+                delivery_steps.append(
+                    step(
+                        "mainnet_live",
+                        "主网上线确认",
+                        "active" if stage_key == "main_deploy" else "pending",
+                        f"Lark 当前状态：{stage_label}",
+                        ts=updated,
+                        source="Lark 项目状态",
+                    )
+                )
+
+            delivery_steps.append(
+                step(
+                    "form_sent",
+                    "Google 表单发送",
+                    "done" if form_sent else ("active" if stage_key == "live" else "pending"),
+                    (
+                        "Google 表单已发送至项目群"
+                        + ("" if form_event else "（历史状态无时间）")
+                        if form_sent
+                        else ("已主网上线，等待自动发送" if stage_key == "live" else "主网上线后自动发送")
+                    ),
+                    ts=(form_event or {}).get("ts") or chase_meta.get("first_sent_at"),
+                    source="Google 表单 / Telegram",
+                )
+            )
+            delivery_steps.append(
+                step(
+                    "form_completed",
+                    "Google 表单资料回收",
+                    "done" if form_done else ("active" if form_sent else "pending"),
+                    (
+                        f"项目资料已回收，已填 {int(chase_meta.get('filled_count') or 0)} 个字段"
+                        if form_done
+                        else ("表单已发送，等待资料齐全" if form_sent else "表单发送后开始跟踪")
+                    ),
+                    ts=form_completed_at,
+                    source="Lark 钱包表",
+                )
+            )
+            delivery_steps.append(
+                step(
+                    "logo_uploaded",
+                    "项目 Logo 回填",
+                    "done" if logo_done else ("warning" if logo_status else "pending"),
+                    (
+                        "Logo 已写入 Lark"
+                        + ("" if logo_event else "（历史状态无时间）")
+                        if logo_done
+                        else (f"Logo 处理结果：{logo_status}" if logo_status else "尚无 Logo 回填记录")
+                    ),
+                    ts=(logo_event or {}).get("ts"),
+                    source="Lark Logo 回填",
+                )
+            )
+            delivery_steps.append(
+                step(
+                    "wallet_digest",
+                    "钱包地址日报",
+                    "done" if wallet_digest_completed else ("active" if form_done else "pending"),
+                    (
+                        "钱包地址已纳入午夜日报"
+                        + ("" if wallet_digest_event else "（历史状态无时间）")
+                        if wallet_digest_completed
+                        else (
+                            "表单资料已回收，等待下一次午夜日报"
+                            if form_done
+                            else "Google 表单资料回收后，将在午夜日报发送后完成"
+                        )
+                    ),
+                    ts=(wallet_digest_event or {}).get("ts"),
+                    source="Lark 钱包地址日报",
+                )
+            )
+
+            issues: list[dict[str, str]] = []
+            if not chat_matches:
+                issues.append({"level": "high", "text": "未匹配到 Telegram 项目群"})
+            elif len(chat_matches) > 1:
+                issues.append({"level": "medium", "text": f"TG 绑定有 {len(chat_matches)} 个候选群，需要确认"})
+            if stage_key == "live" and not form_sent:
+                issues.append({"level": "medium", "text": "已主网上线，但 Google 表单尚未发送"})
+            if form_sent and not form_done:
+                issues.append({"level": "low", "text": "等待项目方补齐表单资料"})
+            if form_done and not wallet_digest_completed:
+                issues.append({"level": "medium", "text": "表单资料已回收，等待下一次午夜钱包地址日报"})
+
             rows.append(
                 {
-                    "record_id": str(record.get("record_id") or ""),
+                    "record_id": record_id,
                     "project": name[:160],
                     "stage": stage_key,
                     "stage_label": stage_label[:120],
@@ -784,30 +1493,61 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                     "updated_at": updated,
                     "chat_id": chat_id,
                     "chat_title": chat_title[:160],
-                    "tg_bound": chat_id is not None,
-                    "tg_ignored": chat_id in ignored_ids if chat_id is not None else False,
+                    "tg_bound": bool(chat_matches),
+                    "tg_ambiguous": len(chat_matches) > 1,
+                    "tg_match_count": len(chat_matches),
+                    "tg_match_candidates": [
+                        {
+                            "chat_id": item[0],
+                            "chat_title": item[1][:160],
+                            "score": item[2],
+                            "reason": item[3],
+                        }
+                        for item in chat_matches[:8]
+                    ],
+                    "tg_ignored": any(item[0] in ignored_ids for item in chat_matches),
                     "tg_match_reason": match_reason,
                     "lark_bound": True,
+                    "form_sent": form_sent,
+                    "form_completed": form_done,
+                    "wallet_record_id": wallet_record_id,
+                    "wallet_fields_present": sum(
+                        1
+                        for value in wallet_fields.values()
+                        if _field_text({"value": value}, "value")
+                    ),
+                    "wallet_digest_completed": wallet_digest_completed,
+                    # Compatibility alias for older dashboard consumers.
+                    "department_notified": wallet_digest_completed,
+                    "logo_status": logo_status,
+                    "delivery_steps": delivery_steps,
+                    "project_events": unique_events[:30],
+                    "issues": issues,
                 }
             )
 
         order = {"main_deploy": 0, "test_deploy": 1, "other": 2, "live": 3}
         rows.sort(key=lambda row: (order.get(str(row.get("stage")), 9), str(row.get("project") or "").lower()))
-        sent_ids: set[str] = set()
-        state_raw = str(getattr(config, "workflow_state_file", "data/form_dispatch_state.json") or "data/form_dispatch_state.json")
-        state_path = Path(state_raw)
-        if not state_path.is_absolute():
-            state_path = ROOT / state_path
-        if state_path.is_file():
-            try:
-                state = json.loads(state_path.read_text(encoding="utf-8"))
-                sent_ids = {str(item) for item in (state.get("sent_record_ids") or [])}
-            except (OSError, json.JSONDecodeError, TypeError):
-                sent_ids = set()
+        known_statuses = {str(item.get("name") or "") for item in status_options}
         for row in rows:
-            row["form_sent"] = row.get("record_id") in sent_ids
+            raw_status = str(row.get("status_raw") or "").strip()
+            if raw_status and raw_status not in known_statuses:
+                status_options.append(
+                    {
+                        "id": "",
+                        "name": raw_status,
+                        "color": None,
+                        "source": "lark_record",
+                    }
+                )
+                known_statuses.add(raw_status)
+        out["status_options"] = status_options
         out["total"] = len(rows)
         out["matched"] = sum(1 for row in rows if row.get("tg_bound"))
+        out["matched_unique"] = sum(
+            1 for row in rows if row.get("tg_bound") and not row.get("tg_ambiguous")
+        )
+        out["ambiguous"] = sum(1 for row in rows if row.get("tg_ambiguous"))
         out["form_pending"] = sum(
             1 for row in rows if row.get("stage") == "live" and not row.get("form_sent")
         )
@@ -910,6 +1650,57 @@ def _build_recent_workflow_activities(
             }
         )
 
+    # Shared append-only event feed for automation actions that do not have a
+    # dedicated state file (welcome, folder auto-add, webhook, notifications,
+    # digest sends, failures, etc.). Wallet/form events are also represented by
+    # their dedicated state readers below, so skip those kinds here to avoid
+    # duplicate rows.
+    workflow_events_path = _dashboard_path(
+        config, "workflow_events_file", "data/workflow_events.jsonl"
+    )
+    dedicated_kinds = {
+        "wallet_collected",
+        "form_sent",
+        "form_chase_reminder",
+        # Logo events are rendered below from their dedicated detail log.
+        "logo_uploaded_lark",
+    }
+    seen_skip_events: set[tuple[str, str, str]] = set()
+    # Read newest-first so legacy retry spam collapses to the latest visible row.
+    for item in reversed(_read_jsonl(workflow_events_path)):
+        kind = str(item.get("kind") or "automation")
+        if kind in dedicated_kinds:
+            continue
+        if kind == "form_dispatch_skipped":
+            skip_key = (
+                kind,
+                str(item.get("record_id") or item.get("project_name") or ""),
+                str(item.get("reason") or ""),
+            )
+            if skip_key in seen_skip_events:
+                continue
+            seen_skip_events.add(skip_key)
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        name = str(item.get("project_name") or item.get("chat_title") or "系统")[:120]
+        status = str(item.get("status") or "success").lower()
+        icon = str(item.get("icon") or "workflow")
+        if status in {"error", "failed", "fail"}:
+            icon = "circle-x"
+        text = str(item.get("text") or "自动化任务已执行")[:240]
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": icon,
+                "kind": kind,
+                "project": name,
+                "text": text,
+                "source": str(item.get("source") or "workflow_events"),
+                "status": status,
+            }
+        )
+
     logo_path = _dashboard_path(
         config, "workflow_logo_events_file", "data/logo_fill_events.jsonl"
     )
@@ -935,6 +1726,27 @@ def _build_recent_workflow_activities(
                 "project": name,
                 "text": text,
                 "source": "logo_fill_events",
+            }
+        )
+
+    for item in _read_jsonl(workflow_events_path):
+        if str(item.get("kind") or "") != "wallet_collected":
+            continue
+        ts = _event_datetime(item.get("ts"))
+        if ts is None:
+            continue
+        name = str(item.get("project_name") or item.get("record_id") or "未命名项目")[:120]
+        address_count = int(item.get("address_count") or 0)
+        count_text = f"{address_count} 个地址字段" if address_count else "钱包地址"
+        activities.append(
+            {
+                "ts": ts.isoformat(timespec="seconds"),
+                "icon": "wallet",
+                "kind": "wallet",
+                "project": name,
+                "text": f"{name} 的钱包地址已自动收集到 Lark（{count_text}）",
+                "source": "lark_wallet_table",
+                "status": "success",
             }
         )
 
@@ -1008,7 +1820,103 @@ def _build_recent_workflow_activities(
                 )
 
     activities.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
-    return activities[:12]
+    return activities[:20]
+
+
+def _task_counter(snapshot: dict[str, Any], key: str, field: str = "today") -> int:
+    counters = snapshot.get("counters") or {}
+    return int((counters.get(key) or {}).get(field) or 0)
+
+
+def _task_rate(ok: int, total: int) -> str:
+    if total <= 0:
+        return "—"
+    return f"{(ok / total * 100):.1f}%"
+
+
+def build_automation_tasks(
+    config: Any,
+    snapshot_payload: dict[str, Any] | None,
+) -> dict[str, Any]:
+    """Expose every configured automation component with real counters."""
+    payload = snapshot_payload or {}
+    snap = payload.get("snapshot") or {}
+    counters = snap.get("counters") or {}
+    qa = payload.get("qa") or {}
+    today_events = _task_counter
+
+    def task(
+        key: str,
+        label: str,
+        description: str,
+        icon: str,
+        enabled: bool,
+        today: int,
+        *,
+        success_rate: str = "—",
+        mode: str = "事件触发",
+        status: str | None = None,
+        detail: str = "",
+    ) -> dict[str, Any]:
+        running = bool(enabled)
+        return {
+            "key": key,
+            "label": label,
+            "description": description,
+            "icon": icon,
+            "enabled": running,
+            "status": status or ("运行中" if running else "已关闭"),
+            "today": int(today),
+            "success_rate": success_rate,
+            "mode": mode,
+            "detail": detail,
+        }
+
+    processed = today_events(snap, "messages_processed")
+    faq = today_events(snap, "faq_reply_sessions")
+    sent = today_events(snap, "messages_sent")
+    form_ok = today_events(snap, "form_dispatch_success")
+    form_fail = today_events(snap, "form_dispatch_fail")
+    form_skip = today_events(snap, "form_dispatch_skip")
+    logo_ok = today_events(snap, "logo_fill_success")
+    logo_fail = today_events(snap, "logo_fill_fail")
+    webhook_in = today_events(snap, "webhook_live_received")
+    webhook_done = today_events(snap, "webhook_live_processed")
+    welcome = today_events(snap, "welcome_sequences_started")
+    folder = today_events(snap, "folder_auto_add_success")
+    wallet_new = today_events(snap, "wallet_digest_new_projects")
+    event_rows = _read_jsonl(
+        _dashboard_path(config, "workflow_events_file", "data/workflow_events.jsonl")
+    )
+    chase_today = sum(1 for row in event_rows if row.get("kind") == "form_chase_reminder")
+    lark_sync = today_events(snap, "agent_kb_lark_sync_success")
+    deploy_changes = today_events(snap, "deploy_status_transitions")
+
+    tasks = [
+        task("folder_add", "项目群自动归档", "将新项目群加入 Telegram 文件夹", "folder-plus", bool(getattr(config, "folder_auto_add_enabled", False)), folder, mode=f"每 {getattr(config, 'folder_auto_add_scan_minutes', 15)} 分钟扫描", detail="新增归档群数"),
+        task("welcome", "新群自动问候", "新加入项目群发送欢迎序列", "hand-heart", bool(getattr(config, "welcome_enabled", False)), welcome, mode=f"每 {getattr(config, 'welcome_scan_interval_minutes', 15)} 分钟扫描", detail="启动序列计数"),
+        task("tg_qa", "交付 Bot 问答", "TG 群自动回答与人工纠错", "message-circle", bool(getattr(config, "group_replies_enabled", False)), processed, success_rate=_task_rate(faq, processed), mode="实时监听", detail=f"已处理 {processed} 条入站"),
+        task("lark_sync", "Lark 知识库同步", "同步项目知识与 Agent 检索库", "refresh-cw", bool(getattr(config, "lark_sync_enabled", False)), lark_sync, mode=f"每 {getattr(config, 'lark_sync_interval_minutes', 60)} 分钟", detail="来自 Lark 同步成功计数"),
+        task("live_webhook", "主网上线 Webhook", "接收 Lark 状态变更并触发交付", "webhook", bool(getattr(config, "workflow_live_webhook_enabled", False)), webhook_done, success_rate=_task_rate(webhook_done, webhook_in), mode="Webhook 实时", detail=f"收到 {webhook_in} · 已处理 {webhook_done}"),
+        task("status_watch", "Lark 状态监听", "监听主网与测试网部署状态变化", "radio", bool(getattr(config, "workflow_live_status_watch_enabled", False) or getattr(config, "workflow_deploy_status_watch_enabled", False)), deploy_changes, mode=f"每 {getattr(config, 'workflow_live_status_watch_seconds', 60)} 秒", detail="状态变更计数"),
+        task("form_dispatch", "Google 表单发送", "主网上线后向项目群发送表单", "file-check-2", bool(getattr(config, "workflow_enabled", False) and getattr(config, "workflow_google_form_url", "")), form_ok, success_rate=_task_rate(form_ok, form_ok + form_fail), mode="状态触发 / 轮询", detail=f"成功 {form_ok} · 跳过 {form_skip} · 失败 {form_fail}"),
+        task("form_chase", "表单自动催收", "按缺失字段向项目群发送提醒", "bell-ring", bool(getattr(config, "workflow_form_chase_enabled", False)), chase_today, mode=f"每 {getattr(config, 'workflow_form_chase_scan_minutes', 60)} 分钟", detail="今日催收事件"),
+        task("logo_fill", "Logo 自动回填", "抓取官网 Logo 并写入 Lark", "image", bool(getattr(config, "workflow_logo_fill_enabled", False)), logo_ok, success_rate=_task_rate(logo_ok, logo_ok + logo_fail), mode="状态触发 / 轮询", detail=f"成功 {logo_ok} · 失败 {logo_fail}"),
+        task("wallet_digest", "钱包地址日报", "收集钱包资料并发送 Lark 摘要", "wallet-cards", bool(getattr(config, "workflow_lark_digest_enabled", False)), wallet_new, mode=f"每日 {getattr(config, 'workflow_lark_digest_hour', 0):02d}:00", detail="今日新钱包项目"),
+        task("metrics", "消息指标与真实日志", "记录 TG 入站、回答和沉默原因", "chart-no-axes-combined", bool(getattr(config, "metrics_enabled", False) and getattr(config, "metrics_message_log_enabled", False)), int((qa.get("counts") or {}).get("lines") or 0), mode="实时写入", detail="消息日志扫描行数"),
+        task("dashboard", "看板快照刷新", "生成跨平台实时看板数据", "layout-dashboard", bool(getattr(config, "dashboard_enabled", False)), 1, mode=f"每 {getattr(config, 'dashboard_refresh_minutes', 60)} 分钟", detail=f"最近更新 {payload.get('generated_at') or '—'}"),
+    ]
+    enabled = sum(1 for item in tasks if item["enabled"])
+    failures = form_fail + logo_fail
+    return {
+        "total": len(tasks),
+        "enabled": enabled,
+        "today_executions": sum(int(item["today"]) for item in tasks),
+        "failures": failures,
+        "retries": None,
+        "avg_duration": None,
+        "tasks": tasks,
+    }
 
 
 def build_workflow_overview(
@@ -1021,7 +1929,6 @@ def build_workflow_overview(
     snapshot_payload = snapshot_payload or {}
     rows = [row for row in (projects.get("rows") or []) if isinstance(row, dict)]
     snap = snapshot_payload.get("snapshot") or {}
-    counters = snap.get("counters") or {}
     derived = snap.get("derived") or {}
     qa = snapshot_payload.get("qa") or {}
     live_rows = [row for row in rows if row.get("stage") == "live"]
@@ -1041,7 +1948,9 @@ def build_workflow_overview(
         if row.get("stage") == "test_deploy"
         or any(token in str(row.get("status_raw") or "") for token in ("接入", "对接"))
     ]
-    notified_week = int((counters.get("wallet_digest_sent") or {}).get("week") or 0)
+    wallet_digest_completed = sum(
+        1 for row in rows if bool(row.get("wallet_digest_completed"))
+    )
     logo_state = derived.get("logo_fill_state") or {}
     logo_fail = int(logo_state.get("fail") or 0)
 
@@ -1078,9 +1987,9 @@ def build_workflow_overview(
         },
         {
             "key": "notified",
-            "label": "部门通知成功",
-            "count": notified_week,
-            "note": "过去 7 天 Digest 已发送",
+            "label": "钱包地址日报已完成",
+            "count": wallet_digest_completed,
+            "note": "表单已回收且已纳入午夜日报的项目",
         },
     ]
 

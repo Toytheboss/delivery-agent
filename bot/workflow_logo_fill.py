@@ -20,6 +20,7 @@ except ImportError:  # Python < 3.9
 
 from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.project_logo import fill_logo_for_record, pick_site_url
+from bot.workflow_events import append_event
 from bot.workflow_form_dispatch import _field_text
 
 if TYPE_CHECKING:
@@ -105,6 +106,17 @@ def _mark_processed(
     _save_state(path, processed, results)
     if emit_event and status != "baseline_has_logo":
         _append_logo_event(record_id, status, project_name=project_name)
+        if status.startswith("ok"):
+            append_event(
+                "logo_uploaded_lark",
+                "logo_fill",
+                project_name=project_name or record_id,
+                text=f"{project_name or record_id} 的 Logo 已自动上传到 Lark 表格",
+                status="success",
+                record_id=record_id,
+                result=status,
+                icon="image",
+            )
 
 
 async def fill_logo_for_fields(

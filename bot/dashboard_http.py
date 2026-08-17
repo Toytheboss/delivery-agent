@@ -331,20 +331,15 @@ def register_dashboard_routes(
         return web.json_response({"ok": True, "chunks": count})
 
     async def page_index(request: web.Request) -> web.Response:
+        """Retired legacy dashboard entry; keep old bookmarks working."""
         if not _session_user(request, app["dashboard_config"]):
-            raise web.HTTPFound(prefix + "/login")
-        path = _html_page("index.html")
-        if not path.is_file():
-            return web.Response(text="index.html missing", status=500)
-        return web.FileResponse(path)
+            raise web.HTTPFound(prefix + "/login?next=" + prefix + "/prototype")
+        raise web.HTTPFound(prefix + "/prototype")
 
     async def page_settings(request: web.Request) -> web.Response:
         if not _session_user(request, app["dashboard_config"]):
             raise web.HTTPFound(prefix + "/login")
-        path = _html_page("settings.html")
-        if not path.is_file():
-            return web.Response(text="settings.html missing", status=500)
-        return web.FileResponse(path)
+        raise web.HTTPFound(prefix + "/prototype?view=settings")
 
     async def page_prototype(request: web.Request) -> web.Response:
         """Serve the live delivery console to authenticated administrators."""

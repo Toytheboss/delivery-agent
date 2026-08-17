@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Any
 from telethon import events, utils
 
 from bot.config_loader import is_pilot_chat
+from bot.workflow_events import append_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -468,6 +469,15 @@ async def try_send_welcome_now(
                     count,
                     chat_id,
                     title,
+                )
+                append_event(
+                    "welcome_sequence_sent",
+                    "group_welcome",
+                    project_name=title,
+                    text=f"{title} 已完成 {len(steps)} 步自动问候",
+                    chat_id=chat_id,
+                    language=lang,
+                    step_count=len(steps),
                 )
             finally:
                 _welcome_claiming.discard(chat_id)

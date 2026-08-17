@@ -70,7 +70,7 @@ def in_learn_scope(
     chat_id: int,
     qa_tester: bool,
     in_qa_group: bool,
-    in_project_folder: bool,
+    in_botchain_folder: bool,
     config: AppConfig,
 ) -> bool:
     if not config.learn_enabled:
@@ -79,7 +79,7 @@ def in_learn_scope(
         return True
     if config.learn_scope_qa_testers and qa_tester:
         return True
-    if config.learn_scope_project_folder and in_project_folder:
+    if config.learn_scope_botchain_folder and in_botchain_folder:
         return True
     return False
 

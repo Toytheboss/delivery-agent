@@ -133,7 +133,7 @@ def _chunk_mentions(chunk: Chunk, term: str) -> bool:
             or re.search(r"(?<![a-z])grant(?![a-z])", blob) is not None
         )
     if term == "wallet":
-        # Avoid false positives like example.com
+        # Avoid false positives like dex-wallet.botchain.ai
         return (
             "bo wallet" in blob
             or "钱包" in chunk.text
