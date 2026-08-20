@@ -595,7 +595,6 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
 
 # Progress Tracker：用中文前缀匹配飞书选项（完整文案在私有 config，不入库）
 _FIELD_MAINNET_LIVE_TIME = "主网上线时间"
-_FIELD_UPDATE_DATE = "更新日期"
 _FIELD_TRACK_ENTRY_TIME = "录入时间"
 
 
@@ -630,14 +629,16 @@ def _progress_table_daily_counts(
 ) -> dict[str, Any]:
     """Lark Progress Tracker: windowed mainnet live + current deploy stocks + logos.
 
-    ``since`` defaults to past 24 hours. Live rows are included when status is live
-    and 「主网上线时间」or「更新日期」falls in the window (timestamp-based).
+    ``since`` defaults to past 24 hours. Live rows are included only when the
+    status is live and 「主网上线时间」 falls in the window.
     """
     del today  # kept for call-site compat; window uses ``since``
     since = since or _window_start(hours=24)
     out: dict[str, Any] = {
         "today_mainnet_live": 0,
         "today_mainnet_live_names": [],
+        "today_mainnet_live_record_ids": [],
+        "today_mainnet_live_records": [],
         "mainnet_deploying": 0,
         "mainnet_deploying_names": [],
         "testnet_deploying": 0,
@@ -675,6 +676,8 @@ def _progress_table_daily_counts(
         )
         out["total_rows"] = len(records)
         live_names: list[str] = []
+        live_record_ids: set[str] = set()
+        live_records: list[dict[str, str]] = []
         main_deploy_names: list[str] = []
         test_deploy_names: list[str] = []
         for record in records:
@@ -694,18 +697,29 @@ def _progress_table_daily_counts(
             entry_at = _ms_to_datetime(fields.get(_FIELD_TRACK_ENTRY_TIME))
             if raw_name and _in_time_window(entry_at, since=since):
                 out["lark_track_new_projects"] += 1
-            # Must be actually live — 主网上线时间 alone is often a planned date.
+            # Only the dedicated live timestamp establishes a new live project.
+            # 更新日期 changes on later edits and must never inflate this metric.
             is_live = (live_status and status == live_status) or kind == "live"
             if not is_live:
                 continue
             live_at = _ms_to_datetime(fields.get(_FIELD_MAINNET_LIVE_TIME))
-            update_at = _ms_to_datetime(fields.get(_FIELD_UPDATE_DATE))
-            if _in_time_window(live_at, since=since) or _in_time_window(
-                update_at, since=since
-            ):
+            if _in_time_window(live_at, since=since):
+                rid = str(record.get("record_id") or "").strip()
+                if rid:
+                    live_record_ids.add(rid)
+                    live_records.append({"record_id": rid, "name": name})
                 out["today_mainnet_live"] += 1
                 live_names.append(name)
-        out["today_mainnet_live_names"] = sorted(live_names, key=str.lower)
+        out["today_mainnet_live_record_ids"] = sorted(live_record_ids)
+        out["today_mainnet_live_records"] = sorted(
+            live_records, key=lambda item: (item["name"].lower(), item["record_id"])
+        )
+        out["today_mainnet_live_names"] = sorted(
+            set(live_names), key=str.lower
+        )
+        out["today_mainnet_live"] = (
+            len(live_record_ids) if live_record_ids else len(set(live_names))
+        )
         out["mainnet_deploying_names"] = sorted(main_deploy_names, key=str.lower)
         out["testnet_deploying_names"] = sorted(test_deploy_names, key=str.lower)
     except Exception as exc:  # noqa: BLE001
@@ -849,6 +863,7 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "total": 0,
         "lines": [],
         "entered_mainnet_live": [],
+        "entered_mainnet_live_records": [],
         "entered_mainnet_deploy": [],
         "left_mainnet_deploy": [],
         "entered_testnet_deploy": [],
@@ -863,14 +878,50 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         logger.warning("metrics: deploy status summarize failed: %s", exc)
         deploy_changes["error"] = str(exc)
 
-    # Merge status-watch "entered live in window" into the live list (deduped).
-    live_names = list(progress.get("today_mainnet_live_names") or [])
-    for name in deploy_changes.get("entered_mainnet_live") or []:
-        if name and name not in live_names:
-            live_names.append(name)
-    live_names = sorted(live_names, key=str.lower)
-    progress["today_mainnet_live_names"] = live_names
-    progress["today_mainnet_live"] = len(live_names)
+    # Merge status-watch transitions into the table result by Lark record_id.
+    # This covers rows whose live timestamp was not populated while avoiding
+    # duplicate events, retries, and projects sharing similar names.
+    live_names_by_id = {
+        str(item.get("record_id") or "").strip(): str(
+            item.get("name") or ""
+        ).strip()
+        for item in progress.get("today_mainnet_live_records") or []
+        if str(item.get("record_id") or "").strip()
+    }
+    live_record_ids = set(live_names_by_id)
+    for item in deploy_changes.get("entered_mainnet_live_records") or []:
+        rid = str(item.get("record_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if rid:
+            live_record_ids.add(rid)
+            live_names_by_id.setdefault(rid, name or rid)
+    # Backward-compatible fallback for old status-watch state files that only
+    # expose names. It is still set-based, so repeated transitions do not count twice.
+    if not live_record_ids:
+        live_names = sorted(
+            {
+                str(name).strip()
+                for name in progress.get("today_mainnet_live_names") or []
+                if str(name).strip()
+            }
+            | {
+                str(name).strip()
+                for name in deploy_changes.get("entered_mainnet_live") or []
+                if str(name).strip()
+            },
+            key=str.lower,
+        )
+        progress["today_mainnet_live_names"] = live_names
+        progress["today_mainnet_live"] = len(live_names)
+    else:
+        live_names = sorted(set(live_names_by_id.values()), key=str.lower)
+        progress["today_mainnet_live_record_ids"] = sorted(live_record_ids)
+        progress["today_mainnet_live_records"] = [
+            {"record_id": rid, "name": live_names_by_id.get(rid) or rid}
+            for rid in sorted(live_record_ids)
+        ]
+        progress["today_mainnet_live_names"] = live_names
+        progress["today_mainnet_live"] = len(live_record_ids)
 
     return {
         "timezone": "Asia/Shanghai",

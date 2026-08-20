@@ -625,7 +625,7 @@
               <tr data-age-hours="72"><td>3 天前</td><td>Nova Finance</td><td>Can the webhook endpoint be changed later?</td><td>说明回调地址更新流程与生效时间</td><td><span class="score">94%</span></td></tr>
               <tr data-age-hours="336"><td>14 天前</td><td>Helios</td><td>Where can we verify the deployed contract?</td><td>提供主网浏览器验证路径</td><td><span class="score">92%</span></td></tr>
             </tbody></table></div></div>
-            <div class="qa-pane" id="qa-silent"><div class="table-wrap"><table><thead><tr><th>时间</th><th>Telegram 群</th><th>项目方问题</th><th>沉默原因</th><th>最高匹配</th><th>状态</th></tr></thead><tbody>
+            <div class="qa-pane" id="qa-silent"><div class="table-wrap"><table><thead><tr><th>时间</th><th>Telegram 群</th><th>项目方问题</th><th>沉默原因</th><th>知识相关度</th><th>状态</th></tr></thead><tbody>
               <tr data-age-hours="0.5"><td>今天 14:02</td><td>Project Helios</td><td>Can treasury settlement use a multisig contract?</td><td>知识库没有结算钱包合约规则</td><td><span class="score">42%</span></td><td><span class="status error">待纠错</span></td></tr>
               <tr data-age-hours="4"><td>今天 10:31</td><td>Skyline Labs</td><td>Can we change the app namespace after mainnet?</td><td>置信度低于自动回答阈值</td><td><span class="score">51%</span></td><td><span class="status wait">已转人工</span></td></tr>
               <tr data-age-hours="22"><td>昨天 16:44</td><td>Lumen Chain</td><td>Who approves the finance settlement schedule?</td><td>跨部门业务问题</td><td><span class="score">28%</span></td><td><span class="status success">已处理</span></td></tr>
@@ -637,7 +637,7 @@
 
         <section class="view" id="view-audit">
           <div class="page-head"><div><h1>审计日志</h1><p>管理员操作、状态变更和自动化执行记录</p></div></div>
-          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索操作者、项目或动作"></label><select><option>全部操作者</option><option>Roy</option><option>Grace</option><option>Josh</option><option>System</option></select><select><option>全部动作</option><option>状态变更</option><option>人工重试</option><option>设置修改</option></select></div>
+          <div class="toolbar"><label class="search"><i data-lucide="search"></i><input type="search" placeholder="搜索操作者、项目或动作"></label><select><option>全部操作者</option><option>Roy</option><option>Stella</option><option>Josh</option><option>System</option></select><select><option>全部动作</option><option>状态变更</option><option>人工重试</option><option>设置修改</option></select></div>
           <section class="panel table-panel"><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>动作</th><th>对象</th><th>变更内容</th><th>结果</th></tr></thead><tbody id="audit-log-body"><tr><td colspan="6">正在加载最近 20 条真实自动化事件…</td></tr></tbody></table></div></section>
         </section>
 
@@ -1364,7 +1364,7 @@
       if (feet[1]) feet[1].innerHTML = `<strong class="danger">${silent}</strong> TG 沉默 / 待人工`;
       if (feet[2]) feet[2].innerHTML = `<strong>${processed}</strong> 条处理入站`;
       if (feet[3]) feet[3].innerHTML = `<strong class="warn">${formSent}</strong> 次表单发送`;
-      if (feet[4]) feet[4].innerHTML = `<strong>${mainnetLive}</strong> 条主网上线记录`;
+      if (feet[4]) feet[4].innerHTML = `<strong>${mainnetLive}</strong> 个主网上线项目`;
 
       const pipeline = document.querySelectorAll("#view-overview .pipeline-step .step-count");
       if (pipeline[0]) pipeline[0].textContent = Number(projects.matched || 0).toLocaleString("en-US");
@@ -1567,8 +1567,13 @@
       const silent = payload.qa?.silent || [];
       const answeredBody = document.querySelector("#qa-answered tbody");
       const silentBody = document.querySelector("#qa-silent tbody");
-      if (answeredBody) answeredBody.innerHTML = answered.length ? answered.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml((row.reply_text || "").slice(0, 180) || "—")}</td><td><span class="score">${row.score == null ? "—" : `${Math.round(Number(row.score) * 100)}%`}</span></td></tr>`).join("") : `<tr><td colspan="5">暂无真实回答记录</td></tr>`;
-      if (silentBody) silentBody.innerHTML = silent.length ? silent.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml(row.reason || "未分类")}</td><td><span class="score">${row.score == null ? "—" : `${Math.round(Number(row.score) * 100)}%`}</span></td><td><span class="status error">待处理</span></td></tr>`).join("") : `<tr><td colspan="6">暂无沉默记录</td></tr>`;
+      const scoreLabel = value => {
+        const raw = Number(value);
+        if (!Number.isFinite(raw)) return "—";
+        return `${Math.round(Math.max(0, Math.min(1, raw)) * 100)}%`;
+      };
+      if (answeredBody) answeredBody.innerHTML = answered.length ? answered.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml((row.reply_text || "").slice(0, 180) || "—")}</td><td><span class="score">${scoreLabel(row.score)}</span></td></tr>`).join("") : `<tr><td colspan="5">暂无真实回答记录</td></tr>`;
+      if (silentBody) silentBody.innerHTML = silent.length ? silent.map(row => `<tr data-age-hours="${ageHours(row.ts)}"><td>${escapeHtml(formatLiveTime(row.ts))}</td><td>${escapeHtml(row.chat_title || "未命名群")}</td><td>${escapeHtml(row.text || "—")}</td><td>${escapeHtml(row.reason || "未分类")}</td><td><span class="score">${scoreLabel(row.score)}</span></td><td><span class="status error">待处理</span></td></tr>`).join("") : `<tr><td colspan="6">暂无沉默记录</td></tr>`;
     }
 
     async function loadLiveDashboard(force = false) {
