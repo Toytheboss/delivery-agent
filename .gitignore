@@ -41,3 +41,8 @@ cloudflare-dist*/
 .DS_Store
 .idea/
 .vscode/
+
+# Local backup snapshots (never commit)
+*.before-*
+*.bak*
+config/*.before-*
