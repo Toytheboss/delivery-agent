@@ -24,7 +24,7 @@ workflow:
 ## 手动补发今天日报（测试）
 
 ```bash
-cd "/Users/roy/Documents/Delivery/Delivery Agent"
+cd "/Users/josh/Documents/Delivery/Delivery Agent"
 source .venv/bin/activate
 python - <<'PY'
 import asyncio

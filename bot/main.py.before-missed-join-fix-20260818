@@ -222,7 +222,7 @@ async def main() -> None:
         logger.info(
             "Group welcome enabled (keywords=%s, min_msgs=%d, scan=%dm, pilot=%s); "
             "join → sample lang → send immediately when min_msgs=0 (else wait N msgs); "
-            "lang fallback=EN; scans recover join events missed while offline",
+            "lang fallback=EN; scans never backfill baselined groups",
             config.welcome_name_keywords,
             config.welcome_min_messages_before_welcome,
             config.welcome_scan_interval_minutes,
@@ -237,7 +237,7 @@ async def main() -> None:
 
         async def _startup_folder_scan() -> None:
             # Delay so startup folder refresh + welcome baseline aren't piled on.
-            await asyncio.sleep(10)
+            await asyncio.sleep(90)
             try:
                 n_added = await scan_and_add_missing(client, config, scope=scope)
                 if n_added:

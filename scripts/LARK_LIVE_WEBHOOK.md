@@ -29,7 +29,7 @@
 在项目目录启动（若已在跑可跳过）：
 
 ```bash
-cd "/Users/roy/Documents/Delivery/Delivery Agent"
+cd "/Users/josh/Documents/Delivery/Delivery Agent"
 source .venv/bin/activate
 python -u -m bot.main
 ```
@@ -72,7 +72,7 @@ https://随机一串.trycloudflare.com/workflow/live?secret=你的WORKFLOW_LIVE_
 本机先自测（在项目目录）：
 
 ```bash
-cd "/Users/roy/Documents/Delivery/Delivery Agent"
+cd "/Users/josh/Documents/Delivery/Delivery Agent"
 set -a && source .env && set +a
 # 把下面 PUBLIC 换成你的 trycloudflare 地址
 PUBLIC="https://随机一串.trycloudflare.com"

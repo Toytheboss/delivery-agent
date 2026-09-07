@@ -42,7 +42,6 @@ COUNTER_KEYS = (
     "faq_bubbles_sent",
     "faq_footer_sent",
     "messages_processed",
-    "messages_sent",
     "welcome_sequences_started",
     "welcome_messages_sent",
     "folder_auto_add_success",
@@ -63,6 +62,7 @@ COUNTER_KEYS = (
     "poll_cycles_run",
     "deploy_status_transitions",
     "social_chitchat_replies",
+    "human_review_alerts",
 )
 
 
@@ -234,26 +234,6 @@ def get_counter(key: str) -> dict[str, int]:
             "total": int(c.get("total") or 0),
             "today": int((c.get("by_day") or {}).get(today) or 0),
         }
-
-
-def get_counter_series(keys: list[str] | tuple[str, ...] | None = None) -> dict[str, Any]:
-    """Return {key: {total, by_day}} for chart series (includes full by_day maps)."""
-    want = tuple(keys) if keys is not None else COUNTER_KEYS
-    out: dict[str, Any] = {}
-    with _lock:
-        data = _ensure_loaded()
-        for key in want:
-            c = data["counters"].get(key) or _empty_counter()
-            by_day = {
-                str(d): int(n or 0)
-                for d, n in (c.get("by_day") or {}).items()
-                if d
-            }
-            out[str(key)] = {
-                "total": int(c.get("total") or 0),
-                "by_day": by_day,
-            }
-    return out
 
 
 def _sum_days(by_day: dict[str, Any] | None, days: list[str]) -> int:
@@ -438,37 +418,27 @@ def snapshot(config: Any | None = None, *, include_lark: bool = True) -> dict[st
         if include_lark:
             wallet = _wallet_table_counts(config)
 
-    # Outbound: prefer full account send counter; fall back to auto-action sum.
+    # Approximate outbound TG messages attributed to agent actions (since metrics on).
     c = counters
-    sent = c.get("messages_sent") or {}
-    auto_total = (
-        int((c.get("faq_bubbles_sent") or {}).get("total") or 0)
-        + int((c.get("faq_footer_sent") or {}).get("total") or 0)
-        + int((c.get("welcome_messages_sent") or {}).get("total") or 0)
-        + int((c.get("form_dispatch_success") or {}).get("total") or 0)
-        + int((c.get("social_chitchat_replies") or {}).get("total") or 0)
-    )
-    auto_week = (
-        int((c.get("faq_bubbles_sent") or {}).get("week") or 0)
-        + int((c.get("faq_footer_sent") or {}).get("week") or 0)
-        + int((c.get("welcome_messages_sent") or {}).get("week") or 0)
-        + int((c.get("form_dispatch_success") or {}).get("week") or 0)
-        + int((c.get("social_chitchat_replies") or {}).get("week") or 0)
-    )
-    auto_today = (
-        int((c.get("faq_bubbles_sent") or {}).get("today") or 0)
-        + int((c.get("faq_footer_sent") or {}).get("today") or 0)
-        + int((c.get("welcome_messages_sent") or {}).get("today") or 0)
-        + int((c.get("form_dispatch_success") or {}).get("today") or 0)
-        + int((c.get("social_chitchat_replies") or {}).get("today") or 0)
-    )
     outbound = {
-        "total": int(sent.get("total") or 0) or auto_total,
-        "week": int(sent.get("week") or 0) or auto_week,
-        "today": int(sent.get("today") or 0) or auto_today,
-        "auto_total": auto_total,
-        "auto_week": auto_week,
-        "auto_today": auto_today,
+        "total": (
+            int((c.get("faq_bubbles_sent") or {}).get("total") or 0)
+            + int((c.get("faq_footer_sent") or {}).get("total") or 0)
+            + int((c.get("welcome_messages_sent") or {}).get("total") or 0)
+            + int((c.get("form_dispatch_success") or {}).get("total") or 0)
+        ),
+        "week": (
+            int((c.get("faq_bubbles_sent") or {}).get("week") or 0)
+            + int((c.get("faq_footer_sent") or {}).get("week") or 0)
+            + int((c.get("welcome_messages_sent") or {}).get("week") or 0)
+            + int((c.get("form_dispatch_success") or {}).get("week") or 0)
+        ),
+        "today": (
+            int((c.get("faq_bubbles_sent") or {}).get("today") or 0)
+            + int((c.get("faq_footer_sent") or {}).get("today") or 0)
+            + int((c.get("welcome_messages_sent") or {}).get("today") or 0)
+            + int((c.get("form_dispatch_success") or {}).get("today") or 0)
+        ),
     }
 
     return {
@@ -517,9 +487,10 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
         f"过去7天窗口：{week_start} ~ {week_end}",
         f"过去24小时：{snap.get('window_24h_since') or '—'} ~ {snap.get('window_until') or '—'}",
         "",
-        "【发出消息】交付号全部出站（含手动）；括号内为自动链路合计",
-        f"· 全部出站：{pair('messages_sent')}",
-        f"· 自动合计（FAQ气泡+页脚+欢迎+表单+社交）：{_fmt_triple({'total': o.get('auto_total', 0), 'week': o.get('auto_week', 0), 'today': o.get('auto_today', 0)})}",
+        "【发出消息估算】FAQ气泡+页脚+欢迎+表单成功",
+        f"· 合计：{_fmt_triple(o)}",
+        "",
+        "【FAQ】会话=一次完整回答；气泡=拆开的短消息",
         f"· FAQ 答疑会话：{pair('faq_reply_sessions')}",
         f"· FAQ 气泡条数：{pair('faq_bubbles_sent')}",
         f"· FAQ footer：{pair('faq_footer_sent')}",
@@ -595,7 +566,7 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
 
 # Progress Tracker：用中文前缀匹配飞书选项（完整文案在私有 config，不入库）
 _FIELD_MAINNET_LIVE_TIME = "主网上线时间"
-_FIELD_TRACK_ENTRY_TIME = "录入时间"
+_FIELD_UPDATE_DATE = "更新日期"
 
 
 def _status_kind(status: str) -> str | None:
@@ -629,22 +600,19 @@ def _progress_table_daily_counts(
 ) -> dict[str, Any]:
     """Lark Progress Tracker: windowed mainnet live + current deploy stocks + logos.
 
-    ``since`` defaults to past 24 hours. Live rows are included only when the
-    status is live and 「主网上线时间」 falls in the window.
+    ``since`` defaults to past 24 hours. Live rows are included when status is live
+    and 「主网上线时间」or「更新日期」falls in the window (timestamp-based).
     """
     del today  # kept for call-site compat; window uses ``since``
     since = since or _window_start(hours=24)
     out: dict[str, Any] = {
         "today_mainnet_live": 0,
         "today_mainnet_live_names": [],
-        "today_mainnet_live_record_ids": [],
-        "today_mainnet_live_records": [],
         "mainnet_deploying": 0,
         "mainnet_deploying_names": [],
         "testnet_deploying": 0,
         "testnet_deploying_names": [],
         "projects_with_logo": 0,
-        "lark_track_new_projects": 0,
         "total_rows": 0,
         "window_since": since.isoformat(timespec="seconds"),
         "error": None,
@@ -676,14 +644,11 @@ def _progress_table_daily_counts(
         )
         out["total_rows"] = len(records)
         live_names: list[str] = []
-        live_record_ids: set[str] = set()
-        live_records: list[dict[str, str]] = []
         main_deploy_names: list[str] = []
         test_deploy_names: list[str] = []
         for record in records:
             fields = record.get("fields") or {}
-            raw_name = _field_text(fields, name_field)
-            name = raw_name or "(未命名)"
+            name = _field_text(fields, name_field) or "(未命名)"
             status = _field_text(fields, status_field)
             kind = _status_kind(status)
             if kind == "main_deploy":
@@ -694,32 +659,18 @@ def _progress_table_daily_counts(
                 test_deploy_names.append(name)
             if fields.get(logo_field):
                 out["projects_with_logo"] += 1
-            entry_at = _ms_to_datetime(fields.get(_FIELD_TRACK_ENTRY_TIME))
-            if raw_name and _in_time_window(entry_at, since=since):
-                out["lark_track_new_projects"] += 1
-            # Only the dedicated live timestamp establishes a new live project.
-            # 更新日期 changes on later edits and must never inflate this metric.
+            # Must be actually live — 主网上线时间 alone is often a planned date.
             is_live = (live_status and status == live_status) or kind == "live"
             if not is_live:
                 continue
             live_at = _ms_to_datetime(fields.get(_FIELD_MAINNET_LIVE_TIME))
-            if _in_time_window(live_at, since=since):
-                rid = str(record.get("record_id") or "").strip()
-                if rid:
-                    live_record_ids.add(rid)
-                    live_records.append({"record_id": rid, "name": name})
+            update_at = _ms_to_datetime(fields.get(_FIELD_UPDATE_DATE))
+            if _in_time_window(live_at, since=since) or _in_time_window(
+                update_at, since=since
+            ):
                 out["today_mainnet_live"] += 1
                 live_names.append(name)
-        out["today_mainnet_live_record_ids"] = sorted(live_record_ids)
-        out["today_mainnet_live_records"] = sorted(
-            live_records, key=lambda item: (item["name"].lower(), item["record_id"])
-        )
-        out["today_mainnet_live_names"] = sorted(
-            set(live_names), key=str.lower
-        )
-        out["today_mainnet_live"] = (
-            len(live_record_ids) if live_record_ids else len(set(live_names))
-        )
+        out["today_mainnet_live_names"] = sorted(live_names, key=str.lower)
         out["mainnet_deploying_names"] = sorted(main_deploy_names, key=str.lower)
         out["testnet_deploying_names"] = sorted(test_deploy_names, key=str.lower)
     except Exception as exc:  # noqa: BLE001
@@ -801,19 +752,11 @@ def _wallet_daily_counts(
     return out
 
 
-def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
-    """Assemble ops report for a rolling window (default past 24 hours)."""
-    hours = max(int(hours), 1)
-    since = _window_start(hours=hours)
-    window_days = _dates_covering_hours(hours)
+def build_daily_report(config: Any) -> dict[str, Any]:
+    """Assemble numbers for the ops daily report (rolling past 24 hours)."""
+    since = _window_start(hours=24)
+    window_days = _dates_covering_hours(24)
     week_days = _week_dates(7)
-    if hours <= 24:
-        window_label = "过去24小时"
-    elif hours % 24 == 0:
-        window_label = f"过去{hours // 24}天"
-    else:
-        window_label = f"过去{hours}小时"
-
     with _lock:
         data = _ensure_loaded()
         folder = _counter_triple(
@@ -824,9 +767,6 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         )
         processed = _counter_triple(
             data["counters"], "messages_processed", week_days, day_days=window_days
-        )
-        sent = _counter_triple(
-            data["counters"], "messages_sent", week_days, day_days=window_days
         )
         faq_bubbles = _counter_triple(
             data["counters"], "faq_bubbles_sent", week_days, day_days=window_days
@@ -845,17 +785,14 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         )
         updated_at = data.get("updated_at") or ""
 
-    auto_replies = (
+    replies_24h = (
         int(faq_bubbles.get("today") or 0)
         + int(faq_footer.get("today") or 0)
         + int(social.get("today") or 0)
         + int(welcome_msgs.get("today") or 0)
         + int(form_ok.get("today") or 0)
     )
-    processed_window = int(processed.get("today") or 0)
-    sent_window = int(sent.get("today") or 0)
-    # Until messages_sent has history, fall back to auto sum so reports aren't empty.
-    replied_window = sent_window if sent_window > 0 else auto_replies
+    processed_24h = int(processed.get("today") or 0)
 
     progress = _progress_table_daily_counts(config, since=since)
     wallet = _wallet_daily_counts(config, window_days=window_days)
@@ -863,7 +800,6 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "total": 0,
         "lines": [],
         "entered_mainnet_live": [],
-        "entered_mainnet_live_records": [],
         "entered_mainnet_deploy": [],
         "left_mainnet_deploy": [],
         "entered_testnet_deploy": [],
@@ -873,89 +809,36 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     try:
         from bot.workflow_deploy_status_watch import summarize_window
 
-        deploy_changes = summarize_window(config, since=since, hours=hours)
+        deploy_changes = summarize_window(config, since=since)
     except Exception as exc:  # noqa: BLE001
         logger.warning("metrics: deploy status summarize failed: %s", exc)
         deploy_changes["error"] = str(exc)
 
-    # Merge status-watch transitions into the table result by Lark record_id.
-    # This covers rows whose live timestamp was not populated while avoiding
-    # duplicate events, retries, and projects sharing similar names.
-    live_names_by_id = {
-        str(item.get("record_id") or "").strip(): str(
-            item.get("name") or ""
-        ).strip()
-        for item in progress.get("today_mainnet_live_records") or []
-        if str(item.get("record_id") or "").strip()
-    }
-    live_record_ids = set(live_names_by_id)
-    for item in deploy_changes.get("entered_mainnet_live_records") or []:
-        rid = str(item.get("record_id") or "").strip()
-        name = str(item.get("name") or "").strip()
-        if rid:
-            live_record_ids.add(rid)
-            live_names_by_id.setdefault(rid, name or rid)
-    # Backward-compatible fallback for old status-watch state files that only
-    # expose names. It is still set-based, so repeated transitions do not count twice.
-    if not live_record_ids:
-        live_names = sorted(
-            {
-                str(name).strip()
-                for name in progress.get("today_mainnet_live_names") or []
-                if str(name).strip()
-            }
-            | {
-                str(name).strip()
-                for name in deploy_changes.get("entered_mainnet_live") or []
-                if str(name).strip()
-            },
-            key=str.lower,
-        )
-        progress["today_mainnet_live_names"] = live_names
-        progress["today_mainnet_live"] = len(live_names)
-    else:
-        live_names = sorted(set(live_names_by_id.values()), key=str.lower)
-        progress["today_mainnet_live_record_ids"] = sorted(live_record_ids)
-        progress["today_mainnet_live_records"] = [
-            {"record_id": rid, "name": live_names_by_id.get(rid) or rid}
-            for rid in sorted(live_record_ids)
-        ]
-        progress["today_mainnet_live_names"] = live_names
-        progress["today_mainnet_live"] = len(live_record_ids)
+    # Merge status-watch "entered live in window" into the live list (deduped).
+    live_names = list(progress.get("today_mainnet_live_names") or [])
+    for name in deploy_changes.get("entered_mainnet_live") or []:
+        if name and name not in live_names:
+            live_names.append(name)
+    live_names = sorted(live_names, key=str.lower)
+    progress["today_mainnet_live_names"] = live_names
+    progress["today_mainnet_live"] = len(live_names)
 
     return {
         "timezone": "Asia/Shanghai",
         "today": _today(),
-        "period_key": (
-            "24h" if hours <= 24 else f"{hours // 24}d" if hours % 24 == 0 else f"{hours}h"
-        ),
-        "window_hours": hours,
-        "window_label": window_label,
+        "window_label": "过去24小时",
         "window_since": since.isoformat(timespec="seconds"),
         "window_until": _now_iso(),
         "window_days": window_days,
         "updated_at": updated_at,
-        # Keep range reports self-contained for the analytics UI.  The
-        # counter series already contains this value, but the period report
-        # previously omitted it and the browser treated the missing field as
-        # zero for every range.
-        "metrics": {
-            "folder_auto_add_success": int(folder.get("today") or 0),
-            "lark_track_new_projects": int(
-                progress.get("lark_track_new_projects") or 0
-            ),
-        },
         "folder_new_groups_today": int(folder.get("today") or 0),
         "logo_fill_today": int(logo_ok.get("today") or 0),
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
-        "messages_processed_24h": processed_window,
-        "messages_replied_24h": replied_window,
-        "messages_sent_24h": sent_window,
+        "messages_processed_24h": processed_24h,
+        "messages_replied_24h": replies_24h,
         "bot_messages": {
-            "processed": processed_window,
-            "replied": replied_window,
-            "sent": sent_window,
-            "auto_replied": auto_replies,
+            "processed": processed_24h,
+            "replied": replies_24h,
             "faq_bubbles": int(faq_bubbles.get("today") or 0),
             "faq_footer": int(faq_footer.get("today") or 0),
             "social": int(social.get("today") or 0),
@@ -966,18 +849,6 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "wallet": wallet,
         "deploy_changes": deploy_changes,
     }
-
-
-def build_period_reports(config: Any) -> dict[str, Any]:
-    """24h / 7d / 30d ops reports for the dashboard daily panel."""
-    out: dict[str, Any] = {}
-    for key, hours in (("24h", 24), ("7d", 7 * 24), ("30d", 30 * 24)):
-        try:
-            out[key] = build_daily_report(config, hours=hours)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("metrics: period report %s failed", key)
-            out[key] = {"error": str(exc), "period_key": key, "window_label": key}
-    return out
 
 
 def _append_name_list(lines: list[str], names: list[Any]) -> None:
@@ -1048,21 +919,17 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     lines.append(f"3. 过去24小时收集 Logo：{daily.get('logo_fill_today', 0)} 个")
 
     bm = daily.get("bot_messages") or {}
-    window = daily.get("window_label") or "过去24小时"
     lines.extend(
         [
             "",
-            f"三、{window} Bot 消息",
+            "三、过去24小时 Bot 消息",
+            f"1. 处理消息：{daily.get('messages_processed_24h', bm.get('processed', 0))} 条",
+            f"2. 回复消息：{daily.get('messages_replied_24h', bm.get('replied', 0))} 条",
             (
-                f"1. 发出消息：{daily.get('messages_replied_24h', bm.get('replied', 0))} 条"
-                "（交付号全部出站，含手动发送）"
-            ),
-            f"2. 处理入站：{daily.get('messages_processed_24h', bm.get('processed', 0))} 条",
-            (
-                "   （其中自动发出：FAQ 气泡 "
+                "   （含 FAQ 气泡 "
                 f"{bm.get('faq_bubbles', 0)}、页脚 {bm.get('faq_footer', 0)}、"
                 f"社交寒暄 {bm.get('social', 0)}、欢迎 {bm.get('welcome', 0)}、"
-                f"表单 {bm.get('form', 0)}；自动合计 {bm.get('auto_replied', 0)}）"
+                f"表单 {bm.get('form', 0)}）"
             ),
         ]
     )
@@ -1070,13 +937,13 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         [
             "",
             "口径说明",
-            f"· 本报告统计「{window}」滚动窗口内的新增，不含全量存量名单。",
-            "· 主网上线 = 状态已是「主网上线」，且「主网上线时间」或「更新日期」落在窗口内（或监测到该窗口内新进该状态）。",
-            "· 新进测试网/主网部署 = 监测到状态在窗口内进入对应项。",
-            "· 新进群 / Logo = 埋点按日桶汇总后，取覆盖窗口的日历日合计（近似）。",
-            "· 新收集钱包 = digest first_seen 落在覆盖窗口的日历日。",
-            "· 发出消息 = 交付号账号全部出站消息（含 FAQ/欢迎/表单/手动打字等）。",
-            "· 处理入站 = 进入 FAQ/社交处理链路的入站消息数（含最终沉默未回）。",
+            "· 本报告统计「过去24小时」滚动窗口内的新增，不含全量存量名单。",
+            "· 主网上线 = 状态已是「主网上线」，且「主网上线时间」或「更新日期」落在过去24小时（或监测到该窗口内新进该状态）。",
+            "· 新进测试网/主网部署 = 监测到状态在过去24小时进入对应项。",
+            "· 新进群 / Logo = 埋点按日桶汇总后，取覆盖过去24小时的日历日合计（近似）。",
+            "· 新收集钱包 = digest first_seen 落在覆盖过去24小时的日历日。",
+            "· 处理消息 = 进入 FAQ/社交处理链路的入站消息数（含最终沉默未回）。",
+            "· 回复消息 = Bot 实际发出的消息条数（FAQ 气泡+页脚+社交+欢迎+表单）。",
         ]
     )
     return "\n".join(lines)
@@ -1123,8 +990,7 @@ def format_report_zh(snap: dict[str, Any]) -> str:
             f"3. 欢迎语：过去7天启动 {welcome_seq['week']} 次；"
             f"存量已问候群 {d.get('welcome_greeted_count', '—')} 个"
         ),
-        f"4. Agent 对外发出消息：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}"
-        f"（自动合计 {o.get('auto_total', 0)} / {o.get('auto_week', 0)} / {o.get('auto_today', 0)}）",
+        f"4. Agent 对外发出消息（估算）：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}",
         "",
         "二、上线交付（表单 / Logo）",
         f"1. 上线表单发出成功：累计 {form_ok['total']}，过去7天 {form_ok['week']}，过去24小时 {form_ok['today']}",
@@ -1171,7 +1037,7 @@ def format_report_zh(snap: dict[str, Any]) -> str:
             "· 「过去7天」= 滚动 7×24 小时覆盖到的日历日合计；「过去24小时」同理（埋点为日桶近似）。",
             "· 「过去7天新建对接群」= 窗口内自动归入 Delivery Folder 成功次数。",
             "· FAQ 按「答疑会话」计，一次问题多条气泡仍算 1 次会话。",
-            "· 发出消息 = 交付号全部出站（NewMessage outgoing）；自动合计 = FAQ/页脚/欢迎/表单/社交。",
+            "· 发出消息估算 = FAQ 气泡 + FAQ 页脚 + 欢迎条数 + 表单成功次数。",
             "· 完整明细可发 /stats；本报告适合向上同步。",
         ]
     )

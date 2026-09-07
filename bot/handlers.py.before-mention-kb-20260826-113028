@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import re
-
 import asyncio
 import html
 import logging
@@ -28,16 +26,10 @@ from bot.message_log import log_message_event
 from bot.rag import generate_reply, split_reply_bubbles
 from bot.triggers import (
     explicitly_mentions_me,
-    is_ack_or_chitchat,
-    is_link_only_share,
-    is_builders_welcome_blast,
-    is_casual_message,
-    is_outbound_form_blast,
     is_qa_tester,
     is_social_chitchat,
     is_whitelisted,
     is_workflow_operator,
-    pick_casual_reply,
     pick_social_reply,
     should_process,
 )
@@ -166,17 +158,8 @@ class MessageHandler:
         in_qa_private = qa_tester and event.is_private
         in_qa_group = chat_id in self.config.qa_test_group_ids
         qa_mode = qa_tester or in_qa_group
-        # QA test groups still work even outside pilot list. In monitor-only
-        # project folders, an explicit @Josh mention may still use the knowledge base.
-        explicit_mention = explicitly_mentions_me(
-            message, self.my_id, self.my_username
-        )
-        in_reply_scope = (
-            in_folder
-            or in_qa_private
-            or in_qa_group
-            or (in_project_folder and not event.is_private and explicit_mention)
-        )
+        # QA test groups still work even outside pilot list
+        in_reply_scope = in_folder or in_qa_private or in_qa_group
 
         text = (message.raw_text or "").strip()
         has_learn_trigger = self.config.learn_enabled and contains_learn_trigger(
@@ -371,87 +354,7 @@ class MessageHandler:
             not event.is_private
             and in_project_folder
             and not self.config.group_replies_enabled
-            and not explicit_mention
         ):
-            # Internal / BD accounts: never enqueue as project-side questions.
-            if is_whitelisted(
-                sender_id,
-                sender_username,
-                self.config.ignore_user_ids,
-                self.config.ignore_usernames,
-            ):
-                return
-            # Ops blasts: welcome templates / Congrats+form — not project questions.
-            if is_builders_welcome_blast(text) or is_outbound_form_blast(text):
-                logger.debug(
-                    "Skip welcome/form blast in monitor chat=%s", chat_id
-                )
-                return
-            # @colleague handoff (not @Josh): e.g. "@baguio_mt could you help..."
-            if re.search(r"@[\w\d_]{3,32}", text) and not explicitly_mentions_me(
-                message, self.my_id, self.my_username
-            ):
-                return
-            # Warm casual reply for greetings / short acks even in monitor-only.
-            # Keeps FAQ off, but avoids dead silence on social chatter.
-            social_ok = getattr(self.config, "social_replies_enabled", True)
-            if social_ok and is_casual_message(text):
-                if sender_id is not None and self._is_rate_limited(chat_id, sender_id):
-                    logger.info(
-                        "Rate limited monitor social user %s in chat %s",
-                        sender_id,
-                        chat_id,
-                    )
-                    return
-                msg_id = message.id
-                if msg_id in self._processing:
-                    return
-                self._processing.add(msg_id)
-                try:
-                    reply = pick_casual_reply(
-                        text, seed=(chat_id or 0) ^ (msg_id or 0)
-                    )
-                    delay = min(8, max(0, self.config.reply_delay_seconds))
-                    if delay > 0:
-                        await asyncio.sleep(delay)
-                    await message.reply(reply)
-                    if sender_id is not None:
-                        self._mark_replied(chat_id, sender_id)
-                    try:
-                        inc("messages_processed")
-                        inc("social_chitchat_replies")
-                    except Exception:  # noqa: BLE001
-                        pass
-                    reason = (
-                        "social_chitchat"
-                        if is_social_chitchat(text)
-                        else "ack_chitchat"
-                    )
-                    log_message_event(
-                        kind="social",
-                        chat_id=chat_id,
-                        sender_id=sender_id,
-                        sender_username=sender_username or "",
-                        message_id=msg_id,
-                        text=text,
-                        reply_text=reply,
-                        outcome="replied",
-                        reason=f"monitor_{reason}",
-                        extra={"mode": "monitor_only"},
-                    )
-                    logger.info(
-                        "Monitor casual reply in chat %s (%s): %r",
-                        chat_id,
-                        reason,
-                        reply,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Monitor casual reply failed in chat %s", chat_id
-                    )
-                finally:
-                    self._processing.discard(msg_id)
-                return
             needs_human_review = should_process(
                 message,
                 self.my_id,
@@ -521,23 +424,8 @@ class MessageHandler:
             logger.debug("Skip whitelisted sender %s in chat %s", sender_id, chat_id)
             return
 
-        # Bare URL / link share → do not FAQ (avoids /market path → token-market docs)
-        if is_link_only_share(text):
-            log_message_event(
-                kind="faq",
-                chat_id=chat_id,
-                sender_id=sender_id,
-                sender_username=sender_username or "",
-                message_id=message.id,
-                text=text,
-                outcome="silent",
-                reason="skip_link_only_share",
-            )
-            logger.info("Skip link-only share in chat %s", chat_id)
-            return
-
-        # Social gm / X-post / short acks → warm casual reply (not FAQ)
-        if is_casual_message(text):
+        # Social gm / X-post shares → short emoji reply (not FAQ)
+        if is_social_chitchat(text):
             if sender_id is not None and not qa_mode and self._is_rate_limited(
                 chat_id, sender_id
             ):
@@ -550,7 +438,7 @@ class MessageHandler:
                 return
             self._processing.add(msg_id)
             try:
-                reply = pick_casual_reply(
+                reply = pick_social_reply(
                     text, seed=(chat_id or 0) ^ (msg_id or 0)
                 )
                 delay = 0 if qa_mode else min(8, max(0, self.config.reply_delay_seconds))
@@ -564,11 +452,6 @@ class MessageHandler:
                     inc("social_chitchat_replies")
                 except Exception:  # noqa: BLE001
                     pass
-                reason = (
-                    "social_chitchat"
-                    if is_social_chitchat(text)
-                    else "ack_chitchat"
-                )
                 log_message_event(
                     kind="social",
                     chat_id=chat_id,
@@ -580,10 +463,10 @@ class MessageHandler:
                     qa=qa_mode,
                     qa_group=in_qa_group,
                     outcome="replied",
-                    reason=reason,
+                    reason="social_chitchat",
                 )
                 logger.info(
-                    "Social/ack reply in chat %s (%s): %r", chat_id, reason, reply
+                    "Social chitchat reply in chat %s: %r", chat_id, reply
                 )
             except Exception:
                 logger.exception("Social chitchat reply failed in chat %s", chat_id)
@@ -641,9 +524,9 @@ class MessageHandler:
         try:
             decision = await generate_reply(question, self.kb, self.config)
             if not decision.should_reply:
-                # Fallback: warm casual reply when FAQ silenced recoverable chitchat
-                if is_casual_message(question):
-                    reply = pick_casual_reply(
+                # Fallback: if FAQ silenced a share/greeting that slipped through
+                if is_social_chitchat(question):
+                    reply = pick_social_reply(
                         question, seed=(chat_id or 0) ^ (msg_id or 0)
                     )
                     delay = 0 if qa_mode else min(

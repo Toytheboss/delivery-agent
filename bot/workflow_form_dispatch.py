@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bot.lark_bitable import get_tenant_access_token, list_records, update_record
-from bot.workflow_events import EVENTS_FILE, append_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -49,38 +48,6 @@ def _save_state(path: Path, sent: set[str]) -> None:
     )
 
 
-def _skip_event_key(record_id: str, project_name: str, reason: str) -> str:
-    """Stable identity for one no-group outcome per project and reason."""
-    project = str(record_id or project_name or "unknown").strip()
-    return f"form_dispatch_skipped|{project}|{str(reason or 'unknown').strip()}"
-
-
-def _load_logged_skip_event_keys(path: Path = EVENTS_FILE) -> set[str]:
-    """Read existing skip identities so retries remain deduped after restarts."""
-    keys: set[str] = set()
-    if not path.is_file():
-        return keys
-    try:
-        with path.open("r", encoding="utf-8") as fh:
-            for line in fh:
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(row, dict) or row.get("kind") != "form_dispatch_skipped":
-                    continue
-                keys.add(
-                    _skip_event_key(
-                        str(row.get("record_id") or ""),
-                        str(row.get("project_name") or ""),
-                        str(row.get("reason") or ""),
-                    )
-                )
-    except OSError:
-        logger.exception("Failed reading existing form-dispatch skip events")
-    return keys
-
-
 def _field_text(fields: dict[str, Any], name: str) -> str:
     value = fields.get(name)
     if value is None:
@@ -109,121 +76,8 @@ def _parse_chat_id(raw: str) -> int | None:
 def _normalize_name(text: str) -> str:
     text = text.lower().strip()
     text = re.sub(r"[\[\]（）()【】{}<>|_·•/\\]+", " ", text)
-    # Matching is intentionally case-insensitive and whitespace-insensitive:
-    # "Project X", "projectx" and "PROJECT  X" should compare equally.
-    return re.sub(r"\s+", "", text)
-
-
-_MATCH_NOISE = {
-    "botchain",
-    "bot",
-    "chain",
-    "deployment",
-    "group",
-    "live",
-    "testnet",
-    "mainnet",
-    "partnership",
-    "communication",
-    "wallet",
-    "on",
-    "the",
-    "x",
-}
-_MATCH_GENERIC_PROJECTS = {"test", "safe", "oracle", "wallet", "pass", "protocol", "chain", "bot", "ai", "di"}
-
-
-def _match_tokens(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", str(text or "").lower())
-
-
-def _meaningful_match_tokens(text: str) -> list[str]:
-    return [token for token in _match_tokens(text) if token not in _MATCH_NOISE]
-
-
-def find_project_chat_matches(
-    project_name: str,
-    title_by_chat: dict[int, str],
-) -> list[tuple[int, str, int, str]]:
-    """Return best fuzzy TG title matches as (chat_id, title, score, reason).
-
-    Common BOT Chain/context words are ignored, exact/core matches outrank
-    aliases, and only the best score is returned. Equal top scores remain a
-    list so callers can surface an ambiguous match instead of guessing.
-    """
-    project = str(project_name or "").strip()
-    raw_project_tokens = _match_tokens(project)
-    project_tokens = _meaningful_match_tokens(project)
-    project_norm = _normalize_name(project)
-    project_core = "".join(project_tokens)
-    if not project_core or len(project) < 2:
-        return []
-    # A one-word generic Lark placeholder (e.g. "Test") must not bind every
-    # testnet/group title that happens to contain the same word.
-    if len(raw_project_tokens) == 1 and project_core in _MATCH_GENERIC_PROJECTS:
-        return []
-
-    candidates: list[tuple[int, int, str, str]] = []
-    for chat_id, title in title_by_chat.items():
-        title_text = str(title or "").strip()
-        if not title_text:
-            continue
-        title_norm = _normalize_name(title_text)
-        title_tokens = _meaningful_match_tokens(title_text)
-        title_core = "".join(title_tokens)
-        score = -1
-        reason = ""
-
-        if project_norm == title_norm:
-            score, reason = 100, "exact title match"
-        elif project_norm and project_norm in title_norm:
-            score, reason = 96, "title contains project"
-        elif title_norm and title_norm in project_norm:
-            score, reason = 94, "project contains title"
-
-        if project_core and project_core == title_core:
-            score, reason = max(score, 95), "core title match"
-        elif project_core and len(project_core) >= 4 and project_core in title_core:
-            score, reason = max(score, 90), "core title contains project"
-
-        if project_tokens and all(token in title_tokens for token in project_tokens):
-            score, reason = max(score, 92), "meaningful token match"
-
-        if (
-            len(project_tokens) == 1
-            and len(project_tokens[0]) >= 3
-            and project_tokens[0] not in _MATCH_GENERIC_PROJECTS
-            and project_tokens[0] in title_tokens
-        ):
-            score, reason = max(score, 88), "single token match"
-
-        # Project records often carry a descriptive suffix, while the TG group
-        # uses the short brand name (e.g. BOLT Terminal -> BOLT).
-        if (
-            len(project_tokens) > 1
-            and len(project_tokens[0]) >= 4
-            and project_tokens[0] not in _MATCH_GENERIC_PROJECTS
-            and project_tokens[0] in title_tokens
-        ):
-            score, reason = max(score, 74), "leading project token match"
-
-        # Compact aliases such as FOMO3D <-> Fomo3dphoenix. Require a
-        # substantial token to avoid generic substring matches.
-        if len(project_core) >= 5:
-            for token in title_tokens:
-                if len(token) >= 5 and (project_core.startswith(token) or token.startswith(project_core)):
-                    score, reason = max(score, 64), "compact alias match"
-                    break
-
-        if score >= 0:
-            candidates.append((score, int(chat_id), title_text, reason))
-
-    if not candidates:
-        return []
-    best = max(item[0] for item in candidates)
-    top = [item for item in candidates if item[0] == best]
-    top.sort(key=lambda item: (item[2].lower(), item[1]))
-    return [(chat_id, title, score, reason) for score, chat_id, title, reason in top]
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
 
 
 def build_form_message(config: AppConfig, project_name: str) -> str:
@@ -249,17 +103,38 @@ def match_project_to_chat(
     title_by_chat: dict[int, str],
 ) -> tuple[int | None, str]:
     """Return (chat_id, reason). chat_id is None when unmatched or ambiguous."""
-    candidates = find_project_chat_matches(project_name, title_by_chat)
-    if not candidates:
-        return None, "no fuzzy title match"
-    # Never guess when more than one group is a candidate.  A false positive
-    # would send a form (or mark the wrong Lark row live) in the wrong project
-    # chat, so all ambiguous matches must be reviewed manually.
-    if len(candidates) > 1:
-        ids = [chat_id for chat_id, _, _, _ in candidates]
-        return None, f"ambiguous title matches: {ids}"
-    chat_id, _, _, reason = candidates[0]
-    return chat_id, reason
+    project = _normalize_name(project_name)
+    if not project or len(project) < 2:
+        return None, "project name too short"
+
+    exact: list[int] = []
+    partial: list[tuple[int, int]] = []  # (chat_id, score)
+
+    for chat_id, title in title_by_chat.items():
+        norm_title = _normalize_name(title)
+        if not norm_title:
+            continue
+        if norm_title == project:
+            exact.append(chat_id)
+            continue
+        if project in norm_title or norm_title in project:
+            score = min(len(project), len(norm_title))
+            partial.append((chat_id, score))
+
+    if len(exact) == 1:
+        return exact[0], "exact title match"
+    if len(exact) > 1:
+        return None, f"ambiguous exact matches: {exact}"
+
+    if not partial:
+        return None, "no title match"
+
+    partial.sort(key=lambda x: x[1], reverse=True)
+    best_score = partial[0][1]
+    top = [cid for cid, score in partial if score == best_score]
+    if len(top) == 1:
+        return top[0], f"partial title match (score={best_score})"
+    return None, f"ambiguous partial matches: {top}"
 
 
 async def build_folder_title_map(
@@ -451,7 +326,6 @@ async def run_form_dispatch_once(
 
     state_path = ROOT / config.workflow_state_file
     sent = _load_state(state_path)
-    logged_skip_event_keys = _load_logged_skip_event_keys()
     sent_now = 0
     state_dirty = False
 
@@ -513,24 +387,12 @@ async def run_form_dispatch_once(
                 record_id,
                 match_reason,
             )
-            skip_event_key = _skip_event_key(record_id, project_name, match_reason)
-            if skip_event_key not in logged_skip_event_keys:
-                try:
-                    from bot.metrics import record_form_outcome
+            try:
+                from bot.metrics import record_form_outcome
 
-                    record_form_outcome(f"no_group:{match_reason}")
-                except Exception:  # noqa: BLE001
-                    pass
-                append_event(
-                    "form_dispatch_skipped",
-                    "form_dispatch",
-                    project_name=project_name,
-                    text=f"{project_name or record_id} 未找到可发送的 TG 群",
-                    status="skipped",
-                    record_id=record_id,
-                    reason=match_reason,
-                )
-                logged_skip_event_keys.add(skip_event_key)
+                record_form_outcome(f"no_group:{match_reason}")
+            except Exception:  # noqa: BLE001
+                pass
             continue
 
         text = build_form_message(config, project_name)
@@ -548,15 +410,6 @@ async def run_form_dispatch_once(
                 record_form_outcome(f"send_failed:{exc}")
             except Exception:  # noqa: BLE001
                 pass
-            append_event(
-                "form_dispatch_failed",
-                "form_dispatch",
-                project_name=project_name,
-                text=f"{project_name or record_id} Google 表单发送失败",
-                status="failed",
-                record_id=record_id,
-                reason=str(exc)[:240],
-            )
             continue
 
         sent.add(record_id)
@@ -587,14 +440,6 @@ async def run_form_dispatch_once(
             record_id,
             match_reason,
         )
-        append_event(
-            "form_sent",
-            "form_dispatch",
-            project_name=project_name,
-            text=f"{project_name or record_id} 的 Google 表单已发送",
-            record_id=record_id,
-            chat_id=chat_id,
-        )
         await _mark_sent_in_lark(loop, token, config, record_id)
 
     if state_dirty or not state_path.exists():
@@ -616,13 +461,6 @@ async def send_form_manual(
     project_guess = chat_title or "your project"
     text = build_form_message(config, project_guess)
     await client.send_message(chat_id, text)
-    append_event(
-        "form_sent",
-        "form_manual",
-        project_name=project_guess,
-        text=f"{project_guess} 的 Google 表单已手动发送",
-        chat_id=chat_id,
-    )
     try:
         from bot.metrics import record_form_outcome
 

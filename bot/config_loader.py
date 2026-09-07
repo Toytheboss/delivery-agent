@@ -6,8 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import os
-
 import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -29,6 +27,7 @@ class AppConfig:
     pilot_group_ids: set[int]
     pilot_group_titles: set[str]
     group_replies_enabled: bool
+    social_replies_enabled: bool
     refresh_interval_minutes: int
     rate_limit_seconds: int
     reply_delay_seconds: int
@@ -37,6 +36,7 @@ class AppConfig:
     blocked_topics: list[str]
     hint_keywords: list[str]
     require_mention_or_question: bool
+    require_explicit_mention: bool
     knowledge_dir: Path
     chunk_size: int
     chunk_overlap: int
@@ -152,18 +152,6 @@ class AppConfig:
     metrics_message_log_dir: str
     metrics_message_log_retain_days: int
     metrics_message_log_text_max: int
-    dashboard_enabled: bool
-    dashboard_token: str
-    dashboard_admin_users: list[str]
-    dashboard_admin_password_hash: str
-    dashboard_session_secret: str
-    dashboard_cookie_secure: bool
-    dashboard_refresh_minutes: int
-    dashboard_qa_lookback_days: int
-    dashboard_list_limit: int
-    dashboard_calendar_days: int
-    dashboard_path_prefix: str
-    dashboard_snapshot_file: str
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -171,27 +159,6 @@ def _load_yaml(path: Path) -> dict[str, Any]:
         return {}
     with path.open(encoding="utf-8") as f:
         return yaml.safe_load(f) or {}
-
-
-def _deep_merge_dict(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]:
-    out = dict(base)
-    for k, v in (overlay or {}).items():
-        if isinstance(v, dict) and isinstance(out.get(k), dict):
-            out[k] = _deep_merge_dict(out[k], v)
-        else:
-            out[k] = v
-    return out
-
-
-def _load_runtime_overrides() -> dict[str, Any]:
-    path = ROOT / "data" / "runtime_overrides.yaml"
-    if not path.exists():
-        return {}
-    try:
-        raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        return raw if isinstance(raw, dict) else {}
-    except Exception:  # noqa: BLE001
-        return {}
 
 
 _DEFAULT_DOCS_URL = (
@@ -202,7 +169,7 @@ _DEFAULT_DOCS_URL = (
 _DEFAULT_WELCOME_SEQUENCE_ZH: list[dict[str, Any]] = [
     {
         "delay_seconds": 0,
-        "text": "大家好，我是 Delivery Agent Roy，很高兴和大家对接 👋",
+        "text": "大家好，我是 Delivery Agent Josh，很高兴和大家对接 👋",
     },
     {
         "delay_seconds": 30,
@@ -221,7 +188,7 @@ _DEFAULT_WELCOME_SEQUENCE_EN: list[dict[str, Any]] = [
     {
         "delay_seconds": 0,
         "text": (
-            "Hi everyone — I'm Roy from Delivery Agent. "
+            "Hi everyone — I'm Josh from Delivery Agent. "
             "Glad to connect with you 👋"
         ),
     },
@@ -417,7 +384,6 @@ async def resolve_workflow_operator_ids(client, config: AppConfig) -> None:
 
 def load_config() -> AppConfig:
     cfg = _load_yaml(CONFIG_DIR / "config.yaml")
-    cfg = _deep_merge_dict(cfg, _load_runtime_overrides())
     wl = _load_yaml(CONFIG_DIR / "whitelist.yaml")
     qa = _load_yaml(CONFIG_DIR / "qa_testers.yaml")
     ig = _load_yaml(CONFIG_DIR / "ignored_groups.yaml")
@@ -480,15 +446,19 @@ def load_config() -> AppConfig:
         pilot_group_ids=pilot_group_ids,
         pilot_group_titles=pilot_group_titles,
         group_replies_enabled=bool(scope.get("group_replies_enabled", True)),
+        social_replies_enabled=bool(scope.get("social_replies_enabled", True)),
         refresh_interval_minutes=int(scope.get("refresh_interval_minutes", 30)),
         rate_limit_seconds=int(reply.get("rate_limit_seconds", 60)),
         reply_delay_seconds=int(reply.get("reply_delay_seconds", 0)),
         bubble_gap_seconds=int(reply.get("bubble_gap_seconds", 30)),
-        min_relevance_score=float(reply.get("min_relevance_score", 0.50)),
+        min_relevance_score=float(reply.get("min_relevance_score", 0.35)),
         blocked_topics=[str(x).lower() for x in safety.get("blocked_topics", [])],
         hint_keywords=[str(x).lower() for x in trigger.get("hint_keywords", [])],
         require_mention_or_question=bool(
             trigger.get("require_mention_or_question", True)
+        ),
+        require_explicit_mention=bool(
+            trigger.get("require_explicit_mention", False)
         ),
         knowledge_dir=knowledge_dir,
         chunk_size=int(knowledge.get("chunk_size", 800)),
@@ -835,42 +805,9 @@ def load_config() -> AppConfig:
             )
         ),
         metrics_message_log_retain_days=int(
-            (cfg.get("metrics") or {}).get("message_log_retain_days", 60) or 60
+            (cfg.get("metrics") or {}).get("message_log_retain_days", 90) or 90
         ),
         metrics_message_log_text_max=int(
             (cfg.get("metrics") or {}).get("message_log_text_max", 500) or 500
-        ),
-        dashboard_enabled=bool((cfg.get("dashboard") or {}).get("enabled", True)),
-        dashboard_token=str((cfg.get("dashboard") or {}).get("token", "") or "").strip(),
-        dashboard_admin_users=[
-            str(x).strip()
-            for x in str(os.getenv("DASHBOARD_ADMIN_USERS", "Roy,Grace,Josh")).split(",")
-            if str(x).strip()
-        ],
-        dashboard_admin_password_hash=os.getenv("DASHBOARD_ADMIN_PASSWORD_HASH", "").strip(),
-        dashboard_session_secret=os.getenv("DASHBOARD_SESSION_SECRET", "").strip(),
-        dashboard_cookie_secure=os.getenv("DASHBOARD_COOKIE_SECURE", "true").strip().lower()
-        not in {"0", "false", "no", "off"},
-        dashboard_refresh_minutes=int(
-            (cfg.get("dashboard") or {}).get("refresh_minutes", 60) or 60
-        ),
-        dashboard_qa_lookback_days=int(
-            (cfg.get("dashboard") or {}).get("qa_lookback_days", 30) or 30
-        ),
-        dashboard_list_limit=int(
-            (cfg.get("dashboard") or {}).get("list_limit", 150) or 150
-        ),
-        dashboard_calendar_days=int(
-            (cfg.get("dashboard") or {}).get("calendar_days", 30) or 30
-        ),
-        dashboard_path_prefix=str(
-            (cfg.get("dashboard") or {}).get("path_prefix", "/dashboard") or "/dashboard"
-        ),
-        dashboard_snapshot_file=str(
-            (cfg.get("dashboard") or {}).get(
-                "snapshot_file",
-                "data/dashboard_snapshot.json",
-            )
-            or "data/dashboard_snapshot.json"
         ),
     )

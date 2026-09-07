@@ -1,7 +1,4 @@
-"""HTTP webhook for Lark/Feishu automation: status → live → form + logo immediately.
-
-Also hosts the Delivery dashboard / settings UI when enabled.
-"""
+"""HTTP webhook for Lark/Feishu automation: status → live → form + logo immediately."""
 
 from __future__ import annotations
 
@@ -19,10 +16,8 @@ if TYPE_CHECKING:
 
     from bot.config_loader import AppConfig
     from bot.folder_scope import FolderScope
-    from bot.knowledge import KnowledgeBase
 
 logger = logging.getLogger(__name__)
-from bot.workflow_events import append_event
 
 
 def _webhook_secret(config: AppConfig) -> str:
@@ -38,6 +33,7 @@ def _extract_payload(data: Any) -> tuple[str | None, str | None]:
     if not isinstance(data, dict):
         return None, None
 
+    # url_verification handled elsewhere
     record_id = (
         data.get("record_id")
         or data.get("recordId")
@@ -51,6 +47,7 @@ def _extract_payload(data: Any) -> tuple[str | None, str | None]:
         or data.get("name")
     )
 
+    # nested common shapes
     for key in ("record", "data", "object", "event"):
         nested = data.get(key)
         if isinstance(nested, dict):
@@ -58,6 +55,7 @@ def _extract_payload(data: Any) -> tuple[str | None, str | None]:
             record_id = record_id or rid2
             project_name = project_name or name2
 
+    # Lark automation sometimes puts fields under fields{}
     fields = data.get("fields")
     if isinstance(fields, dict):
         for k in ("项目名称 Project Name", "项目名称", "Project name", "Project Name"):
@@ -80,6 +78,7 @@ def _extract_payload(data: Any) -> tuple[str | None, str | None]:
 def _authorized(request: web.Request, config: AppConfig) -> bool:
     secret = _webhook_secret(config)
     if not secret:
+        # Misconfig: reject rather than open relay
         return False
     header = (request.headers.get("X-Webhook-Secret") or "").strip()
     query = (request.rel_url.query.get("secret") or "").strip()
@@ -94,41 +93,25 @@ async def start_live_webhook_server(
     client: TelegramClient,
     config: AppConfig,
     scope: FolderScope,
-    *,
-    kb: KnowledgeBase | None = None,
 ) -> web.AppRunner | None:
-    """Start HTTP server for live webhook and/or dashboard."""
-    from bot.dashboard_http import dashboard_auth_configured, dashboard_enabled, register_dashboard_routes
-
-    want_webhook = bool(getattr(config, "workflow_live_webhook_enabled", False))
-    want_dashboard = dashboard_enabled(config) and dashboard_auth_configured(config)
-    if not want_webhook and not want_dashboard:
+    if not getattr(config, "workflow_live_webhook_enabled", False):
         return None
-
-    if want_webhook and not _webhook_secret(config):
+    if not _webhook_secret(config):
         logger.error(
             "live webhook enabled but WORKFLOW_LIVE_WEBHOOK_SECRET / "
-            "workflow.live_webhook_secret is empty — webhook routes skipped"
+            "workflow.live_webhook_secret is empty — not starting"
         )
-        want_webhook = False
-        if not want_dashboard:
-            return None
+        return None
 
     path = getattr(config, "workflow_live_webhook_path", "/workflow/live") or "/workflow/live"
     if not path.startswith("/"):
         path = "/" + path
 
     async def health(_: web.Request) -> web.Response:
-        return web.json_response(
-            {
-                "ok": True,
-                "service": "delivery-live-webhook",
-                "dashboard": want_dashboard,
-                "webhook": want_webhook,
-            }
-        )
+        return web.json_response({"ok": True, "service": "delivery-live-webhook"})
 
     async def live_handler(request: web.Request) -> web.Response:
+        # Lark event URL verification (no secret on first challenge in some setups)
         try:
             raw = await request.read()
             data = json.loads(raw.decode("utf-8") or "{}") if raw else {}
@@ -149,6 +132,7 @@ async def start_live_webhook_server(
         except Exception:  # noqa: BLE001
             pass
 
+        # Also accept query params for simple automation tests
         record_id, project_name = _extract_payload(data)
         if not record_id:
             record_id = (request.rel_url.query.get("record_id") or "").strip() or None
@@ -164,10 +148,12 @@ async def start_live_webhook_server(
                 status=400,
             )
 
+        # Optional status gate from payload
         status = None
         if isinstance(data, dict):
             status = data.get("status") or data.get("项目状态")
         if status and str(status).strip() != config.workflow_trigger_status:
+            # Still allow if they only send record_id and status already live in table
             logger.info(
                 "live webhook payload status=%r (will verify against Lark row)",
                 status,
@@ -190,28 +176,12 @@ async def start_live_webhook_server(
             except Exception:  # noqa: BLE001
                 pass
         code = 200 if not result.get("error") else 422
-        append_event(
-            "live_webhook_processed" if not result.get("error") else "live_webhook_failed",
-            "lark_webhook",
-            project_name=project_name or record_id or "",
-            text=(
-                f"{project_name or record_id or '项目'} 主网上线 Webhook 已处理"
-                if not result.get("error")
-                else f"{project_name or record_id or '项目'} 主网上线 Webhook 处理失败"
-            ),
-            status="success" if not result.get("error") else "failed",
-            record_id=record_id,
-            error=str(result.get("error") or "")[:240],
-        )
         return web.json_response(result, status=code)
 
     app = web.Application()
     app.router.add_get("/health", health)
-    if want_webhook:
-        app.router.add_get(path, health)
-        app.router.add_post(path, live_handler)
-    if want_dashboard:
-        register_dashboard_routes(app, config, kb=kb)
+    app.router.add_get(path, health)
+    app.router.add_post(path, live_handler)
 
     host = getattr(config, "workflow_live_webhook_host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(config, "workflow_live_webhook_port", 8787) or 8787)
@@ -220,10 +190,10 @@ async def start_live_webhook_server(
     site = web.TCPSite(runner, host=host, port=port)
     await site.start()
     logger.info(
-        "HTTP listening on http://%s:%s (webhook=%s dashboard=%s)",
+        "Live webhook listening on http://%s:%s%s "
+        "(Lark automation → POST JSON {record_id|project_name})",
         host,
         port,
-        want_webhook,
-        want_dashboard,
+        path,
     )
     return runner

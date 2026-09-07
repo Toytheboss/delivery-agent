@@ -437,7 +437,7 @@ def _fallback_compose(
     hits: list[SearchHit],
     lang: str,
     *,
-    min_score: float = 0.50,
+    min_score: float = 0.35,
 ) -> ReplyDecision:
     if not hits:
         return _silent_decision("no relevant knowledge", 0.0)
@@ -570,7 +570,7 @@ def _call_llm(
             "(proper nouns / tickers / URLs ok)."
         )
         system = (
-            "You're Roy (Delivery Agent delivery PM) typing in a Telegram project group — "
+            "You're Josh (Delivery Agent delivery PM) typing in a Telegram project group — "
             "not a helpdesk bot, not corporate support.\n"
             "Answer ONLY this question, ONLY from the context below.\n"
             "If you are not confident the context directly answers it, stay silent.\n"
@@ -623,7 +623,7 @@ def _call_llm(
             "资料里有英文也用中文转述，不要整段英文答。"
         )
         system = (
-            "你是 Delivery Agent PM Roy，在 Telegram 项目群里跟项目方聊天——"
+            "你是 Delivery Agent PM Josh，在 Telegram 项目群里跟项目方聊天——"
             "像同事打字，不像客服机器人，也不要公文腔。\n"
             "只答当前问题，且只能依据下面资料。\n"
             "没把握对上题意时保持沉默，不要硬答。\n"

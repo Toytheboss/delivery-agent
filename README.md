@@ -19,7 +19,7 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Folder scope** | Only listens / auto-replies inside configured Telegram *Projects* folders (e.g. multiple folders with a shared name prefix). |
 | **Pilot mode** | Optional: FAQ auto-reply limited to listed pilot groups while testing. |
-| **Group replies toggle** | Can disable group FAQ replies while keeping DMs / ops commands. |
+| **Group replies toggle / monitor mode** | When group replies are disabled, project-group questions and explicit `@Josh` mentions are queued in the Dashboard for human review without posting a Telegram reply; welcome and ops workflows remain active. |
 | **Ignored groups** | Hard skip list (`config/ignored_groups.yaml`). |
 | **BD / ignore blacklist** | Listed users never get auto-replies (`config/whitelist.yaml` → `ignore_users`), except workflow operators on mark-live / send-form. |
 | **QA testers** | Configured accounts/groups can ask without `@mention`, skip reply delay, and use ops commands (`config/qa_testers.yaml`). |
@@ -34,7 +34,7 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Knowledge RAG** | Retrieves chunks from `knowledge/` (markdown FAQ packs, help docs, learned notes). |
 | **LLM compose** | DeepSeek / OpenAI-compatible chat; answers in the asker’s language (`auto` ZH/EN). |
-| **Trigger rules** | `@bot` / reply-to-bot, question-like text, or `trigger.hint_keywords` (e.g. pricing / 报价). |
+| **Trigger rules** | Optional strict group mode (`trigger.require_explicit_mention`) replies only to an explicit `@bot`; otherwise supports reply-to-bot, question-like text, or `trigger.hint_keywords`. |
 | **Stay silent when unsure** | Below `min_relevance_score`, blocked commercial topics, or model `NEEDS_HUMAN` → no reply. |
 | **Multi-bubble replies** | Splits long answers on `---`; optional delay before first reply + gap between bubbles (more “human”). |
 | **FAQ footer** | Optional bold/italic disclaimer after a successful FAQ reply only. |
@@ -49,8 +49,7 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Greetings** | Short emoji replies to `gm` / `gn` / `早上好` / `晚安` / etc. (not FAQ). |
 | **X / Twitter shares** | Casual thanks when partners share short posts (links + “发了” style captions). |
-| **Short acks** | `收到` / `好的` / `thanks` / `got it` / `ok` / `will do` → short casual reply (not FAQ, not silence). |
-| **FAQ fallback** | If RAG silences a social/ack-shaped message, still send the casual reply. |
+| **FAQ fallback** | If RAG silences a social-shaped message, still send the social reply. |
 
 ---
 
@@ -97,10 +96,10 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Live status watch** | Polls Progress Tracker; only **new** live rows trigger form + logo (webhook backup). |
 | **Deploy status watch** | Tracks enter/leave mainnet-live / mainnet-deploying / testnet-deploying for daily report. |
 | **Startup live catch-up** | Optional one-shot process of live rows missing form/logo. |
-| **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); matching ignores case and whitespace and supports containment in either direction. If multiple groups are candidates, the workflow leaves the row for manual review instead of guessing and sending to the wrong chat. |
+| **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
 | **Manual send form** | Ops command in current group as fallback. |
 | **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
-| **Logo fill** | Fetches site logo from live/project URL into Lark attachment field: HTTP scrape first, then Playwright header/element screenshot if that fails (still one record attempt; no poller retry on hard fail). |
+| **Logo fill** | Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). |
 | **Form / logo poll** | Optional expensive poller (off by default; prefer webhook + watch + mark-live). |
 | **Form chase (24h)** | After form sent: if wallet table still has &lt; N of required fields after 24h, resend reminder listing **missing fields** (capped reminders). |
 | **Wallet notify (TG)** | When required wallet fields are complete, notify finance/ops/tech chats (optional). |
@@ -120,13 +119,11 @@ End-to-end path when a project goes **Mainnet Live**:
 
 | Feature | What it does |
 |---------|----------------|
-| **Persistent counters** | FAQ sessions/bubbles/footer, social, welcome, folder add, form/logo outcomes, mark-live, webhooks, wallet digest, inbound processed, **all outbound sends**, etc. |
+| **Persistent counters** | FAQ sessions/bubbles/footer, social, welcome, folder add, form/logo outcomes, mark-live, webhooks, wallet digest, messages processed, etc. |
 | **Stats (detail)** | Full Chinese ops breakdown. |
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
-| **Daily report** | Rolling window (24h / 7d / 30d on dashboard): new mainnet live, deploy transitions, folders, wallets, logos, bot messages (**all outbound** from the delivery account + inbound processed + auto mix). |
-| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default **60**). |
-| **Web dashboard** | Hourly snapshot on Aliyun `:8787/dashboard` (ops daily report for 24h/7d/30d, 30-day calendar with range summaries, 14-day charts, day-level logo/wallet/Q&A). The delivery funnel, recent workflow activity, and exception center are built from live Lark/TG records plus persisted workflow/message logs; unavailable evidence is shown as empty instead of sample data. Requires an administrator login. |
-| **Settings panel** | Same host `/dashboard/settings`: administrator-only allowlisted runtime knobs + knowledge learn CRUD / KB reload → `data/runtime_overrides.yaml`. |
+| **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix (processed / replied / FAQ / social / welcome / form). |
+| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default 90); monitor-mode questions are marked `human_review` / `manual review` for the Dashboard queue. |
 
 **Report command aliases:**
 
@@ -215,6 +212,11 @@ python scripts/login.py
 python -m bot.main
 ```
 
+For the server-oriented two-step login flow, run
+`python scripts/server_login_complete.py` without arguments to enter the
+Telegram verification code and 2FA password interactively. The password input
+is hidden and is not stored in shell history.
+
 Production: see [`deploy/README.md`](deploy/README.md) (`delivery-agent.service`).
 
 ---
@@ -240,7 +242,7 @@ Primary file: `config/config.yaml.example`.
 | Block | Controls |
 |-------|----------|
 | `scope` | Folders, pilot, auto-add, refresh interval, group replies |
-| `trigger` | Mention/question gate, hint keywords |
+| `trigger` | Explicit-mention-only mode, mention/question gate, hint keywords |
 | `reply` | Delays, bubbles, relevance threshold, language, FAQ footer |
 | `rules` / `safety` | System rules, blocked commercial topics |
 | `learn` | Trigger word, scopes, Agent KB table |
@@ -267,10 +269,6 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | `LARK_APP_ID` / `LARK_APP_SECRET` | Bitable / wiki / digest |
 | `LARK_WIKI_TOKEN` | Optional wiki sync |
 | `WORKFLOW_LIVE_WEBHOOK_SECRET` | Optional override for live webhook auth |
-| `DASHBOARD_ADMIN_USERS` | Comma-separated administrator login names |
-| `DASHBOARD_ADMIN_PASSWORD_HASH` | Shared administrator password as a `pbkdf2_sha256` hash; never store plaintext |
-| `DASHBOARD_SESSION_SECRET` | Random secret used to sign 8-hour administrator sessions |
-| `DASHBOARD_COOKIE_SECURE` | Keep `true` behind HTTPS; use `false` only for local HTTP testing |
 
 ---
 
@@ -285,14 +283,10 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | See last 24h ops | `交付日报` / `/daily` |
 | See last 7 days summary | `交付周报` / `/report` |
 | Full counters | `交付统计` / `/stats` |
-| Web dashboard / settings | Open `http(s)://HOST:8787/dashboard`, then sign in as an administrator. Settings are protected by the same admin session. |
 | Teach the bot a fact | QA tester: `学习 …` (or configured trigger) |
 | Audit ask/reply text | Read `data/message_logs/messages-YYYY-MM-DD.jsonl` on the server |
 
 More operator detail: [`docs/delivery-operator-whitelist.md`](docs/delivery-operator-whitelist.md).
-
-系统交接、数据库字段、接口、流程、状态文件和排障说明：
-[`docs/delivery-system-reference-zh.md`](docs/delivery-system-reference-zh.md)。
 
 ---
 

@@ -82,48 +82,33 @@ async def mark_live_from_group(
     old_status = _field_text(fields, config.workflow_status_field)
     new_status = config.workflow_trigger_status
 
-    if old_status == new_status:
-        # Avoid rewriting an already-live row. The application can still run
-        # the form workflow when it has record-read but not record-write access.
-        logger.info(
-            "Mark-live skipped Lark update: project=%r record=%s already %r chat=%s",
-            project_name,
+    try:
+        await loop.run_in_executor(
+            None,
+            update_record,
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
             record_id,
-            new_status,
-            chat_id,
+            {config.workflow_status_field: new_status},
         )
-        lines = [
-            f"Lark already live: {project_name}",
-            f"Status: {new_status}",
-        ]
-    else:
-        try:
-            await loop.run_in_executor(
-                None,
-                update_record,
-                token,
-                config.workflow_base_app_token,
-                config.workflow_progress_table_id,
-                record_id,
-                {config.workflow_status_field: new_status},
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("mark_live: failed to update Lark status")
-            return f"Matched {project_name!r} but failed to update Lark: {exc}"
+    except Exception as exc:  # noqa: BLE001
+        logger.exception("mark_live: failed to update Lark status")
+        return f"Matched {project_name!r} but failed to update Lark: {exc}"
 
-        logger.info(
-            "Marked live via TG: project=%r record=%s %r -> %r chat=%s",
-            project_name,
-            record_id,
-            old_status,
-            new_status,
-            chat_id,
-        )
+    logger.info(
+        "Marked live via TG: project=%r record=%s %r -> %r chat=%s",
+        project_name,
+        record_id,
+        old_status,
+        new_status,
+        chat_id,
+    )
 
-        lines = [
-            f"Lark updated: {project_name}",
-            f"Status: {old_status or '(empty)'} → {new_status}",
-        ]
+    lines = [
+        f"Lark updated: {project_name}",
+        f"Status: {old_status or '(empty)'} → {new_status}",
+    ]
 
     # Immediate form + logo (same path as Lark webhook; no polling)
     if config.workflow_mark_live_also_send_form or config.workflow_logo_fill_enabled:

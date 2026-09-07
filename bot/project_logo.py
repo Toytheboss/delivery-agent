@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin, urlparse, unquote
 
 import requests
 
@@ -22,9 +23,13 @@ UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-# Reject emoji-favicon stubs / empty shots; real logos and header strips are larger.
-MIN_LOGO_BYTES = 512
-MIN_SCREENSHOT_BYTES = 1000
+
+# Paths that are unlikely to be the marketing homepage for logo scraping.
+_NON_HOME_PATH_RE = re.compile(
+    r"^/(proof|app|dashboard|admin|login|signup|docs?|api|whitepaper|"
+    r"blog|news|faq|support|download|bridge|swap|stake|mint)(/|$)",
+    flags=re.I,
+)
 
 
 def link_str(v: Any) -> str:
@@ -51,7 +56,10 @@ def extract_urls(text: str) -> list[str]:
     ):
         if "http" in m.lower():
             continue
-        if any(x in m.lower() for x in ("telegram", "t.me", "x.com", "twitter", "linkedin", "@")):
+        if any(
+            x in m.lower()
+            for x in ("telegram", "t.me", "x.com", "twitter", "linkedin", "@")
+        ):
             continue
         found.append("https://" + m.lstrip("/"))
     out: list[str] = []
@@ -61,7 +69,14 @@ def extract_urls(text: str) -> list[str]:
         low = u.lower()
         if any(
             b in low
-            for b in ("t.me/", "telegram.", "x.com/", "twitter.com", "linkedin.com", "docs.google")
+            for b in (
+                "t.me/",
+                "telegram.",
+                "x.com/",
+                "twitter.com",
+                "linkedin.com",
+                "docs.google",
+            )
         ):
             continue
         if u not in seen:
@@ -70,11 +85,45 @@ def extract_urls(text: str) -> list[str]:
     return out
 
 
-def pick_site_url(fields: dict[str, Any], live_link_field: str, project_link_field: str) -> str | None:
+def pick_site_url(
+    fields: dict[str, Any], live_link_field: str, project_link_field: str
+) -> str | None:
     urls = extract_urls(link_str(fields.get(live_link_field)))
     if not urls:
         urls = extract_urls(link_str(fields.get(project_link_field)))
     return urls[0] if urls else None
+
+
+def _site_variants(site: str) -> list[str]:
+    """Homepage-first variants: origin, https upgrade, strip non-home paths."""
+    raw = (site or "").strip()
+    if not raw:
+        return []
+    if "://" not in raw:
+        raw = "https://" + raw
+    parsed = urlparse(raw)
+    scheme = parsed.scheme or "https"
+    netloc = parsed.netloc
+    if not netloc:
+        return [raw]
+    origin = f"{scheme}://{netloc}"
+    path = parsed.path or "/"
+    variants: list[str] = []
+
+    def add(u: str) -> None:
+        if u and u not in variants:
+            variants.append(u)
+
+    # Prefer marketing homepage over deep links (/proof, /app, ...).
+    if path in ("", "/") or _NON_HOME_PATH_RE.match(path):
+        add(origin + "/")
+    else:
+        add(raw if raw.endswith("/") or "." in path.rsplit("/", 1)[-1] else raw)
+        add(origin + "/")
+    if scheme == "http":
+        add("https://" + netloc + "/")
+    add(raw)
+    return variants
 
 
 def _proxy_dict() -> dict[str, str] | None:
@@ -92,7 +141,11 @@ def _proxy_dict() -> dict[str, str] | None:
 
 
 def http_get(url: str, timeout: float = 12.0) -> requests.Response | None:
-    headers = {"User-Agent": UA, "Accept": "*/*"}
+    headers = {
+        "User-Agent": UA,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
     attempts: list[dict[str, str] | None] = [None]
     px = _proxy_dict()
     if px:
@@ -111,29 +164,17 @@ def http_get(url: str, timeout: float = 12.0) -> requests.Response | None:
     return None
 
 
-def _is_svg_bytes(data: bytes) -> bool:
-    stripped = data.lstrip()
-    return stripped.startswith(b"<svg") or (
-        stripped.startswith(b"<?xml") and b"<svg" in data[:500]
-    )
-
-
-def _is_usable_logo(data: bytes, *, min_bytes: int = MIN_LOGO_BYTES) -> bool:
-    """True if bytes look like a real logo asset (not a tiny emoji favicon)."""
-    if not data or len(data) < min_bytes:
-        return False
-    return True
-
-
 def _is_image_bytes(data: bytes, ctype: str) -> bool:
     ctype = (ctype or "").lower()
-    if "text/html" in ctype:
+    if "text/html" in ctype or "application/json" in ctype:
         return False
-    is_svg = _is_svg_bytes(data)
+    stripped = data.lstrip()
+    is_svg = stripped.startswith(b"<svg") or (
+        stripped.startswith(b"<?xml") and b"<svg" in data[:800]
+    )
     if is_svg:
-        # Tiny data-URI emoji SVGs (~38B) must not count as success.
-        return _is_usable_logo(data)
-    if not _is_usable_logo(data):
+        return len(data) >= 32
+    if len(data) < 64:
         return False
     return (
         "image" in ctype
@@ -145,9 +186,28 @@ def _is_image_bytes(data: bytes, ctype: str) -> bool:
     )
 
 
+def _image_quality_ok(data: bytes, fname: str) -> bool:
+    """Reject tiny/corrupt rasters that are usually wrong favicons/screenshots."""
+    if not data:
+        return False
+    low = (fname or "").lower()
+    stripped = data.lstrip()
+    if stripped.startswith(b"<svg") or (
+        stripped.startswith(b"<?xml") and b"<svg" in data[:800]
+    ):
+        return len(data) >= 32
+    # ICO can be small but useful; allow slightly lower floor.
+    if low.endswith(".ico") or data[:4] == b"\x00\x00\x01\x00":
+        return len(data) >= 64
+    # Very small PNG/JPG screenshots are usually empty chrome, not logos.
+    if len(data) < 280:
+        return False
+    return True
+
+
 def _fname_for(data: bytes, url: str) -> str:
     if data.lstrip().startswith(b"<svg") or (
-        data.lstrip().startswith(b"<?xml") and b"<svg" in data[:500]
+        data.lstrip().startswith(b"<?xml") and b"<svg" in data[:800]
     ):
         return "logo.svg"
     if data[:3] == b"\xff\xd8\xff":
@@ -160,30 +220,54 @@ def _fname_for(data: bytes, url: str) -> str:
     for ext in (".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg", ".ico"):
         if path.endswith(ext):
             return f"logo{ext if ext != '.jpeg' else '.jpg'}"
+    if url.startswith("data:image/svg"):
+        return "logo.svg"
     return "logo.png"
+
+
+def _decode_data_uri(url: str) -> tuple[bytes, str] | None:
+    if not url.startswith("data:image"):
+        return None
+    try:
+        header, payload = url.split(",", 1)
+    except ValueError:
+        return None
+    try:
+        if ";base64" in header.lower():
+            raw = base64.b64decode(payload, validate=False)
+        else:
+            raw = unquote(payload).encode("utf-8", errors="ignore")
+    except Exception:
+        return None
+    ext = "png"
+    h = header.lower()
+    if "svg" in h:
+        ext = "svg"
+    elif "jpeg" in h or "jpg" in h:
+        ext = "jpg"
+    elif "webp" in h:
+        ext = "webp"
+    elif "gif" in h:
+        ext = "gif"
+    elif "x-icon" in h or "vnd.microsoft.icon" in h:
+        ext = "ico"
+    if len(raw) < 32:
+        return None
+    fname = f"logo.{ext}"
+    if not _image_quality_ok(raw, fname):
+        return None
+    return raw, fname
 
 
 def download_image(url: str) -> tuple[bytes, str] | None:
     if not url:
         return None
     if url.startswith("data:image"):
-        try:
-            header, b64 = url.split(",", 1)
-            # SPA emoji favicons are almost always tiny SVG data URIs — skip them.
-            if "svg" in header.lower():
-                return None
-            raw = base64.b64decode(b64)
-            if not _is_usable_logo(raw):
-                return None
-            ext = "png"
-            if "jpeg" in header or "jpg" in header:
-                ext = "jpg"
-            elif "webp" in header:
-                ext = "webp"
-            return raw, f"logo.{ext}"
-        except Exception:
-            return None
+        return _decode_data_uri(url)
     if url.startswith("data:"):
+        return None
+    # Truncated data URIs sometimes appear from regex; skip junk.
+    if "data:image" in url and not url.startswith("data:"):
         return None
     r = http_get(url, timeout=10.0)
     if r is None:
@@ -192,12 +276,29 @@ def download_image(url: str) -> tuple[bytes, str] | None:
     ctype = r.headers.get("content-type") or ""
     if not _is_image_bytes(data, ctype):
         return None
-    return data, _fname_for(data, url)
+    fname = _fname_for(data, url)
+    if not _image_quality_ok(data, fname):
+        return None
+    return data, fname
 
 
 def _attr(tag: str, name: str) -> str | None:
     m = re.search(rf"""{name}\s*=\s*["']([^"']+)["']""", tag, flags=re.I)
     return m.group(1).strip() if m else None
+
+
+def _extract_data_image_uris(html: str) -> list[str]:
+    """Pull full data:image... URIs (including unquoted / percent-encoded SVG)."""
+    out: list[str] = []
+    for m in re.finditer(
+        r"data:image\/[a-z0-9.+-]+(?:;[^,=\s\"'>]+)?,.*?(?=[\"'\s\)]|$)",
+        html,
+        flags=re.I,
+    ):
+        uri = m.group(0).rstrip("\"')>;,")
+        if len(uri) >= 40:
+            out.append(uri)
+    return out
 
 
 def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
@@ -209,84 +310,206 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
         url = url.strip()
         if not url or url.startswith("javascript:"):
             return
-        scored.append((-score, order, urljoin(base_url, url)))
+        # Prefer absolute / joined; keep full data URIs intact.
+        if url.startswith("data:"):
+            scored.append((-score, order, url))
+        else:
+            scored.append((-score, order, urljoin(base_url, url)))
 
     order = 0
-    head = html[:12000]
+    head = html[:20000]
     body_m = re.search(r"<body[^>]*>(.*)$", html, flags=re.I | re.S)
-    top = (body_m.group(1) if body_m else html)[:25000]
+    top = (body_m.group(1) if body_m else html)[:40000]
     header_chunks = re.findall(
         r"<(?:header|nav)[^>]*>.*?</(?:header|nav)>",
         top,
         flags=re.I | re.S,
     )
-    region = "\n".join(header_chunks) if header_chunks else top[:12000]
+    region = "\n".join(header_chunks) if header_chunks else top[:20000]
 
     for tag in re.findall(r"<img\b[^>]*>", region, flags=re.I):
-        src = _attr(tag, "src") or _attr(tag, "data-src") or _attr(tag, "data-lazy-src")
-        srcset = _attr(tag, "srcset")
-        if srcset and not src:
-            src = srcset.split(",")[0].strip().split(" ")[0]
+        src = (
+            _attr(tag, "src")
+            or _attr(tag, "data-src")
+            or _attr(tag, "data-lazy-src")
+            or _attr(tag, "data-original")
+        )
+        srcset = _attr(tag, "srcset") or _attr(tag, "data-srcset")
+        if srcset and (not src or src.startswith("data:image/gif")):
+            # pick largest candidate from srcset
+            parts = [p.strip().split(" ")[0] for p in srcset.split(",") if p.strip()]
+            if parts:
+                src = parts[-1]
         alt = (_attr(tag, "alt") or "").lower()
         cls = (_attr(tag, "class") or "").lower()
         tid = (_attr(tag, "id") or "").lower()
         blob = f"{alt} {cls} {tid} {(src or '').lower()}"
         score = 40
         if any(k in blob for k in ("logo", "brand", "site-title", "navbar-brand")):
-            score += 50
-        if any(k in blob for k in ("avatar", "icon-user", "profile", "hero", "banner", "bg-")):
-            score -= 30
-        if src and any(src.lower().endswith(e) for e in (".svg", ".png", ".webp", ".jpg", ".jpeg")):
+            score += 55
+        if any(
+            k in blob
+            for k in ("avatar", "icon-user", "profile", "hero", "banner", "bg-", "cover")
+        ):
+            score -= 35
+        if src and any(
+            src.lower().endswith(e) for e in (".svg", ".png", ".webp", ".jpg", ".jpeg")
+        ):
             score += 10
+        if src and "/_next/image" in src:
+            score += 15
         add(src, score, order)
         order += 1
 
-    for m in re.finditer(r"""<link\b[^>]*rel=["']([^"']+)["'][^>]*>""", head, flags=re.I):
-        rel = m.group(1).lower()
-        href = _attr(m.group(0), "href")
-        if "apple-touch-icon" in rel:
-            add(href, 35, order)
-        elif "icon" in rel:
-            add(href, 25, order)
+    # Whole-page imgs with explicit logo/brand hints (outside header scrape window).
+    for tag in re.findall(r"<img\b[^>]*>", html[:80000], flags=re.I):
+        blob = tag.lower()
+        if not any(k in blob for k in ("logo", "brand", "navbar-brand", "site-title")):
+            continue
+        src = (
+            _attr(tag, "src")
+            or _attr(tag, "data-src")
+            or _attr(tag, "data-lazy-src")
+            or _attr(tag, "data-original")
+        )
+        add(src, 70, order)
         order += 1
-    for m in re.finditer(
-        r"""<link\b[^>]*href=["']([^"']+)["'][^>]*rel=["']([^"']+)["'][^>]*>""",
-        head,
-        flags=re.I,
-    ):
-        href, rel = m.group(1), m.group(2).lower()
+
+    for m in re.finditer(r"""<link\b[^>]*>""", head, flags=re.I):
+        tag = m.group(0)
+        rel = (_attr(tag, "rel") or "").lower()
+        href = _attr(tag, "href")
+        sizes = (_attr(tag, "sizes") or "").lower()
         if "apple-touch-icon" in rel:
-            add(href, 35, order)
-        elif "icon" in rel:
-            add(href, 25, order)
+            score = 48
+            if "180" in sizes or "192" in sizes:
+                score += 8
+            add(href, score, order)
+        elif "icon" in rel and "mask-icon" not in rel:
+            score = 28
+            if "32" in sizes or "48" in sizes or "96" in sizes or "192" in sizes:
+                score += 10
+            if href and href.lower().endswith(".svg"):
+                score += 12
+            add(href, score, order)
+        elif "manifest" in rel and href:
+            add(href, 5, order)  # marker; expanded later
         order += 1
 
     for pat, score in (
-        (r"""property=["']og:image["'][^>]*content=["']([^"']+)["']""", 20),
-        (r"""content=["']([^"']+)["'][^>]*property=["']og:image["']""", 20),
-        (r"""name=["']twitter:image["'][^>]*content=["']([^"']+)["']""", 15),
+        (r"""property=["']og:image:secure_url["'][^>]*content=["']([^"']+)["']""", 22),
+        (r"""property=["']og:image["'][^>]*content=["']([^"']+)["']""", 18),
+        (r"""content=["']([^"']+)["'][^>]*property=["']og:image["']""", 18),
+        (r"""name=["']twitter:image["'][^>]*content=["']([^"']+)["']""", 14),
+        (r"""content=["']([^"']+)["'][^>]*name=["']twitter:image["']""", 14),
+        (r""""logo"\s*:\s*\{\s*"@type"\s*:\s*"ImageObject"[^}]*"url"\s*:\s*"([^"]+)" """, 45),
+        (r""""logo"\s*:\s*"([^"]+)" """, 40),
     ):
-        m = re.search(pat, head, flags=re.I)
+        m = re.search(pat, head, flags=re.I | re.S)
         if m:
             add(m.group(1), score, order)
             order += 1
+
+    # Inline CSS / Next media paths that look like logos.
+    for m in re.finditer(
+        r"""(?:url\(|["'])(/_next/static/media/[^"'\)\s]+\.(?:png|svg|webp|jpg|jpeg))""",
+        html[:100000],
+        flags=re.I,
+    ):
+        path = m.group(1)
+        score = 30
+        if "logo" in path.lower() or "brand" in path.lower():
+            score += 40
+        add(path, score, order)
+        order += 1
+
+    for m in re.finditer(
+        r"""url\((['"]?)([^)'\"]+\.(?:png|svg|webp|jpg|jpeg|ico))\1\)""",
+        html[:100000],
+        flags=re.I,
+    ):
+        path = m.group(2)
+        score = 20
+        if any(k in path.lower() for k in ("logo", "brand", "icon")):
+            score += 35
+        add(path, score, order)
+        order += 1
+
+    for uri in _extract_data_image_uris(region + "\n" + head):
+        score = 45 if "svg" in uri[:40].lower() else 25
+        add(uri, score, order)
+        order += 1
 
     scored.sort()
     out: list[str] = []
     seen: set[str] = set()
     for _, _, u in scored:
-        if u not in seen:
-            seen.add(u)
+        key = u if u.startswith("data:") else u.split("?", 1)[0]
+        if key not in seen:
+            seen.add(key)
             out.append(u)
     return out
 
 
+def _manifest_icons(manifest_url: str) -> list[str]:
+    r = http_get(manifest_url, timeout=8.0)
+    if r is None or not r.content:
+        return []
+    try:
+        data = r.json()
+    except Exception:
+        try:
+            data = json.loads(r.text)
+        except Exception:
+            return []
+    icons = data.get("icons") or []
+    ranked: list[tuple[int, str]] = []
+    for icon in icons:
+        if not isinstance(icon, dict):
+            continue
+        src = str(icon.get("src") or "").strip()
+        if not src:
+            continue
+        sizes = str(icon.get("sizes") or "0x0")
+        try:
+            w = int(sizes.split("x")[0])
+        except Exception:
+            w = 0
+        ranked.append((w, urljoin(manifest_url, src)))
+    ranked.sort(reverse=True)
+    return [u for _, u in ranked]
+
+
+def _expand_manifest_candidates(candidates: list[str], base_url: str) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for u in candidates:
+        low = u.lower()
+        if low.endswith("manifest.json") or low.endswith("site.webmanifest") or "/manifest" in low:
+            for icon in _manifest_icons(u):
+                if icon not in seen:
+                    seen.add(icon)
+                    out.append(icon)
+            continue
+        if u not in seen:
+            seen.add(u)
+            out.append(u)
+    # Common manifest locations if none referenced.
+    if not any("manifest" in c.lower() for c in candidates):
+        p = urlparse(base_url)
+        origin = f"{p.scheme}://{p.netloc}"
+        for path in ("/manifest.json", "/site.webmanifest", "/manifest.webmanifest"):
+            for icon in _manifest_icons(origin + path):
+                if icon not in seen:
+                    seen.add(icon)
+                    out.append(icon)
+    return out
+
+
 def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
-    """Second-pass logo fetch: render SPA with Playwright, then screenshot brand area."""
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
-        logger.warning("playwright not installed; cannot fallback logo fetch for %s", site)
         return None
 
     js = """
@@ -294,45 +517,77 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   const isLogoish = (el) => {
     const blob = [
       el.alt || '', el.className || '', el.id || '',
-      el.getAttribute('src') || '', el.getAttribute('aria-label') || ''
+      el.getAttribute('src') || '', el.getAttribute('aria-label') || '',
+      el.getAttribute('data-testid') || ''
     ].join(' ').toLowerCase();
-    return /logo|brand|navbar-brand|site-title/.test(blob);
+    return /logo|brand|navbar-brand|site-title|site-logo/.test(blob);
+  };
+  const absUrl = (u) => {
+    try { return new URL(u, location.href).href; } catch { return u || ''; }
+  };
+  const bgUrl = (el) => {
+    const bg = getComputedStyle(el).backgroundImage || '';
+    const m = bg.match(/url\\(["']?(.*?)["']?\\)/i);
+    return m ? absUrl(m[1]) : '';
   };
   const pickImg = (root) => {
     const imgs = [...root.querySelectorAll('img')].filter(img => {
       const r = img.getBoundingClientRect();
-      return r.width >= 12 && r.height >= 12 && r.top < 160 && r.left < 480;
+      return r.width >= 12 && r.height >= 12 && r.top < 200 && r.left < 560;
     });
     imgs.sort((a, b) => {
-      const sa = (isLogoish(a) ? 0 : 1) * 1000 + a.getBoundingClientRect().left + a.getBoundingClientRect().top;
-      const sb = (isLogoish(b) ? 0 : 1) * 1000 + b.getBoundingClientRect().left + b.getBoundingClientRect().top;
+      const sa = (isLogoish(a) ? 0 : 1) * 1000 + a.getBoundingClientRect().left
+        + a.getBoundingClientRect().top * 0.25;
+      const sb = (isLogoish(b) ? 0 : 1) * 1000 + b.getBoundingClientRect().left
+        + b.getBoundingClientRect().top * 0.25;
       return sa - sb;
     });
     return imgs[0] || null;
   };
-  const header = document.querySelector('header, nav, [class*="navbar"], [class*="header"]') || document.body;
+  const header = document.querySelector(
+    'header, nav, [class*="navbar" i], [class*="header" i], [class*="topbar" i]'
+  ) || document.body;
   const img = pickImg(header) || pickImg(document.body);
   if (img) {
     const src = img.currentSrc || img.src || '';
-    if (src && !src.startsWith('data:')) return { type: 'url', src };
-    return { type: 'el' };
+    if (src) return { type: 'url', src: absUrl(src) };
+    return { type: 'el', selector: 'img' };
   }
-  const svg = [...document.querySelectorAll('header svg, nav svg, a svg')]
+  // CSS background logos in the header band.
+  const nodes = [...header.querySelectorAll('a, div, span, i, button')].slice(0, 80);
+  for (const el of nodes) {
+    const r = el.getBoundingClientRect();
+    if (r.top > 160 || r.left > 480 || r.width < 14 || r.height < 14) continue;
+    if (r.width > 420 || r.height > 160) continue;
+    const u = bgUrl(el);
+    if (u && /^https?:|^data:image/i.test(u) && !/gradient/i.test(u)) {
+      const logoish = isLogoish(el) || /logo|brand/i.test(u);
+      if (logoish || (r.width <= 220 && r.height <= 100)) {
+        return { type: 'url', src: u };
+      }
+    }
+  }
+  const svg = [...document.querySelectorAll('header svg, nav svg, a svg, [class*="logo" i] svg')]
     .find(el => {
       const r = el.getBoundingClientRect();
-      return r.width >= 12 && r.height >= 12 && r.top < 160 && r.left < 400;
+      return r.width >= 12 && r.height >= 12 && r.top < 180 && r.left < 480;
     });
-  if (svg) return { type: 'el' };
-  // Prefer brand-strip screenshot over tiny favicon links.
-  return { type: 'header' };
+  if (svg) return { type: 'el', selector: 'svg' };
+  const brand = document.querySelector(
+    '[class*="logo" i], [id*="logo" i], [aria-label*="logo" i], a[class*="brand" i]'
+  );
+  if (brand) {
+    const r = brand.getBoundingClientRect();
+    if (r.width >= 20 && r.height >= 12 && r.top < 200) {
+      return { type: 'brand' };
+    }
+  }
+  const icon = document.querySelector('link[rel*="apple-touch-icon"], link[rel*="icon"]');
+  if (icon && icon.href) return { type: 'url', src: icon.href };
+  // Text-only brand sites: signal header clip fallback.
+  return { type: 'clip' };
 }
 """
-
-    def _accept_shot(png: bytes | None) -> tuple[bytes, str] | None:
-        if png and _is_usable_logo(png, min_bytes=MIN_SCREENSHOT_BYTES):
-            return png, "logo.png"
-        return None
-
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
@@ -342,116 +597,125 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                 viewport={"width": 1280, "height": 800},
             )
             page = context.new_page()
-            page.set_default_timeout(30000)
+            page.set_default_timeout(25000)
+            page.goto(site, wait_until="domcontentloaded")
             try:
-                page.goto(site, wait_until="domcontentloaded")
-            except Exception:
-                page.goto(site, wait_until="load")
-            try:
-                page.wait_for_load_state("networkidle", timeout=8000)
+                page.wait_for_load_state("networkidle", timeout=10000)
             except Exception:
                 pass
-            page.wait_for_timeout(2000)
-            info = page.evaluate(js)
+            page.wait_for_timeout(1200)
+            info = page.evaluate(js) or {"type": "clip"}
             result: tuple[bytes, str] | None = None
-            if info and info.get("type") == "url" and info.get("src"):
+            if info.get("type") == "url" and info.get("src"):
                 result = download_image(info["src"])
-
             if result is None:
-                for sel in (
-                    "header img",
-                    "nav img",
-                    "a img",
+                # Element screenshot for svg/img/brand text.
+                selectors = [
+                    "header [class*='logo' i]",
+                    "nav [class*='logo' i]",
+                    "[class*='logo' i]",
+                    "a[class*='brand' i]",
                     "header svg",
                     "nav svg",
-                    "img",
-                ):
-                    loc = page.locator(sel).first
+                    "header img",
+                    "nav img",
+                    "header a",
+                    "nav a",
+                ]
+                for sel in selectors:
                     try:
-                        if loc.count() and loc.is_visible(timeout=800):
-                            result = _accept_shot(loc.screenshot(type="png"))
-                            if result:
-                                break
+                        loc = page.locator(sel).first
+                        if not loc.is_visible(timeout=600):
+                            continue
+                        box = loc.bounding_box()
+                        if not box:
+                            continue
+                        if box["width"] < 12 or box["height"] < 12:
+                            continue
+                        if box["y"] > 220:
+                            continue
+                        png = loc.screenshot(type="png")
+                        if png and _image_quality_ok(png, "logo.png"):
+                            result = (png, "logo.png")
+                            break
                     except Exception:
                         continue
-
             if result is None:
-                for clip in (
-                    {"x": 0, "y": 0, "width": 400, "height": 120},
-                    {"x": 0, "y": 0, "width": 220, "height": 80},
-                ):
-                    try:
-                        result = _accept_shot(page.screenshot(type="png", clip=clip))
-                    except Exception:
-                        result = None
-                    if result:
-                        break
-
+                # Top-left brand strip — works for text-only SPA headers.
+                try:
+                    png = page.screenshot(
+                        type="png",
+                        clip={"x": 0, "y": 0, "width": 280, "height": 96},
+                    )
+                    if png and _image_quality_ok(png, "logo.png"):
+                        result = (png, "logo.png")
+                except Exception:
+                    pass
             browser.close()
-            if result:
-                logger.info(
-                    "logo browser fallback ok for %s (%d bytes)",
-                    site,
-                    len(result[0]),
-                )
-            else:
-                logger.warning("logo browser fallback found nothing usable for %s", site)
             return result
     except Exception:
         logger.debug("browser logo fetch failed for %s", site, exc_info=True)
         return None
 
 
-def fetch_logo_via_http(site: str) -> tuple[bytes, str] | None:
-    """First-pass logo fetch: static HTML + well-known icon paths (no browser)."""
-    page = http_get(site, timeout=15.0)
-    if page is None or not page.text:
-        p = urlparse(site if "://" in site else f"https://{site}")
-        origin = f"{p.scheme or 'https'}://{p.netloc}"
-        page = http_get(origin, timeout=15.0)
-    if page is None:
-        return None
-    final_url = page.url or site
-    html = page.text or ""
-    for img_url in logo_candidates_from_html(html, final_url):
+def _try_candidates(candidates: list[str]) -> tuple[bytes, str] | None:
+    for img_url in candidates:
         got = download_image(img_url)
-        if got:
-            return got
-    p = urlparse(final_url)
-    origin = f"{p.scheme}://{p.netloc}"
-    for path in (
-        "/apple-touch-icon.png",
-        "/favicon.ico",
-        "/favicon.png",
-        "/logo.svg",
-        "/logo.png",
-        "/vite.svg",
-    ):
-        got = download_image(origin + path)
         if got:
             return got
     return None
 
 
 def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
-    """HTTP scrape first; on failure, Playwright second pass (header/element shot)."""
-    logo = fetch_logo_via_http(site)
-    if logo:
-        return logo
-    logger.info("logo HTTP scrape failed for %s — trying Playwright", site)
-    # Prefer site homepage for SPA apps whose live URL is /app etc.
-    candidates = [site]
-    try:
-        p = urlparse(site if "://" in site else f"https://{site}")
-        origin = f"{p.scheme or 'https'}://{p.netloc}/"
-        if origin.rstrip("/") != site.rstrip("/"):
-            candidates.append(origin)
-    except Exception:
-        pass
-    for url in candidates:
-        logo = fetch_logo_via_browser(url)
-        if logo:
-            return logo
+    tried_pages: set[str] = set()
+    for variant in _site_variants(site):
+        page = http_get(variant, timeout=15.0)
+        if page is None or page.text is None:
+            continue
+        final_url = page.url or variant
+        key = final_url.rstrip("/")
+        if key in tried_pages:
+            continue
+        tried_pages.add(key)
+        html = page.text or ""
+        # Tiny SPA shells (<1KB) rarely contain assets; still try common paths + browser.
+        candidates = logo_candidates_from_html(html, final_url)
+        candidates = _expand_manifest_candidates(candidates, final_url)
+        got = _try_candidates(candidates)
+        if got:
+            return got
+        p = urlparse(final_url)
+        origin = f"{p.scheme}://{p.netloc}"
+        for path in (
+            "/apple-touch-icon.png",
+            "/apple-touch-icon-precomposed.png",
+            "/favicon.ico",
+            "/favicon.png",
+            "/favicon.svg",
+            "/icon.svg",
+            "/icon.png",
+            "/logo.svg",
+            "/logo.png",
+            "/logo.webp",
+            "/brand.svg",
+            "/brand.png",
+            "/assets/logo.svg",
+            "/assets/logo.png",
+            "/images/logo.svg",
+            "/images/logo.png",
+            "/static/logo.svg",
+            "/static/logo.png",
+            "/vite.svg",
+        ):
+            got = download_image(origin + path)
+            if got:
+                return got
+
+    # Browser fallback on homepage-first variants.
+    for variant in _site_variants(site)[:2]:
+        got = fetch_logo_via_browser(variant)
+        if got:
+            return got
     return None
 
 
@@ -469,7 +733,9 @@ def upload_bitable_image(
             "parent_node": base_app_token,
             "size": str(len(file_bytes)),
         }
-        files = {"file": (file_name, io.BytesIO(file_bytes), "application/octet-stream")}
+        files = {
+            "file": (file_name, io.BytesIO(file_bytes), "application/octet-stream")
+        }
         resp = requests.post(
             f"{API}/drive/v1/medias/upload_all",
             headers={"Authorization": f"Bearer {token}"},

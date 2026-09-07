@@ -1,7 +1,4 @@
-"""Workflow: status → live → fetch site logo once into 项目logo (no poller retry on fail).
-
-Per record: HTTP scrape first; on failure Playwright second pass (see project_logo).
-"""
+"""Workflow: status → live → fetch site logo once into 项目logo (no retry on fail)."""
 
 from __future__ import annotations
 
@@ -9,18 +6,11 @@ import asyncio
 import json
 import logging
 import os
-from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-try:
-    from zoneinfo import ZoneInfo
-except ImportError:  # Python < 3.9
-    from backports.zoneinfo import ZoneInfo  # type: ignore
-
 from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.project_logo import fill_logo_for_record, pick_site_url
-from bot.workflow_events import append_event
 from bot.workflow_form_dispatch import _field_text
 
 if TYPE_CHECKING:
@@ -28,13 +18,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
-
-try:
-    TZ = ZoneInfo("Asia/Shanghai")
-except Exception:  # noqa: BLE001
-    TZ = timezone(timedelta(hours=8))
-
-LOGO_EVENTS_FILE = "data/logo_fill_events.jsonl"
 
 
 def _load_state(path: Path) -> tuple[set[str], dict[str, str]]:
@@ -51,44 +34,17 @@ def _load_state(path: Path) -> tuple[set[str], dict[str, str]]:
 
 def _save_state(path: Path, processed: set[str], results: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    existing: dict[str, Any] = {}
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            if isinstance(raw, dict):
-                existing = raw
-        except (OSError, json.JSONDecodeError):
-            existing = {}
-    existing["processed_record_ids"] = sorted(processed)
-    existing["results"] = results
     path.write_text(
-        json.dumps(existing, ensure_ascii=False, indent=2),
+        json.dumps(
+            {
+                "processed_record_ids": sorted(processed),
+                "results": results,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
         encoding="utf-8",
     )
-
-
-def _append_logo_event(
-    record_id: str,
-    status: str,
-    *,
-    project_name: str = "",
-) -> None:
-    """Append one logo attempt for calendar day drill-down (Asia/Shanghai)."""
-    now = datetime.now(TZ)
-    path = ROOT / LOGO_EVENTS_FILE
-    path.parent.mkdir(parents=True, exist_ok=True)
-    row = {
-        "ts": now.isoformat(timespec="seconds"),
-        "day": now.strftime("%Y-%m-%d"),
-        "record_id": record_id,
-        "project_name": project_name or record_id,
-        "status": status,
-    }
-    try:
-        with path.open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
-    except OSError:
-        logger.exception("logo-fill: failed appending event for %s", record_id)
 
 
 def _mark_processed(
@@ -97,26 +53,10 @@ def _mark_processed(
     results: dict[str, str],
     record_id: str,
     status: str,
-    *,
-    project_name: str = "",
-    emit_event: bool = True,
 ) -> None:
     processed.add(record_id)
     results[record_id] = status
     _save_state(path, processed, results)
-    if emit_event and status != "baseline_has_logo":
-        _append_logo_event(record_id, status, project_name=project_name)
-        if status.startswith("ok"):
-            append_event(
-                "logo_uploaded_lark",
-                "logo_fill",
-                project_name=project_name or record_id,
-                text=f"{project_name or record_id} 的 Logo 已自动上传到 Lark 表格",
-                status="success",
-                record_id=record_id,
-                result=status,
-                icon="image",
-            )
 
 
 async def fill_logo_for_fields(
@@ -140,17 +80,8 @@ async def fill_logo_for_fields(
     if record_id in processed:
         return results.get(record_id, "already_processed")
 
-    project_name = _field_text(fields, config.workflow_project_name_field) or record_id
-
     if fields.get(config.workflow_logo_field):
-        _mark_processed(
-            path,
-            processed,
-            results,
-            record_id,
-            "already_has_logo",
-            project_name=project_name,
-        )
+        _mark_processed(path, processed, results, record_id, "already_has_logo")
         try:
             from bot.metrics import record_logo_outcome
 
@@ -164,15 +95,9 @@ async def fill_logo_for_fields(
         config.workflow_live_link_field,
         config.workflow_project_link_field,
     )
+    project_name = _field_text(fields, config.workflow_project_name_field) or record_id
     if not site:
-        _mark_processed(
-            path,
-            processed,
-            results,
-            record_id,
-            "no_url",
-            project_name=project_name,
-        )
+        _mark_processed(path, processed, results, record_id, "no_url")
         try:
             from bot.metrics import record_logo_outcome
 
@@ -200,14 +125,7 @@ async def fill_logo_for_fields(
         logger.exception("logo-fill failed for %r (%s)", project_name, record_id)
 
     # Success or fail: never retry
-    _mark_processed(
-        path,
-        processed,
-        results,
-        record_id,
-        status,
-        project_name=project_name,
-    )
+    _mark_processed(path, processed, results, record_id, status)
     try:
         from bot.metrics import record_logo_outcome
 

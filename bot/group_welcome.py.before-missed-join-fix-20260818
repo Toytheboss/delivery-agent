@@ -510,9 +510,8 @@ async def baseline_existing_project_groups(
     Always runs on startup:
     - When scope expands (e.g. pilot → all) or first baseline: force-mark every
       currently known matching dialog, and clear pending.
-    - Once the baseline exists, leave unknown dialogs untouched. They represent
-      joins missed while the process was offline and the fallback scan must greet
-      them instead of silently swallowing them.
+    - Otherwise soft catch-up: mark unknown matching dialogs as greeted without
+      sending (so scans never backfill-greet old groups).
 
     When pilot_enabled, pilot groups stay unmarked so greet_pilot_groups_now
     can still send.
@@ -571,9 +570,10 @@ async def baseline_existing_project_groups(
             else:
                 greeted.add(chat_id)
         else:
-            # Do not mark unknown dialogs here. The fallback scan handles them
-            # as missed join events and de-duplicates by the live chat ID.
-            pass
+            # Soft catch-up: never send to unknown existing dialogs
+            if chat_id not in greeted and chat_id not in pending:
+                greeted.add(chat_id)
+                marked += 1
 
     if force:
         # Drop all pending on scope expand / first baseline so we never resume
@@ -597,6 +597,14 @@ async def baseline_existing_project_groups(
             len(greeted),
             pending_before,
             skipped_pilot,
+        )
+    elif marked:
+        logger.info(
+            "Welcome baseline catch-up: marked %d previously unseen group(s) as greeted "
+            "(no send); scope=%r total_greeted=%d",
+            marked,
+            scope_key,
+            len(greeted),
         )
     else:
         logger.info(
@@ -665,7 +673,11 @@ async def scan_new_project_groups(
     *,
     my_id: int | None = None,
 ) -> int:
-    """Recover missed join events and process pending welcomes exactly once."""
+    """Process pending welcomes only; silently baseline any other unmatched dialogs.
+
+    Never backfill-greet existing groups that were not explicitly pending
+    (pending comes from ChatAction join / empty new group wait).
+    """
     if not config.welcome_enabled:
         return 0
 
@@ -674,24 +686,13 @@ async def scan_new_project_groups(
     greeted = _as_int_set(state.get("greeted_chat_ids"))
     pending = _as_int_set(state.get("pending_chat_ids"))
     sent = 0
-    candidates: dict[int, tuple[object, str]] = {}
+    catchup = 0
 
-    # An unseen matching dialog is a join event that may have happened while
-    # the process was offline. Resolve migrated basic groups to their live
-    # supergroup and de-duplicate by the resulting Telegram chat ID.
+    # Soft catch-up: mark unknown matching dialogs as greeted (no send)
     async for dialog in client.iter_dialogs():
         entity = dialog.entity
         title = getattr(entity, "title", None) or ""
         if not title_matches_project(title, config.welcome_name_keywords):
-            continue
-        migrated = getattr(entity, "migrated_to", None)
-        if migrated is not None:
-            try:
-                entity = await client.get_entity(migrated)
-                title = getattr(entity, "title", None) or title
-            except Exception:  # noqa: BLE001
-                continue
-        if getattr(entity, "deactivated", False):
             continue
         try:
             chat_id = utils.get_peer_id(entity)
@@ -701,14 +702,20 @@ async def scan_new_project_groups(
             continue
         if config.pilot_enabled and not is_pilot_chat(config, chat_id):
             continue
-        candidates[int(chat_id)] = (entity, title)
+        greeted.add(chat_id)
+        catchup += 1
 
-    for chat_id, (_entity, title) in candidates.items():
-        _mark_pending(path, chat_id)
+    if catchup:
+        state = _load_state(path)
+        merged = _as_int_set(state.get("greeted_chat_ids")) | greeted
+        state["greeted_chat_ids"] = sorted(merged)
+        state["pending_chat_ids"] = sorted(
+            _as_int_set(state.get("pending_chat_ids"))
+        )
+        _save_state(path, state)
         logger.info(
-            "Welcome scan recovered missed join chat_id=%s title=%r",
-            chat_id,
-            title,
+            "Welcome scan catch-up: marked %d unseen group(s) as greeted (no send)",
+            catchup,
         )
 
     # Only attempt sends for explicitly pending chats (min_messages=0 → immediate)
@@ -874,10 +881,10 @@ async def welcome_scan_loop(
 ) -> None:
     interval = max(int(config.welcome_scan_interval_minutes or 2), 1) * 60
     while True:
+        await asyncio.sleep(interval)
         try:
             n = await scan_new_project_groups(client, config, my_id=my_id)
             if n:
                 logger.info("Welcome scan sent %d greeting(s)", n)
         except Exception:
             logger.exception("Welcome scan failed")
-        await asyncio.sleep(interval)

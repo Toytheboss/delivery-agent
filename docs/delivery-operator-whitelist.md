@@ -2,7 +2,7 @@
 
 面向交付同学：谁能触发交付动作、发什么口令、和「BD 忽略名单」有何区别。
 
-生产交付号：`@Roy4by4`（服务器 systemd 服务 `delivery-agent`）。
+生产交付号：`@Josh_0zh`（服务器 systemd 服务 `delivery-agent`）。
 
 ---
 
@@ -18,7 +18,7 @@
 |----------|------|
 | `@Josh_0zh` | 交付操作员 |
 | `@Xuanxi_zhao` | 交付操作员 |
-| `@Roy4by4` | 交付号本人（始终可用，无需写进 operators） |
+| `@Josh_0zh` | 交付号本人（始终可用，无需写进 operators） |
 | `@Trent_one` | QA 测试号（`qa_testers.yaml`，权限与操作员类似） |
 
 普通项目方、未列入上表的同事：**发口令无效**。
@@ -167,7 +167,7 @@ Workflow operator @xxx -> user_id=...
 2. 需要上线收尾时，单独发一行：`项目已上线`  
 3. Bot 会改飞书状态、发表单、尝试填 Logo  
 4. 只要表单时发：`发送上线表单`  
-5. 看周数据时私聊 `@Roy4by4` 发：`交付周报`  
+5. 看周数据时私聊 `@Josh_0zh` 发：`交付周报`
 
 当前可操作账号：`@Josh_0zh`、`@Xuanxi_zhao`，以及交付号本人。
 

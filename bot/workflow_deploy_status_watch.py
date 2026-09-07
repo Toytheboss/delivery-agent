@@ -76,7 +76,17 @@ def _state_path(config: "AppConfig") -> Path:
     raw = getattr(config, "workflow_deploy_status_watch_state_file", "") or (
         "data/deploy_status_watch_state.json"
     )
-    return ROOT / raw
+    path = Path(str(raw))
+    return path if path.is_absolute() else ROOT / path
+
+
+# Peer bots may own the live deploy-status watch state. Dashboard ROOT
+# often has no local events file while QA/delivery do — pick the richest.
+_PEER_DEPLOY_STATE_FILES = (
+    Path("/opt/botchain-qa-tg-bot/data/deploy_status_watch_state.json"),
+    Path("/opt/delivery-agent/data/deploy_status_watch_state.json"),
+    Path("/opt/josh-dashboard/data/deploy_status_watch_state.json"),
+)
 
 
 def _load_state(path: Path) -> dict[str, Any]:
@@ -124,10 +134,30 @@ def _is_relevant(old: str, new: str) -> bool:
     return status_kind(old) in _WATCHED_KINDS or status_kind(new) in _WATCHED_KINDS
 
 
+def _load_report_state(config: "AppConfig") -> dict[str, Any]:
+    """Load deploy watch state for reporting — prefer the file with most events."""
+    candidates: list[Path] = []
+    primary = _state_path(config)
+    candidates.append(primary)
+    for peer in _PEER_DEPLOY_STATE_FILES:
+        if peer not in candidates:
+            candidates.append(peer)
+    best = _load_state(primary)
+    best_n = len(best.get("events") or [])
+    for path in candidates[1:]:
+        if not path.is_file():
+            continue
+        state = _load_state(path)
+        n = len(state.get("events") or [])
+        if n > best_n:
+            best, best_n = state, n
+    return best
+
+
 def events_for_day(config: "AppConfig", day: str | None = None) -> list[dict[str, Any]]:
     """Return deploy-related status change events for a calendar day."""
     day = day or _today()
-    state = _load_state(_state_path(config))
+    state = _load_report_state(config)
     out = [e for e in state.get("events") or [] if str(e.get("date") or "") == day]
     out.sort(key=lambda e: (str(e.get("ts") or ""), str(e.get("name") or "")))
     return out
@@ -135,7 +165,7 @@ def events_for_day(config: "AppConfig", day: str | None = None) -> list[dict[str
 
 def events_since(config: "AppConfig", since: datetime) -> list[dict[str, Any]]:
     """Return deploy-related events with ts >= since (rolling window)."""
-    state = _load_state(_state_path(config))
+    state = _load_report_state(config)
     out: list[dict[str, Any]] = []
     for e in state.get("events") or []:
         ts = _parse_event_ts(e.get("ts"))
@@ -194,7 +224,6 @@ def _summarize_events(
     since: datetime | None = None,
 ) -> dict[str, Any]:
     entered_live: list[str] = []
-    entered_live_records: list[dict[str, str]] = []
     entered_main: list[str] = []
     left_main: list[str] = []
     entered_test: list[str] = []
@@ -208,9 +237,6 @@ def _summarize_events(
         old_k, new_k = status_kind(old), status_kind(new)
         if new_k == STATUS_KIND_LIVE and old_k != STATUS_KIND_LIVE:
             entered_live.append(name)
-            record_id = str(ev.get("record_id") or "").strip()
-            if record_id:
-                entered_live_records.append({"record_id": record_id, "name": name})
         if new_k == STATUS_KIND_MAIN_DEPLOY and old_k != STATUS_KIND_MAIN_DEPLOY:
             entered_main.append(name)
         if old_k == STATUS_KIND_MAIN_DEPLOY and new_k != STATUS_KIND_MAIN_DEPLOY:
@@ -226,12 +252,11 @@ def _summarize_events(
         "events": events,
         "lines": lines,
         "entered_mainnet_live": entered_live,
-        "entered_mainnet_live_records": entered_live_records,
         "entered_mainnet_deploy": entered_main,
         "left_mainnet_deploy": left_main,
         "entered_testnet_deploy": entered_test,
         "left_testnet_deploy": left_test,
-        "baselined": bool(_load_state(_state_path(config)).get("baselined_at")),
+        "baselined": bool(_load_report_state(config).get("baselined_at")),
     }
 
 

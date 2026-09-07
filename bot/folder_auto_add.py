@@ -24,7 +24,6 @@ from telethon.tl.types import (
 
 from bot.folder_scope import _folder_title
 from bot.group_welcome import title_matches_project
-from bot.workflow_events import append_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -412,14 +411,6 @@ async def ensure_chat_in_folders(
         inc("folder_auto_add_success")
     except Exception:  # noqa: BLE001
         pass
-    append_event(
-        "folder_chat_added",
-        "folder_auto_add",
-        project_name=chat_title,
-        text=f"{chat_title} 已加入 Telegram 文件夹 {name}",
-        chat_id=chat_id,
-        folder_name=name,
-    )
     return name
 
 

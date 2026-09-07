@@ -8,6 +8,7 @@ Usage:
 from __future__ import annotations
 
 import asyncio
+import getpass
 import json
 import os
 import sys
@@ -53,10 +54,7 @@ async def run(code: str, password: str | None) -> int:
         await client.sign_in(phone=phone, code=code, phone_code_hash=phone_code_hash)
     except SessionPasswordNeededError:
         if not password:
-            print("NEED_2FA=1")
-            print("ERROR: account has 2FA — re-run with password as 2nd arg")
-            await client.disconnect()
-            return 2
+            password = getpass.getpass("Telegram 2FA password: ")
         try:
             await client.sign_in(password=password)
         except PasswordHashInvalidError:
@@ -81,9 +79,6 @@ async def run(code: str, password: str | None) -> int:
 
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        print("Usage: server_login_complete.py <CODE> [2FA_PASSWORD]")
-        raise SystemExit(1)
-    code = sys.argv[1].strip()
+    code = sys.argv[1].strip() if len(sys.argv) > 1 else input("Telegram verification code: ").strip()
     pw = sys.argv[2] if len(sys.argv) > 2 else None
     raise SystemExit(asyncio.run(run(code, pw)))
