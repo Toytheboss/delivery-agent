@@ -13,8 +13,8 @@ if TYPE_CHECKING:
     from bot.knowledge import KnowledgeBase, SearchHit
 
 logger = logging.getLogger(__name__)
-
 NEEDS_HUMAN = "NEEDS_HUMAN"
+NO_REPLY_NEEDED = "NO_REPLY_NEEDED"
 
 PROVIDER_DEFAULTS = {
     "deepseek": {
@@ -276,7 +276,7 @@ def _rewrite_query_for_search(
     creds: LlmCredentials,
 ) -> str:
     """Rewrite casual Q into short CN+EN search keywords. Fall back to original."""
-    q = (question or "").strip()
+    q = _focus_question(question)
     if not q:
         return q
     try:
@@ -299,7 +299,7 @@ def _rewrite_query_for_search(
                         "No sentences, no quotes, no explanation."
                     ),
                 },
-                {"role": "user", "content": q[:400]},
+                {"role": "user", "content": q[:600]},
             ],
         )
         rewritten = (resp.choices[0].message.content or "").strip()
@@ -326,20 +326,66 @@ def _retrieve_hits(
 ) -> list[SearchHit]:
     """Search with rewritten query; if weak, also merge original-query hits."""
     top_k = max(int(config.top_k), 1)
-    search_q = question
+    focused_q = _focus_question(question)
+    search_q = focused_q
     if creds is not None:
-        search_q = _rewrite_query_for_search(question, config, creds)
-        if search_q != question:
-            logger.info("Query rewrite: %r → %r", question[:80], search_q[:80])
+        search_q = _rewrite_query_for_search(focused_q, config, creds)
+        if search_q != focused_q:
+            logger.info("Query rewrite: %r → %r", focused_q[:80], search_q[:80])
 
     primary = _hits_on_topic(question, kb.search(search_q, top_k=top_k))
     best = primary[0].score if primary else 0.0
     weak = (not primary) or (best < config.min_relevance_score)
 
-    if weak and search_q.strip().lower() != (question or "").strip().lower():
-        secondary = _hits_on_topic(question, kb.search(question, top_k=top_k))
+    # Long partner messages often put the actual question at the end. Always
+    # merge a direct-ask search for them, instead of relying on the first 400
+    # characters or a single rewritten query.
+    should_merge = weak or len((question or "").strip()) > 420
+    if should_merge and search_q.strip().lower() != focused_q.strip().lower():
+        secondary = _hits_on_topic(question, kb.search(focused_q, top_k=top_k))
         return _merge_hits(primary, secondary, top_k=top_k)
     return primary
+
+
+_DIRECT_ASK_START_RE = re.compile(
+    r"^\s*(?:what|how|where|when|why|who|which|can|could|would|should|"
+    r"is|are|do|does|did|will|please|kindly|"
+    r"为什么|怎么|如何|什么|哪|是否|能否|可不可以|请|麻烦)",
+    re.IGNORECASE,
+)
+
+
+def _focus_question(text: str) -> str:
+    """Extract the latest direct ask from a long project message for search.
+
+    The full message is still sent to the answer model. This only prevents
+    greetings, deployment logs and quoted history from drowning the actual ask.
+    """
+    raw = (text or "").strip()
+    if not raw or len(raw) <= 260:
+        return raw
+    units = [
+        part.strip(" \t\r\n·•-*")
+        for part in re.split(r"(?<=[?？.!。！])\s+|[\r\n]+", raw)
+        if part.strip()
+    ]
+    asks = [
+        part
+        for part in units
+        if "?" in part or "？" in part or _DIRECT_ASK_START_RE.search(part)
+    ]
+    if not asks:
+        return raw[-600:]
+    focused = asks[-1]
+    # Keep one preceding unit when the ask is too short ("What's next?").
+    if len(focused) < 80:
+        try:
+            idx = units.index(focused)
+        except ValueError:
+            idx = -1
+        if idx > 0:
+            focused = f"{units[idx - 1]} {focused}"
+    return focused[-600:]
 
 
 def detect_reply_language(question: str, config_language: str = "auto") -> str:
@@ -363,6 +409,46 @@ def detect_reply_language(question: str, config_language: str = "auto") -> str:
         return "en"
     # Default: Chinese for ambiguous / emoji-only project-side pings
     return "zh"
+
+
+# Short progress checks do not contain a support topic. Letting them enter the
+# keyword retriever makes generic words such as ``verify``/``not`` match a
+# concrete FAQ (for example BO Wallet attestation), which can produce a
+# confident but unrelated answer. These messages should stay silent until the
+# sender names the item they want checked.
+_PROGRESS_ONLY_PATTERNS = (
+    re.compile(
+        r"\b(?:let\s+me\s+)?(?:verify|check|confirm|see)\b.*\b"
+        r"(?:this|it|that)\b.*\b(?:done|complete|completed|finished|ready|resolved|fixed|working)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^(?:is|are|was|were|has|have)\s+(?:this|it|that)\s+"
+        r"(?:done|complete|completed|finished|ready|resolved|fixed|working)\??$",
+        re.IGNORECASE,
+    ),
+    re.compile(r"^(?:any|is there any)\s+(?:update|progress)\??$", re.IGNORECASE),
+    re.compile(r"^(?:(?:这个|这件事|这项|它|目前)\s*)?(?:还没|已经|是否|有没(?:有)?)?"
+               r"(?:完成|做完|结束|解决|修好|准备好|上线)(?:了吗|了没|没有|没|吗)?[。？！?！]?$"),
+)
+
+_EXPLICIT_SUPPORT_TOPIC_RE = re.compile(
+    r"\b(?:bo\s*wallet|wallet|rpc|wss|sdk|api|contract|address|mainnet|testnet|"
+    r"deploy(?:ment)?|integration|attestation|signature|lark|telegram|form|logo|"
+    r"botchain|chain|bridge|faucet|grant|token)\b"
+    r"|钱包|合约|地址|主网|测试网|部署|接入|集成|签名|验签|表单|Logo|日报|飞书|群",
+    re.IGNORECASE,
+)
+
+
+def _is_topicless_progress_check(question: str) -> bool:
+    """Return True for a short status check that names no concrete topic."""
+    text = re.sub(r"\s+", " ", (question or "").strip())
+    if not text or len(text) > 180:
+        return False
+    if _EXPLICIT_SUPPORT_TOPIC_RE.search(text):
+        return False
+    return any(pattern.search(text) for pattern in _PROGRESS_ONLY_PATTERNS)
 
 
 def _extract_labeled_answer(chunk_text: str, label: str) -> str:
@@ -437,7 +523,7 @@ def _fallback_compose(
     hits: list[SearchHit],
     lang: str,
     *,
-    min_score: float = 0.35,
+    min_score: float = 0.50,
 ) -> ReplyDecision:
     if not hits:
         return _silent_decision("no relevant knowledge", 0.0)
@@ -570,14 +656,24 @@ def _call_llm(
             "(proper nouns / tickers / URLs ok)."
         )
         system = (
-            "You're Josh (Delivery Agent delivery PM) typing in a Telegram project group — "
+            "You're Roy (Delivery Agent delivery PM) typing in a Telegram project group — "
             "not a helpdesk bot, not corporate support.\n"
             "Answer ONLY this question, ONLY from the context below.\n"
-            "If you are not confident the context directly answers it, stay silent.\n"
+            "First identify the partner's latest direct ask; long messages may contain "
+            "background, logs, or prior explanations before the real question.\n"
+            "If the message is only a progress update, acknowledgement, announcement, "
+            "launch/live notice (e.g. now live on BOT Chain Mainnet), congratulations, "
+            "or statement with no request, output exactly NO_REPLY_NEEDED.\n"
             "Grounding:\n"
             "- Context must match the same topic (Wallet SDK ≠ chain RPC; "
             "ecosystem grants ≠ internal delivery SOP).\n"
-            "- Off-topic, thin, missing, or only loosely related → output exactly "
+            "- If context supports a useful confirmed answer, diagnostic check, or next "
+            "step, answer that supported part. Clearly mark any remaining item that needs "
+            "manual verification; do not reject the entire question just because one detail "
+            "is missing.\n"            "- If context includes a matching FAQ block (【参考回答】 / labeled answer) that "
+            "covers the ask, you MUST answer that supported part — do not output only "
+            "NEEDS_HUMAN.\n"
+            "- Off-topic, missing, or only loosely related with no useful supported part → output exactly "
             "NEEDS_HUMAN (nothing else; the app will stay silent).\n"
             "- Prefer silence over a plausible-but-wrong reply. "
             "Don't pivot just because keywords overlap. Don't invent chain facts.\n"
@@ -593,7 +689,7 @@ def _call_llm(
             "'need the detailed list for which?' — just send the answer.\n"
             "- If several options fit, list them all (or the most relevant) "
             "with links in one go; don't ask the user to pick first.\n"
-            "- Truly don't know / context insufficient → NEEDS_HUMAN only "
+            "- Truly don't know / context has no useful supported part → NEEDS_HUMAN only "
             "(silent). Don't ask the user to clarify. Don't ping colleagues.\n"
             "Tone:\n"
             "1. Casual chat: short, natural, like a colleague — not an essay\n"
@@ -611,11 +707,14 @@ def _call_llm(
             "values and doc URL only. Do NOT add scolding asides like "
             "'only use official, don't use DM links' or 'don't copy from chat'"
         )
+        direct_ask = _focus_question(question)
         user = (
             "Reply language: English ONLY\n\n"
+            f"Latest direct ask for focus:\n{direct_ask}\n\n"
             f"Question:\n{question}\n\n"
             f"Context (may be Chinese — answer in English; "
-            f"if it doesn't answer THIS question, output only NEEDS_HUMAN):\n{context}"
+            f"if it provides no useful supported answer or diagnostic step, "
+            f"output only NEEDS_HUMAN):\n{context}"
         )
     else:
         language_rule = (
@@ -623,13 +722,17 @@ def _call_llm(
             "资料里有英文也用中文转述，不要整段英文答。"
         )
         system = (
-            "你是 Delivery Agent PM Josh，在 Telegram 项目群里跟项目方聊天——"
+            "你是 Delivery Agent PM Roy，在 Telegram 项目群里跟项目方聊天——"
             "像同事打字，不像客服机器人，也不要公文腔。\n"
             "只答当前问题，且只能依据下面资料。\n"
-            "没把握对上题意时保持沉默，不要硬答。\n"
+            "先识别对方最后一个真正的问题；长消息前面往往是背景、日志或已尝试的步骤。\n"
+            "如果只是进度同步、致谢、上线/Live 公告、恭喜或普通陈述，没有要求回答，只输出 NO_REPLY_NEEDED。\n"
             "依据：\n"
             "- 资料要对上同一主题（钱包 SDK ≠ 链 RPC；生态支持 ≠ 内部交付 SOP）\n"
-            "- 跑题、太薄、答不上、或只是擦边相关 → 只输出 NEEDS_HUMAN"
+            "- 资料能支持有用的已确认结论、排查步骤或下一步时，先回答有依据的部分；"
+            "剩余部分明确说需要人工核查，不要因为少一个细节就整体拒答\n"
+            "- 若资料里有对得上的 FAQ/【参考回答】，必须先回答有依据的部分，禁止只输出 NEEDS_HUMAN\n"
+            "- 跑题、缺失、或只是擦边相关，且没有任何可靠的有用部分 → 只输出 NEEDS_HUMAN"
             "（别多写；系统会保持沉默不回复）\n"
             "- 宁可沉默，也不要用擦边资料凑一篇看似相关的回复；"
             "别因为关键词碰巧重合就换题答；链上事实别编\n"
@@ -642,7 +745,7 @@ def _call_llm(
             "「需要我再发吗」「要我单独发你吗」——直接把内容发出去。\n"
             "- 若有多个选项/多家资料，一次列全（或列最相关几条并带链接），"
             "不要先问对方要哪家。\n"
-            "- 真不知道 / 资料不够 → 只输出 NEEDS_HUMAN（沉默）。"
+            "- 真不知道 / 资料没有任何可靠的有用部分 → 只输出 NEEDS_HUMAN（沉默）。"
             "不要让用户补充信息，不要拉同事。\n"
             "口吻：\n"
             "1. 口语、短、自然；别长篇，别端着\n"
@@ -659,11 +762,13 @@ def _call_llm(
             "不要加训诫式附言，例如「以官方为准，别用私聊发的」"
             "「不要用私聊节点」「别抄错」这类；需要出处就静静附上官方链接"
         )
+        direct_ask = _focus_question(question)
         user = (
             "回复语言：仅中文\n\n"
+            f"需要聚焦的最后一个问题：\n{direct_ask}\n\n"
             f"问题：\n{question}\n\n"
             f"资料上下文（若含英文，用中文转述要点；"
-            f"若不能直接回答这个问题，只输出 NEEDS_HUMAN）：\n{context}"
+            f"若没有任何有依据的结论或排查步骤，只输出 NEEDS_HUMAN）：\n{context}"
         )
 
     system = f"{language_rule}\n\n{system}"
@@ -684,12 +789,43 @@ def _call_llm(
     return (response.choices[0].message.content or "").strip()
 
 
+
+def _is_formal_kb_source(source: str) -> bool:
+    """Curated FAQ/docs — not free-form learned absorb notes."""
+    s = (source or "").replace("\\", "/")
+    if s.startswith("learned/") or "/learned/" in s:
+        return False
+    if s.startswith("lark_") or "/lark_" in s:
+        return False
+    return True
+
+
+def _has_strong_formal_hit(hits: list[SearchHit], min_score: float = 0.80) -> bool:
+    if not hits:
+        return False
+    best = hits[0]
+    return best.score >= min_score and _is_formal_kb_source(best.chunk.source)
+
+
 async def generate_reply(
     question: str,
     kb: KnowledgeBase,
     config: AppConfig,
 ) -> ReplyDecision:
     lang = detect_reply_language(question, config.reply_language)
+
+    if _is_topicless_progress_check(question):
+        logger.info("Silencing topicless progress check: %r", question[:120])
+        return _silent_decision("topicless progress check", language=lang)
+
+    # "Please verify @someone" — human only; skip retrieval entirely.
+    try:
+        from bot.triggers import is_human_verify_request
+    except Exception:  # noqa: BLE001
+        is_human_verify_request = None  # type: ignore
+    if is_human_verify_request is not None and is_human_verify_request(question):
+        logger.info("Silencing human verify request (no retrieval): %r", question[:120])
+        return _silent_decision("human_verify_request", language=lang)
 
     # Sensitive commercial topics: stay silent.
     if _contains_blocked_topic(question, config.blocked_topics):
@@ -724,7 +860,21 @@ async def generate_reply(
             question, hits, lang, min_score=config.min_relevance_score
         )
 
+    if NO_REPLY_NEEDED in answer:
+        return _silent_decision("no reply needed", best_score, language=lang)
+
     if NEEDS_HUMAN in answer or not answer.strip():
+        # High-confidence curated FAQ hit: answer from retrieval instead of going silent.
+        if _has_strong_formal_hit(hits, min_score=0.80):
+            logger.info(
+                "LLM returned NEEDS_HUMAN but formal FAQ hit is strong "
+                "(score=%.3f, src=%s) — using retrieval fallback",
+                best_score,
+                hits[0].chunk.source,
+            )
+            return _fallback_compose(
+                question, hits, lang, min_score=config.min_relevance_score
+            )
         return _silent_decision("llm needs human", best_score, language=lang)
 
     answer = re.sub(r"\s*NEEDS_HUMAN\s*", "", answer).strip()

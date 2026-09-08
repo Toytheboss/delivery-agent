@@ -15,7 +15,7 @@ RELATED_RE = re.compile(r"【相关问题】\s*(.+)")
 KEYWORDS_RE = re.compile(r"【关键词】\s*(.+)")
 
 # Internal process docs — not for answering project-partner questions
-EXCLUDE_SOURCE_PREFIXES = ("lark_",)
+EXCLUDE_SOURCE_PREFIXES = ("lark_", "_quarantine/", "learned/_quarantine/")
 
 # Expand query tokens so 支持≈扶持, 方案≈计划, etc.
 _SYNONYM_GROUPS: tuple[frozenset[str], ...] = (
@@ -133,7 +133,7 @@ def _chunk_mentions(chunk: Chunk, term: str) -> bool:
             or re.search(r"(?<![a-z])grant(?![a-z])", blob) is not None
         )
     if term == "wallet":
-        # Avoid false positives like example.com
+        # Avoid false positives like dex-wallet.botchain.ai
         return (
             "bo wallet" in blob
             or "钱包" in chunk.text
@@ -319,6 +319,9 @@ class KnowledgeBase:
                 continue
             suffix = path.suffix.lower()
             try:
+                rel_probe = str(path.relative_to(self.directory)).replace("\\", "/")
+                if "/_quarantine/" in f"/{rel_probe}/" or rel_probe.startswith("_quarantine/"):
+                    continue
                 if suffix == ".csv":
                     self._chunks.extend(_load_csv_rows(path))
                 elif suffix in {".md", ".txt"}:
@@ -406,6 +409,9 @@ class KnowledgeBase:
                 score += 0.15
             if "【相关问题】" in chunk.text and q_overlap:
                 score += 0.12
+                # Prefer curated FAQ / CSV over free-form learned notes.
+                if not is_learned:
+                    score += 0.22
             # Learned answer body that shares contentful CJK/English terms
             if is_learned and body_overlap:
                 contentful = {
@@ -417,7 +423,7 @@ class KnowledgeBase:
                 }
                 hit_c = contentful & body_overlap
                 if hit_c and contentful:
-                    score += 0.35 * (len(hit_c) / max(len(contentful), 1))
+                    score += 0.22 * (len(hit_c) / max(len(contentful), 1))
 
             # Do not hard-cap at 1.0: uncapped relative order matters when many
             # chunks share generic tokens (mainnet / contract / addresses…).

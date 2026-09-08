@@ -20,11 +20,12 @@ QUESTION_MARKERS = re.compile(
 # Short acknowledgements / chitchat — never enter FAQ.
 _ACK_RE = re.compile(
     r"^\s*("
-    r"will do|got it|sounds good|makes sense|noted|lgtm|cool|sure|ok(?:ay)?|"
+    r"will do|got it|sounds good|makes sense|noted(?:\s+\w+)?|lgtm|cool|sure+|ok(?:ay|ey|ok)?|"
     r"thanks?(?:\s+you)?|thx|ty|np|no problem|all good|roger(?:\s+that)?|"
-    r"yup|yeah|yes|done|perfect|awesome|great|"
-    r"好的|收到|明白|了解|嗯+|行|可以|没问题|谢谢|感谢|好勒|搞定"
-    r")[\s!.。！~…👍✅🙏]*$",
+    r"alright|awesome|congrats?(?:ulations)?|perfect|y(?:ep|up)|yes(?:\s+yes)?|"
+    r"filled(?:\s+it(?:\s+out)?)?|done(?:\s+submitted)?|submitted|finalised|finalized|"
+    r"好的|收到|明白|了解|嗯+|行|可以|没问题|谢谢|感谢|好勒|搞定|好哒|真棒|恭喜"
+    r")[\s!.。！~…🙏👍👏🥳]*$",
     re.IGNORECASE,
 )
 
@@ -44,45 +45,33 @@ _SOFT_CLOSE_ACK_RE = re.compile(
     r"[\s,.，。!！~…👍🙏]*)*$"
 )
 
+# Form / checklist completion acknowledgements (allow short trailing thanks).
+_FORM_ACK_RE = re.compile(
+    r"(?is)^\s*("
+    r"(?:i\s+)?(?:just\s+)?(?:filled(?:\s+it(?:\s+out)?)?|submitted|finalised|finalized)"
+    r"(?:\s+(?:the\s+)?form)?|"
+    r"done(?:\s+submitted)?|form\s+filled|已填|填好了|提交了|交了"
+    r")"
+    r"(?:[\s,.，。!！~…🙏👍]*"
+    r"(?:thanks?(?:\s+you)?|thx|谢谢|感谢)?)?"
+    r"[\s,.，。!！~…🙏👍]*$"
+)
 
+
+# Social greetings / post shares — casual emoji reply, not FAQ.
 _SOCIAL_GREETING_RE = re.compile(
     r"^\s*("
-    r"gm|gn|good\s*morning|good\s*evening|good\s*night|"
-    r"hello|hiya|hey(?:\s+team)?|hi(?:\s+team)?|"
+    r"(?:gm\s*)+|gn|good\s*morning|good\s*evening|good\s*night|"
+    r"hello|hiya|hey(?:\s+team)?|hi(?:\s+team)?|howdy(?:\s+bruv)?|"
+    r"(?:great|nice|good|pleasure)\s+to\s+meet\s+you(?:\s+all)?|"
+    r"pleased\s+to\s+meet\s+you|"
+    r"(?:how(?:'\s*)?s?\s+it\s+going|how\s+are\s+you(?:\s+doing)?|"
+    r"how\s+you\s+doing|and\s+you)\??|"
+    r"很高兴认识你(?:们)?|幸会|久仰|"
     r"早|早上好|晚安|大家好"
-    r")[\s!.。！~…❤️☀️🙏👋🔥🚀✨😊]*$",
+    r")[\s!.。！~…❤️☀️🙏👋🔥🚀✨😊?？]*$",
     re.IGNORECASE,
 )
-
-_SOCIAL_GREETING_LOOSE_RE = re.compile(
-    r"^\s*("
-    r"gm|gn|good\s*morning|good\s*evening|good\s*night|"
-    r"hello|hiya|hey|hi|"
-    r"早|早上好|晚安|大家好"
-    r")"
-    r"(?:\s+[@\w][\w.\-]*){0,4}"
-    r"[\s!.。！~…❤️☀️🙏👋🔥🚀✨😊]*$",
-    re.IGNORECASE,
-)
-
-_ACK_LOOSE_RE = re.compile(
-    r"^\s*("
-    r"(?:yup|yeah|yes|yep|ok(?:ay)?|noted|done|cool|sure|perfect|awesome|great|"
-    r"will do|got it|sounds good|all good|lgtm|"
-    r"thanks?(?:\s+you)?|thx|ty|"
-    r"好的|收到|明白|了解|谢谢|感谢|搞定)"
-    r")"
-    r"(?:"
-    r"[\s,，.。!！~…👍✅🙏😅❤️]*|"
-    r"\s+(?:already\s+done|done|submitted|all|everyone|guys|team|alot|a\s+lot|"
-    r"allow\s+us\s+little\s+time|little\s+time|for\s+now|too|then|boss|"
-    r"everything\s+is\s+fine|i(?:['’]?m)?\s*(?:good|in)|"
-    r"not\s+yet|will\s+do|got\s+it|"
-    r"大家|各位|啦|哦|呀|哈)"
-    r"){0,6}$",
-    re.IGNORECASE,
-)
-
 _X_LINK_RE = re.compile(
     r"https?://(?:(?:www|mobile)\.)?(?:x\.com|twitter\.com|t\.co)/\S+",
     re.IGNORECASE,
@@ -96,115 +85,133 @@ _SHARE_CAPTION_RE = re.compile(
 _QUESTIONISH_RE = re.compile(
     r"[\?？]"
     r"|\b(can|could|would|should|what|how|where|when|why|who|which|"
-    r"align|clarify|confirm|please (?:share|advise|help|check|fill)|"
-    r"any\s+(?:update|word|news|feedback)|update\s+on)\b"
-    r"|吗|怎么|如何|什么|是否|能不能|可不可以",
+    r"align|clarify|confirm|please (?:share|advise))\b",
     re.IGNORECASE,
 )
 
-_BUILDERS_WELCOME_RE = re.compile(
-    r"welcome\s+to\s+bot\s*chain\s+builders\s+hub",
+# Clear project updates / acknowledgements that may mention Roy or contain
+# delivery keywords, but do not ask the bot to do or explain anything.  These
+# should be recorded as "no reply needed", not as failed FAQ answers.
+_NON_ACTIONABLE_UPDATE_RE = re.compile(
+    r"\b("
+    r"quick\s+update|status\s+update|just\s+an?\s+update|"
+    r"on\s+it|it\s+works(?:\s+now)?|works\s+now|"
+    r"we(?:'ve|\s+have)\s+(?:completed|finished|deployed|submitted|updated)|"
+    r"(?:is|are|still)\s+in\s+progress|will\s+be\s+ready|"
+    r"we\s+will\s+(?:inform|update|announce|engage)|"
+    r"we\s+need\s+\d+\s*[-–]\s*\d+\s+days|"
+    r"testnet.*(?:done|complete|in\s+doc|ready)|"
+    r"for\s+now.*(?:okay|fine|good)|"
+    r"thanks?\s+(?:for|roy\b)|thank\s+you\s+for|"
+    r"got\s+it|makes\s+sense|sounds\s+good|"
+    r"new\s+(?:x|twitter)\s+post|just\s+posted|"
+    r"now\s+live(?:\s+on\s+(?:bot\s*)?chain(?:\s+mainnet)?)?|"
+    r"(?:is|are)\s+(?:now\s+)?live\s+on\s+(?:bot\s*)?chain(?:\s+mainnet)?|"
+    r"officially\s+deployed\s+on\s+(?:bot\s*)?chain"
+    r")\b"
+    r"|(?:进度|状态)(?:同步|更新)"
+    r"|(?:已经|已)(?:完成|部署|提交|更新|解决)"
+    r"|(?:正在|仍在)(?:处理|进行|开发|部署)"
+    r"|(?:后续|完成后)(?:通知|同步|更新)"
+    r"|(?:已上线|正式上线|主网上线)",
     re.IGNORECASE,
 )
 
-_FORM_BLAST_RE = re.compile(
-    r"(forms\.gle/|docs\.google\.com/forms/|"
-    r"congrats!.{0,80}live\s+on\s+bot\s*chain|"
-    r"follow-?up\s+onboarding|"
-    r"friendly\s+reminder.{0,60}onboarding\s+form)",
-    re.IGNORECASE | re.DOTALL,
-)
-
-_TECH_HINT_RE = re.compile(
-    r"\b(deploy|mainnet|testnet|contract|rpc|chainid|gas|wallet|token|"
-    r"bridge|sdk|api|abi|solidity|audit|grant|proposal|pr\b|debug|node|"
-    r"合约|主网|测试网|部署|钱包|节点)\b",
+# A message can omit a question mark and still contain a real request.  Keep
+# these in the FAQ/human-decision path even if they also contain update words.
+_ACTION_REQUEST_RE = re.compile(
+    r"\b("
+    r"please\s+(?:check|help|advise|confirm|share|send|provide|review)|"
+    r"need\s+(?:your|you\s+to|help|support|from\s+you)|"
+    r"could\s+use\s+(?:your\s+)?help|"
+    r"the\s+(?:issue|problem)\s+is|"
+    r"unable\s+to|cannot\s+|can't\s+|blocked\s+by|"
+    r"what\s+we\s+need\s+from\s+you|"
+    r"additional\s+(?:help|step|support|information)"
+    r")\b"
+    r"|(?:请|麻烦)(?:检查|确认|提供|协助|帮忙|回复)"
+    r"|(?:需要|希望)(?:你|你们|协助|帮助|支持)"
+    r"|(?:问题|异常|错误)(?:是|在于|仍然|还在)",
     re.IGNORECASE,
 )
 
+# @username / @channel style tokens (Telegram usernames)
 _MENTION_TOKEN_RE = re.compile(r"@[\w\d_]{3,32}", re.IGNORECASE)
+# leftover after stripping mentions: whitespace / punctuation only
 _TRIVIAL_RE = re.compile(r"^[\s\W_]*$", re.UNICODE)
 
+# XOR into casual-reply RNG so sibling bots never pick the same line
+_CASUAL_REPLY_SEED_SALT = 5394265
+
 _SOCIAL_REPLIES_EN = (
-    "Hey! Good to see you 👋",
-    "gm — hope your day's going well ☀️",
-    "Hi there! Nice to hear from you 🙌",
-    "Hey hey 👋 how's it going?",
-    "gm gm! ☀️",
-    "Hello! Hope you're doing well ✨",
+    "Hey! 👋",
+    "Nice to meet you too 🙌",
+    "gm! ☀️",
+    "Hi — good to connect",
+    "Hey there 👋",
+    "Welcome! ✨",
 )
 
 _SOCIAL_REPLIES_ZH = (
-    "你好呀 👋",
-    "早上好，今天顺利吗 ☀️",
-    "嗨，看到你了 🙌",
-    "你好～有事随时说 ✨",
-    "早 ☀️",
-    "在的，你好 👋",
+    "你好 👋",
+    "幸会～",
+    "早呀 ☀️",
+    "嗨嗨",
+    "见到你很高兴 ✨",
+    "在的 👋",
 )
 
 _SHARE_REPLIES_EN = (
-    "Nice — thanks for sharing! 🔥",
-    "Love it, appreciate you posting 🙌",
-    "Awesome update 🚀",
-    "Looks great, thanks for the shoutout! ✨",
-    "Saw it — nice work! 🔥🙌",
+    "Nice post 🔥",
+    "Love this, thanks for sharing 🙌",
+    "Clean update 🚀",
+    "Great share — cheers! ✨",
+    "Saw the post, solid 🔥",
 )
 
 _SHARE_REPLIES_ZH = (
-    "收到，赞一个 🙌",
-    "发得漂亮 🔥",
-    "辛苦了，支持！🚀",
-    "看到了，很棒 ✨",
-    "好的，谢谢分享 🙏🔥",
+    "好看 🔥",
+    "感谢分享 🙌",
+    "这条不错 🚀",
+    "已阅，赞 ✨",
+    "支持一波 🙏",
 )
 
+# Short ack replies — casual, never FAQ.
 _ACK_REPLIES_EN = (
-    "Got it, thanks! 👍",
-    "Appreciate the update 🙌",
-    "Nice, noted!",
-    "Perfect, thanks 👌",
-    "Cool — thanks for letting me know 👍",
-    "Sounds good!",
-    "Alright, thanks! ✨",
+    "👍",
+    "Got it 👍",
+    "Cool 🙌",
+    "Works for me!",
+    "Perfect 👌",
+    "Alright!",
+    "Noted 👍",
+    "👍👍",
 )
-
 _ACK_REPLIES_ZH = (
-    "收到，谢谢 👍",
-    "好的，了解了 🙌",
-    "嗯嗯，记下了",
-    "辛苦了 👌",
-    "好嘞～",
-    "没问题 🙌",
-    "收到～有进展再喊我",
+    "👍",
+    "好的 👍",
+    "收到～",
+    "嗯嗯",
+    "OK 👌",
+    "好嘞",
+    "可以可以 🙌",
+    "行～",
+    "好的好的 🙌",
+    "也谢谢耐心～",
 )
 _CLOSE_ACK_REPLIES_EN = (
-    "All good — thanks for hanging in there.",
-    "Appreciate it on our side too.",
-    "Nice, thanks for the patience.",
-    "Perfect — glad we got there.",
+    "all good 🙌",
+    "appreciate you too 👍",
+    "nice — thanks for the patience",
+    "perfect, we're good",
 )
 _CLOSE_ACK_REPLIES_ZH = (
-    "好的，也谢谢耐心。",
-    "搞定就好，有事再说。",
-    "收到，辛苦了。",
+    "好的好的 🙌",
+    "也谢谢耐心～",
+    "搞定～",
 )
 
-
-
-def _strip_mentions(text: str) -> str:
-    without = _MENTION_TOKEN_RE.sub(" ", text or "")
-    return re.sub(r"\s+", " ", without).strip()
-
-
-def is_builders_welcome_blast(text: str) -> bool:
-    """Community welcome template — ignore for FAQ and human-review."""
-    return bool(_BUILDERS_WELCOME_RE.search(text or ""))
-
-
-def is_outbound_form_blast(text: str) -> bool:
-    """Congrats / Google Form onboarding copy — not a project question."""
-    return bool(_FORM_BLAST_RE.search(text or ""))
 
 
 
@@ -238,33 +245,35 @@ def is_social_chitchat(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped or len(stripped) > 420:
         return False
-    if is_builders_welcome_blast(stripped) or is_outbound_form_blast(stripped):
-        return False
-    without_mentions = _strip_mentions(stripped)
+    without_mentions = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without_mentions = re.sub(r"\s+", " ", without_mentions).strip()
     if not without_mentions:
         return False
-    if re.search(r"[\?？]", without_mentions):
-        return False
-    if _QUESTIONISH_RE.search(without_mentions):
-        # Allow pure/loose greeting only when no strong ask body.
-        if not (
-            _SOCIAL_GREETING_RE.match(without_mentions)
-            or (
-                len(without_mentions) <= 48
-                and _SOCIAL_GREETING_LOOSE_RE.match(without_mentions)
-            )
-        ):
-            return False
     if _SOCIAL_GREETING_RE.match(without_mentions):
         return True
-    if len(without_mentions) <= 64 and _SOCIAL_GREETING_LOOSE_RE.match(without_mentions):
-        if not _TECH_HINT_RE.search(without_mentions):
-            return True
+    # Short greeting with a name prefix: "Yo Clem gm gm. howdy bruv?"
+    if (
+        len(without_mentions) <= 90
+        and not _ACTION_REQUEST_RE.search(without_mentions)
+        and re.search(
+            r"(?i)\b((?:gm\s*)+|gn|howdy|good\s*morning|good\s*evening|nice\s+to\s+meet)\b",
+            without_mentions,
+        )
+        and not re.search(
+            r"(?i)\b(deploy|mainnet|contract|wallet|audit|grant|sdk|rpc|form|verify|"
+            r"what|how|when|where|why|who|which|can|could|would|should)\b",
+            without_mentions,
+        )
+    ):
+        return True
     if not _X_LINK_RE.search(stripped):
         return False
+    # Real asks mixed with a link → leave for FAQ / human
     if _QUESTIONISH_RE.search(stripped):
         return False
-    caption = _strip_mentions(_X_LINK_RE.sub(" ", stripped))
+    caption = _X_LINK_RE.sub(" ", stripped)
+    caption = _MENTION_TOKEN_RE.sub(" ", caption)
+    caption = re.sub(r"\s+", " ", caption).strip()
     if len(caption) <= 100:
         return True
     if _SHARE_CAPTION_RE.search(stripped) and len(caption) <= 180:
@@ -281,7 +290,7 @@ def pick_social_reply(text: str, *, seed: int | None = None) -> str:
         pool = _SHARE_REPLIES_ZH if cjk >= 2 else _SHARE_REPLIES_EN
     else:
         pool = _SOCIAL_REPLIES_ZH if cjk >= 2 else _SOCIAL_REPLIES_EN
-    rng = random.Random(seed)
+    rng = random.Random((seed or 0) ^ _CASUAL_REPLY_SEED_SALT)
     return rng.choice(pool)
 
 
@@ -297,7 +306,7 @@ def pick_ack_reply(text: str, *, seed: int | None = None) -> str:
         pool = _CLOSE_ACK_REPLIES_ZH if cjk >= 1 else _CLOSE_ACK_REPLIES_EN
     else:
         pool = _ACK_REPLIES_ZH if cjk >= 1 else _ACK_REPLIES_EN
-    rng = random.Random(seed)
+    rng = random.Random((seed or 0) ^ _CASUAL_REPLY_SEED_SALT)
     return rng.choice(pool)
 
 def pick_casual_reply(text: str, *, seed: int | None = None) -> str:
@@ -305,12 +314,6 @@ def pick_casual_reply(text: str, *, seed: int | None = None) -> str:
     if is_social_chitchat(text):
         return pick_social_reply(text, seed=seed)
     return pick_ack_reply(text, seed=seed)
-
-
-def is_casual_message(text: str) -> bool:
-    """Greeting, share, or short ack — safe for warm casual auto-reply."""
-    return is_social_chitchat(text) or is_ack_or_chitchat(text)
-
 
 
 def is_qa_tester(
@@ -354,21 +357,6 @@ def is_workflow_operator(
 
 
 def mentions_me(message: Message, my_id: int, my_username: str | None) -> bool:
-    if explicitly_mentions_me(message, my_id, my_username):
-        return True
-
-    if message.is_reply:
-        reply = message.reply_to
-        if reply and getattr(reply, "sender_id", None) == my_id:
-            return True
-
-    return False
-
-
-def explicitly_mentions_me(
-    message: Message, my_id: int, my_username: str | None
-) -> bool:
-    """True only for an explicit @username / mention entity, not a reply."""
     if getattr(message, "mentioned", False):
         return True
 
@@ -388,7 +376,102 @@ def explicitly_mentions_me(
         if user_id == my_id:
             return True
 
+    if message.is_reply:
+        reply = message.reply_to
+        if reply and getattr(reply, "sender_id", None) == my_id:
+            return True
+
     return False
+
+
+
+# Delivery-team alerts: verify asks + mainnet go-live notices.
+# Never FAQ / never retrieval — queue human_review + Lark 交付部.
+_VERIFY_ASK_RE = re.compile(
+    r"(?is)\b("
+    r"(?:please|kindly|pls)\s+(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
+    r"(?:can|could|would)\s+you\s+(?:please\s+|kindly\s+)?"
+    r"(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
+    r"help\s+(?:me\s+)?(?:to\s+)?verify|"
+    r"verify\s+(?:the\s+)?(?:mainnet|deployment|deploy(?:ed)?|contract|contracts|"
+    r"dapp|front\s*end|frontend|site|website|it|this|here|now|everything)|"
+    r"mainnet\s+verif(?:y|ication)|"
+    r"verif(?:y|ication)\s+(?:on\s+)?mainnet|"
+    r"mainnet\s+verification|"
+    r"verify\s+(?:and\s+)?(?:let|check|look)"
+    r")\b"
+    r"|(?:请|麻烦|帮忙).{0,10}(?:核实|验证|核查)"
+    r"|主网.{0,8}(?:核实|验证|核查)|(?:核实|验证|核查).{0,8}主网"
+)
+_MAINNET_LIVE_RE = re.compile(
+    r"(?is)\b("
+    r"now\s+live\s+on\s+(?:bot\s*)?chain(?:\s+mainnet)?|"
+    r"(?:is|are)\s+(?:now\s+)?live\s+on\s+(?:bot\s*)?chain(?:\s+mainnet)?|"
+    r"officially\s+deployed\s+on\s+(?:bot\s*)?chain(?:\s+mainnet)?|"
+    r"live\s+on\s+bot\s*chain\s+mainnet|"
+    r"deployed\s+on\s+bot\s*chain\s+mainnet"
+    r")\b"
+    r"|(?:已上线|正式上线|主网上线)"
+)
+_VERIFY_TECH_EXCLUDE_RE = re.compile(
+    r"(?is)\b("
+    r"how\s+to\s+verify|programmatically|blockscout|attestation|isBoWallet|"
+    r"signature\s+verif|verify\s+that\s+a\s+signature|wallet-specific|"
+    r"sdk|oracle|chainlink|grant\s+structure"
+    r")\b"
+    r"|怎么验证签名|签名验证|预言机"
+)
+_VERIFY_SELF_RE = re.compile(
+    r"(?is)^\s*(?:ok[,.]?\s+|okay[,.]?\s+|sure[,.]?\s+)?"
+    r"(?:let\s+me|i(?:\'|\s+a)?ll|i\s+will|i\s+can|we(?:\'|\s+wi)?ll)\s+verify\b"
+)
+_VERIFY_NEGATE_RE = re.compile(
+    r"(?is)\b(?:don\'?t|do\s+not|no\s+need|need\s+not|不必|不需要|不用).{0,24}verif"
+)
+
+
+def delivery_alert_kind(text: str) -> str | None:
+    """Return alert kind for Lark/看板, or None if not an alert.
+
+    - ``verify``: ask delivery to verify / mainnet verification status
+    - ``mainnet_live``: project announces live on BOT Chain Mainnet
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return None
+    without = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without = re.sub(r"\s+", " ", without).strip()
+    if not without:
+        return None
+
+    # Mainnet go-live announcements (allow longer posts with contract links)
+    if len(without) <= 1200 and _MAINNET_LIVE_RE.search(without):
+        if not _VERIFY_TECH_EXCLUDE_RE.search(without):
+            return "mainnet_live"
+
+    if len(without) > 500:
+        return None
+    if _VERIFY_TECH_EXCLUDE_RE.search(without):
+        return None
+    if _VERIFY_SELF_RE.search(without):
+        return None
+    if _VERIFY_NEGATE_RE.search(without):
+        return None
+    if _VERIFY_ASK_RE.search(without):
+        return "verify"
+    # Bare short "verify" / "mainnet verify" after stripping mentions
+    if len(without) <= 80 and re.search(
+        r"(?is)^(?:hey|hi|hello)?[\s,]*"
+        r"(?:mainnet\s+)?verif(?:y|ication)(?:\s+mainnet)?[\s!.。！?？~…🙏👍]*$",
+        without,
+    ):
+        return "verify"
+    return None
+
+
+def is_human_verify_request(text: str) -> bool:
+    """True for delivery verify / mainnet-live alerts (no FAQ retrieval)."""
+    return delivery_alert_kind(text) is not None
 
 
 def is_ack_or_chitchat(text: str) -> bool:
@@ -396,39 +479,36 @@ def is_ack_or_chitchat(text: str) -> bool:
     stripped = (text or "").strip()
     if not stripped:
         return True
-    if is_builders_welcome_blast(stripped) or is_outbound_form_blast(stripped):
-        return False
-    without = _strip_mentions(stripped)
+    without = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without = re.sub(r"\s+", " ", without).strip()
     if not without:
         # Bare @mention ping (e.g. @all) is not an acknowledgement.
         return False
-    if re.search(r"[\?？]", without) or _TECH_HINT_RE.search(without):
-        return False
-    if _QUESTIONISH_RE.search(without) and not re.match(
-        r"(?is)^(thanks?|thx|ty|noted|ok(?:ay)?|yup|yeah|yes)\b", without
-    ):
-        return False
     if _ACK_RE.match(without):
         return True
-    if len(without) <= 80 and _ACK_LOOSE_RE.match(without):
-        return True
-    if len(without) <= 48 and re.match(
-        r"(?is)^(that was quick|its approved|it'?s approved|check your dm|"
-        r"oh!?\s*noted|noted\b.*little time|noted\b.*thanks|"
-        r"i know[,.]?\s*i was just telling you|"
-        r"yes[,.]?\s*everything is fine|"
-        r"not yet.*(?:thx|thanks)|"
-        r"done(?:\s+submitted)?|"
-        r"appreciate(?:\s+it)?)"
-        r"[\s!.。！~…👍✅🙏😅😂❤️]*$",
-        without,
-    ):
-        return True
-    # Closing soft-acks: all done / appreciate the patience
     if len(without) <= 120 and _SOFT_CLOSE_ACK_RE.match(without):
         return True
-
+    if len(without) <= 160 and _FORM_ACK_RE.match(without):
+        return True
+    # Short social/status check-ins (e.g. "Everything is going great, and you?")
+    if (
+        len(without) <= 100
+        and re.search(
+            r"(?i)\b("
+            r"going great|hope you (?:slept|are)|how(?:'\s*)?s it going|"
+            r"how are you(?: doing)?|how you doing|and you"
+            r")\b",
+            without,
+        )
+        and not _ACTION_REQUEST_RE.search(without)
+        and not re.search(
+            r"(?i)\b(deploy|mainnet|contract|wallet|audit|grant|sdk|rpc)\b",
+            without,
+        )
+    ):
+        return True
     return False
+
 
 
 def looks_like_question(text: str) -> bool:
@@ -445,6 +525,22 @@ def looks_like_question(text: str) -> bool:
     return False
 
 
+def is_non_actionable_update(text: str) -> bool:
+    """Return True for clear updates/acknowledgements with no direct ask.
+
+    This intentionally stays conservative. Ambiguous complaints or requests
+    continue into RAG/LLM rather than being silently discarded.
+    """
+    stripped = (text or "").strip()
+    if not stripped or looks_like_question(stripped):
+        return False
+    if _ACTION_REQUEST_RE.search(stripped):
+        return False
+    without_mentions = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without_mentions = re.sub(r"\s+", " ", without_mentions).strip()
+    return bool(_NON_ACTIONABLE_UPDATE_RE.search(without_mentions))
+
+
 def has_hint_keyword(text: str, keywords: list[str]) -> bool:
     lowered = (text or "").lower()
     return any(k in lowered for k in keywords)
@@ -453,7 +549,7 @@ def has_hint_keyword(text: str, keywords: list[str]) -> bool:
 def is_mention_only(text: str) -> bool:
     """True when message is only @mentions (no real question / content).
 
-    Prevents bare ``@Josh_0zh`` from entering FAQ + query-rewrite.
+    Prevents bare ``@Roy4by4`` from entering FAQ + query-rewrite.
     """
     stripped = (text or "").strip()
     if not stripped:
