@@ -186,6 +186,12 @@ workflow:
   lark_digest_hour: 0
   lark_digest_state_file: "data/lark_wallet_digest_state.json"
 
+  # Please verify / mainnet-live → 看板人工队列 + Lark「BotChian交付部」提醒
+  verify_alert_enabled: true
+  verify_alert_lark_chat_id: "oc_717a560011483216c49329fda5e43b41"  # BotChian交付部
+  verify_alert_cooldown_hours: 6
+  verify_alert_state_file: "data/verify_alert_state.json"
+
 llm:
   provider: "deepseek"
   base_url: "https://api.deepseek.com"
