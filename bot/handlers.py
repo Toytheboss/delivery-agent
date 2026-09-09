@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import asyncio
 import html
 import logging
@@ -25,21 +27,23 @@ from bot.metrics import (
 from bot.message_log import log_message_event
 from bot.rag import generate_reply, split_reply_bubbles
 from bot.triggers import (
+    explicitly_mentions_me,
     is_ack_or_chitchat,
     is_link_only_share,
-    delivery_alert_kind,
-    is_human_verify_request,
-    is_non_actionable_update,
+    is_builders_welcome_blast,
+    is_casual_message,
+    is_outbound_form_blast,
     is_qa_tester,
     is_social_chitchat,
     is_whitelisted,
     is_workflow_operator,
     pick_casual_reply,
+    pick_social_reply,
     should_process,
 )
-from bot.trusted_auto_learn import auto_learn_trusted_reply, is_trusted_sender
 from bot.workflow_form_dispatch import is_manual_form_command, send_form_manual
 from bot.workflow_mark_live import is_mark_live_command, mark_live_from_group
+from bot.workflow_tech_support import escalate_tech_support, is_tech_support_command
 
 _STATS_COMMANDS = frozenset({"/stats", "交付统计"})
 _REPORT_COMMANDS = frozenset({"/report", "交付周报", "交付报告"})
@@ -163,8 +167,17 @@ class MessageHandler:
         in_qa_private = qa_tester and event.is_private
         in_qa_group = chat_id in self.config.qa_test_group_ids
         qa_mode = qa_tester or in_qa_group
-        # QA test groups still work even outside pilot list
-        in_reply_scope = in_folder or in_qa_private or in_qa_group
+        # QA test groups still work even outside pilot list. In monitor-only
+        # project folders, an explicit @Josh mention may still use the knowledge base.
+        explicit_mention = explicitly_mentions_me(
+            message, self.my_id, self.my_username
+        )
+        in_reply_scope = (
+            in_folder
+            or in_qa_private
+            or in_qa_group
+            or (in_project_folder and not event.is_private and explicit_mention)
+        )
 
         text = (message.raw_text or "").strip()
         has_learn_trigger = self.config.learn_enabled and contains_learn_trigger(
@@ -182,6 +195,7 @@ class MessageHandler:
         is_form_cmd = is_manual_form_command(
             text, self.config.workflow_manual_commands
         )
+        is_tech_cmd = is_tech_support_command(text)
         is_stats_cmd = text in _STATS_COMMANDS
         is_report_cmd = text in _REPORT_COMMANDS
         is_daily_cmd = _is_daily_report_command(text)
@@ -189,32 +203,6 @@ class MessageHandler:
             self.my_id is not None and sender_id == self.my_id
         )
         can_ops = qa_tester or delivery_account or workflow_op
-
-        # Trusted subject-matter experts remain on the no-reply list, but their
-        # contextual business answers can be learned before that early return.
-        if (
-            not message.out
-            and not event.is_private
-            and in_project_folder
-            and is_trusted_sender(sender_id, sender_username, self.config)
-        ):
-            try:
-                chat = await event.get_chat()
-                await auto_learn_trusted_reply(
-                    message,
-                    self.kb,
-                    self.config,
-                    chat_id=chat_id,
-                    chat_title=getattr(chat, "title", None) or "",
-                    sender_id=sender_id,
-                    sender_username=sender_username,
-                )
-            except Exception:
-                logger.exception(
-                    "Trusted auto-learn failed in chat %s sender=%s",
-                    chat_id,
-                    sender_id,
-                )
 
         # Operator stats / exec report / daily report
         if (is_stats_cmd or is_report_cmd or is_daily_cmd) and can_ops:
@@ -270,6 +258,37 @@ class MessageHandler:
                 sender_username,
                 chat_id,
             )
+            return
+
+        # Tech support: quote question + "tech support" → Lark 答疑群 → reply back
+        # Only the bot account that typed the command (message.out) to avoid double fire.
+        if (
+            getattr(self.config, "tech_support_enabled", False)
+            and not event.is_private
+            and is_tech_cmd
+        ):
+            if not (message.out or (self.my_id is not None and sender_id == self.my_id)):
+                return
+            msg_id = message.id
+            if msg_id in self._processing:
+                return
+            self._processing.add(msg_id)
+            try:
+                chat = await event.get_chat()
+                title = getattr(chat, "title", None) or ""
+                result = await escalate_tech_support(
+                    self.client,
+                    self.config,
+                    command_message=message,
+                    chat_id=chat_id,
+                    chat_title=title,
+                )
+                await message.reply(result)
+            except Exception:
+                logger.exception("Tech support failed in chat %s", chat_id)
+                await message.reply("Failed to escalate tech support. Check logs.")
+            finally:
+                self._processing.discard(msg_id)
             return
 
         # Workflow: keyword in any group → mark Lark status live (+ optional form)
@@ -377,7 +396,153 @@ class MessageHandler:
         if message.out:
             return
 
+        # Project groups can run in monitor-only mode. Questions and explicit
+        # mentions are placed in the Dashboard's human-review queue, while the
+        # Telegram conversation is left untouched. Operational workflows above
+        # (welcome, mark-live and form dispatch) remain active.
+        if (
+            not event.is_private
+            and in_project_folder
+            and not self.config.group_replies_enabled
+            and not explicit_mention
+        ):
+            # Internal / BD accounts: never enqueue as project-side questions.
+            if is_whitelisted(
+                sender_id,
+                sender_username,
+                self.config.ignore_user_ids,
+                self.config.ignore_usernames,
+            ):
+                return
+            # Ops blasts: welcome templates / Congrats+form — not project questions.
+            if is_builders_welcome_blast(text) or is_outbound_form_blast(text):
+                logger.debug(
+                    "Skip welcome/form blast in monitor chat=%s", chat_id
+                )
+                return
+            # @colleague handoff (not @Josh): e.g. "@baguio_mt could you help..."
+            if re.search(r"@[\w\d_]{3,32}", text) and not explicitly_mentions_me(
+                message, self.my_id, self.my_username
+            ):
+                return
+            # Warm casual reply for greetings / short acks even in monitor-only.
+            # Keeps FAQ off, but avoids dead silence on social chatter.
+            social_ok = getattr(self.config, "social_replies_enabled", True)
+            if social_ok and is_casual_message(text):
+                if sender_id is not None and self._is_rate_limited(chat_id, sender_id):
+                    logger.info(
+                        "Rate limited monitor social user %s in chat %s",
+                        sender_id,
+                        chat_id,
+                    )
+                    return
+                msg_id = message.id
+                if msg_id in self._processing:
+                    return
+                self._processing.add(msg_id)
+                try:
+                    reply = pick_casual_reply(
+                        text, seed=(chat_id or 0) ^ (msg_id or 0)
+                    )
+                    delay = min(8, max(0, self.config.reply_delay_seconds))
+                    if delay > 0:
+                        await asyncio.sleep(delay)
+                    await message.reply(reply)
+                    if sender_id is not None:
+                        self._mark_replied(chat_id, sender_id)
+                    try:
+                        inc("messages_processed")
+                        inc("social_chitchat_replies")
+                    except Exception:  # noqa: BLE001
+                        pass
+                    reason = (
+                        "social_chitchat"
+                        if is_social_chitchat(text)
+                        else "ack_chitchat"
+                    )
+                    log_message_event(
+                        kind="social",
+                        chat_id=chat_id,
+                        sender_id=sender_id,
+                        sender_username=sender_username or "",
+                        message_id=msg_id,
+                        text=text,
+                        reply_text=reply,
+                        outcome="replied",
+                        reason=f"monitor_{reason}",
+                        extra={"mode": "monitor_only"},
+                    )
+                    logger.info(
+                        "Monitor casual reply in chat %s (%s): %r",
+                        chat_id,
+                        reason,
+                        reply,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Monitor casual reply failed in chat %s", chat_id
+                    )
+                finally:
+                    self._processing.discard(msg_id)
+                return
+            needs_human_review = should_process(
+                message,
+                self.my_id,
+                self.my_username,
+                self.config.hint_keywords,
+                self.config.require_mention_or_question,
+                qa_tester=False,
+            )
+            if needs_human_review:
+                try:
+                    chat = await event.get_chat()
+                    chat_title = getattr(chat, "title", None) or ""
+                except Exception:  # noqa: BLE001
+                    chat_title = ""
+                explicit_mention = explicitly_mentions_me(
+                    message, self.my_id, self.my_username
+                )
+                log_message_event(
+                    kind="human_review",
+                    chat_id=chat_id,
+                    chat_title=chat_title,
+                    sender_id=sender_id,
+                    sender_username=sender_username or "",
+                    message_id=message.id,
+                    text=text,
+                    outcome="silent",
+                    reason="manual review: project question",
+                    extra={
+                        "alert": True,
+                        "explicit_mention": explicit_mention,
+                        "mode": "monitor_only",
+                    },
+                )
+                try:
+                    inc("messages_processed")
+                    inc("human_review_alerts")
+                except Exception:  # noqa: BLE001
+                    pass
+                logger.info(
+                    "Queued Dashboard human review chat=%s sender=%s mention=%s: %s",
+                    chat_id,
+                    sender_id,
+                    explicit_mention,
+                    text,
+                )
+            return
+
         if not in_reply_scope:
+            return
+
+        # Shared project groups: avoid overlapping with another delivery agent.
+        # Only an explicit @mention may trigger FAQ/social replies. Private
+        # chats and the operator commands handled above remain unaffected.
+        if (
+            not event.is_private
+            and self.config.require_explicit_mention
+            and not explicitly_mentions_me(message, self.my_id, self.my_username)
+        ):
             return
 
         if is_whitelisted(
@@ -389,9 +554,8 @@ class MessageHandler:
             logger.debug("Skip whitelisted sender %s in chat %s", sender_id, chat_id)
             return
 
-        # Bare URL / link share → do not FAQ (avoids /market path → token-market docs).
-        # Exception: pure X/Twitter shares still get a short social reply.
-        if is_link_only_share(text) and not is_social_chitchat(text):
+        # Bare URL / link share → do not FAQ (avoids /market path → token-market docs)
+        if is_link_only_share(text):
             log_message_event(
                 kind="faq",
                 chat_id=chat_id,
@@ -405,13 +569,13 @@ class MessageHandler:
             logger.info("Skip link-only share in chat %s", chat_id)
             return
 
-        # Social gm / X-post / short acks (收到、thanks…) → casual reply, not FAQ
-        if is_social_chitchat(text) or is_ack_or_chitchat(text):
+        # Social gm / X-post / short acks → warm casual reply (not FAQ)
+        if is_casual_message(text):
             if sender_id is not None and not qa_mode and self._is_rate_limited(
                 chat_id, sender_id
             ):
                 logger.info(
-                    "Rate limited casual reply user %s in chat %s", sender_id, chat_id
+                    "Rate limited social reply user %s in chat %s", sender_id, chat_id
                 )
                 return
             msg_id = message.id
@@ -428,16 +592,16 @@ class MessageHandler:
                 await message.reply(reply)
                 if sender_id is not None:
                     self._mark_replied(chat_id, sender_id)
-                reason = (
-                    "social_chitchat"
-                    if is_social_chitchat(text)
-                    else "ack_chitchat"
-                )
                 try:
                     inc("messages_processed")
                     inc("social_chitchat_replies")
                 except Exception:  # noqa: BLE001
                     pass
+                reason = (
+                    "social_chitchat"
+                    if is_social_chitchat(text)
+                    else "ack_chitchat"
+                )
                 log_message_event(
                     kind="social",
                     chat_id=chat_id,
@@ -450,13 +614,12 @@ class MessageHandler:
                     qa_group=in_qa_group,
                     outcome="replied",
                     reason=reason,
-                    extra={"outbound_logged": True},
                 )
                 logger.info(
-                    "Casual reply (%s) in chat %s: %r", reason, chat_id, reply
+                    "Social/ack reply in chat %s (%s): %r", chat_id, reason, reply
                 )
             except Exception:
-                logger.exception("Casual reply failed in chat %s", chat_id)
+                logger.exception("Social chitchat reply failed in chat %s", chat_id)
                 log_message_event(
                     kind="social",
                     chat_id=chat_id,
@@ -467,7 +630,7 @@ class MessageHandler:
                     qa=qa_mode,
                     qa_group=in_qa_group,
                     outcome="error",
-                    reason="casual_reply_failed",
+                    reason="social_reply_failed",
                 )
             finally:
                 self._processing.discard(msg_id)
@@ -481,96 +644,6 @@ class MessageHandler:
             self.config.require_mention_or_question,
             qa_tester=qa_mode,
         ):
-            return
-
-        # Verify / mainnet-live → Dashboard human_review + Lark 交付部; no FAQ.
-        _alert_kind = delivery_alert_kind(text)
-        if _alert_kind:
-            try:
-                chat = await event.get_chat()
-                chat_title = getattr(chat, "title", None) or ""
-            except Exception:  # noqa: BLE001
-                chat_title = ""
-            if not chat_title:
-                try:
-                    from bot.folder_title_cache import cached_chat_title
-
-                    chat_title = cached_chat_title(chat_id) or ""
-                except Exception:  # noqa: BLE001
-                    chat_title = ""
-
-            alert_meta: dict = {}
-            try:
-                from bot.workflow_verify_alert import maybe_send_verify_alert
-
-                alert_meta = maybe_send_verify_alert(
-                    self.config,
-                    chat_id=chat_id,
-                    chat_title=chat_title,
-                    sender_id=sender_id,
-                    sender_username=sender_username or "",
-                    text=text,
-                    kind=_alert_kind,
-                )
-            except Exception:  # noqa: BLE001
-                logger.exception("verify alert failed chat=%s", chat_id)
-                alert_meta = {"sent": False, "reason": "exception"}
-
-            reason = (
-                "mainnet live"
-                if _alert_kind == "mainnet_live"
-                else "please verify"
-            )
-            log_message_event(
-                kind="human_review",
-                chat_id=chat_id,
-                chat_title=chat_title,
-                sender_id=sender_id,
-                sender_username=sender_username or "",
-                message_id=message.id,
-                text=text,
-                qa=qa_mode,
-                qa_group=in_qa_group,
-                outcome="silent",
-                reason=reason,
-                extra={
-                    "alert": True,
-                    "alert_kind": _alert_kind,
-                    "project_name": (alert_meta or {}).get("project_name") or "",
-                    "lark_alert": (alert_meta or {}).get("reason") or "",
-                    "lark_sent": bool((alert_meta or {}).get("sent")),
-                },
-            )
-            try:
-                inc("messages_processed")
-                inc("human_review_alerts")
-            except Exception:  # noqa: BLE001
-                pass
-            logger.info(
-                "Queued verify human_review chat=%s project=%r lark=%s",
-                chat_id,
-                (alert_meta or {}).get("project_name"),
-                (alert_meta or {}).get("reason"),
-            )
-            return
-
-        # Mentions and delivery keywords can pull plain project updates into
-        # the FAQ path. They are not failed answers and must not inflate the
-        # silence rate.
-        if not qa_mode and is_non_actionable_update(text):
-            log_message_event(
-                kind="faq",
-                chat_id=chat_id,
-                sender_id=sender_id,
-                sender_username=sender_username or "",
-                message_id=message.id,
-                text=text,
-                qa=qa_tester,
-                qa_group=in_qa_group,
-                outcome="ignored",
-                reason="no reply needed: project update",
-            )
-            logger.info("No reply needed for project update in chat %s", chat_id)
             return
 
         if sender_id is not None and not qa_mode and self._is_rate_limited(chat_id, sender_id):
@@ -601,27 +674,8 @@ class MessageHandler:
         try:
             decision = await generate_reply(question, self.kb, self.config)
             if not decision.should_reply:
-                if decision.reason == "no reply needed":
-                    log_message_event(
-                        kind="faq",
-                        chat_id=chat_id,
-                        sender_id=sender_id,
-                        sender_username=sender_username or "",
-                        message_id=msg_id,
-                        text=question,
-                        qa=qa_tester,
-                        qa_group=in_qa_group,
-                        outcome="ignored",
-                        reason=decision.reason,
-                        score=decision.best_score,
-                    )
-                    logger.info(
-                        "No reply needed after intent check (score=%.2f)",
-                        decision.best_score,
-                    )
-                    return
-                # Fallback: if FAQ silenced a share/greeting/ack that slipped through
-                if is_social_chitchat(question) or is_ack_or_chitchat(question):
+                # Fallback: warm casual reply when FAQ silenced recoverable chitchat
+                if is_casual_message(question):
                     reply = pick_casual_reply(
                         question, seed=(chat_id or 0) ^ (msg_id or 0)
                     )
@@ -648,12 +702,11 @@ class MessageHandler:
                         qa=qa_tester,
                         qa_group=in_qa_group,
                         outcome="replied",
-                        reason=f"casual_fallback:{decision.reason}",
+                        reason=f"social_fallback:{decision.reason}",
                         score=decision.best_score,
-                        extra={"outbound_logged": True},
                     )
                     logger.info(
-                        "Casual fallback after FAQ silence (%s) in chat %s: %r",
+                        "Social fallback after FAQ silence (%s) in chat %s: %r",
                         decision.reason,
                         chat_id,
                         reply,
@@ -745,7 +798,7 @@ class MessageHandler:
                 reason=decision.reason,
                 score=decision.best_score,
                 bubbles=len(bubbles),
-                extra={"footer": bool(footer), "outbound_logged": True},
+                extra={"footer": bool(footer)},
             )
             logger.info(
                 "Replied in chat %s (%s, %d bubble(s)%s)",
@@ -775,37 +828,3 @@ class MessageHandler:
         @self.client.on(events.NewMessage())
         async def _on_message(event: events.NewMessage.Event) -> None:
             asyncio.create_task(self.handle(event))
-
-        @self.client.on(events.NewMessage(outgoing=True))
-        async def _on_outgoing(event: events.NewMessage.Event) -> None:
-            asyncio.create_task(self._count_outgoing(event))
-
-    async def _count_outgoing(self, event: events.NewMessage.Event) -> None:
-        """Count and persist every outbound message from the delivery account."""
-        try:
-            message = event.message
-            if not message:
-                return
-            # Skip pure service actions (join/title change/etc.)
-            if getattr(message, "action", None) is not None:
-                return
-            text = (message.raw_text or "").strip()
-            has_media = bool(getattr(message, "media", None))
-            if not text and not has_media:
-                return
-            inc("messages_sent")
-            reply_to_message_id = getattr(message, "reply_to_msg_id", None)
-            extra = {"media": has_media, "outbound_logged": True}
-            if reply_to_message_id is not None:
-                extra["reply_to_message_id"] = int(reply_to_message_id)
-            log_message_event(
-                kind="outbound",
-                chat_id=getattr(message, "chat_id", None) or getattr(event, "chat_id", None),
-                message_id=getattr(message, "id", None),
-                text=text or "[媒体消息]",
-                outcome="sent",
-                reason="telegram_outgoing",
-                extra=extra,
-            )
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed counting outgoing message")

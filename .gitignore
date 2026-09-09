@@ -46,3 +46,4 @@ cloudflare-dist*/
 *.before-*
 *.bak*
 config/*.before-*
+backups/

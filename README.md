@@ -13,6 +13,18 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 
 ## Features (full list)
 
+
+### Tech Support 答疑升级
+
+| Feature | What it does |
+|---------|----------------|
+| **Quote + `tech support`** | Josh/Roy reply to a project question and send `tech support` / `/tech` to open a Lark ticket. |
+| **Lark @ assignees** | Posts to the tech support chat and @ configured assignees (e.g. Cisco-BE, Roy). |
+| **Ticket reply → TG** | When tech replies to the Lark ticket, Bot quotes the original TG question with the answer. |
+| **Auto-learn + Agent KB** | After TG delivery, Q&A is saved under `knowledge/learned/` and upserted to the Agent glossary Bitable. |
+| **Ops handbook** | See [docs/tech-support-handbook.md](docs/tech-support-handbook.md). |
+
+
 ### 1. Scope & access control
 
 | Feature | What it does |

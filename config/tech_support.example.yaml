@@ -1,0 +1,17 @@
+# Snippet for config.yaml → workflow.tech_support
+tech_support:
+  enabled: true
+  owner: "delivery"   # qa | delivery — which bot owns TG reply for tickets it opens
+  lark_chat_id: "oc_xxxxxxxx"  # 交付 & 技术 & 项目方答疑群
+  assignees:
+    - name: "Cisco-BE"
+      open_id: "ou_xxxxxxxx"
+    - name: "Roy"
+      open_id: "ou_xxxxxxxx"
+  state_file: "/opt/botchain-shared/tech_support_tickets.json"
+  poll_enabled: true
+  poll_seconds: 45
+  event_path: "/workflow/tech-support/event"
+  auto_learn: true
+  auto_learn_min_chars: 20
+  auto_learn_state_file: "/opt/botchain-shared/tech_support_auto_learn.json"

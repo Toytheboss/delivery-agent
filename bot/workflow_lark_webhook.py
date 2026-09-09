@@ -178,8 +178,54 @@ async def start_live_webhook_server(
         code = 200 if not result.get("error") else 422
         return web.json_response(result, status=code)
 
+    
+    async def tech_support_event(request: web.Request) -> web.Response:
+        """Lark event callback: reply-to-ticket → TG quote reply."""
+        try:
+            raw = await request.read()
+            data = json.loads(raw.decode("utf-8") or "{}") if raw else {}
+        except Exception:
+            data = {}
+        if isinstance(data, dict) and data.get("type") == "url_verification":
+            return web.json_response({"challenge": data.get("challenge", "")})
+        # Encrypt challenge (schema 2.0)
+        if isinstance(data, dict) and data.get("challenge") and not data.get("header"):
+            return web.json_response({"challenge": data.get("challenge")})
+
+        event = {}
+        if isinstance(data, dict):
+            event = data.get("event") or {}
+            header = data.get("header") or {}
+            event_type = header.get("event_type") or data.get("type") or ""
+        else:
+            event_type = ""
+        if event_type and "im.message.receive" not in str(event_type):
+            return web.json_response({"ok": True, "ignored": True, "reason": "not_message_event"})
+
+        try:
+            from bot.workflow_tech_support import (
+                ingest_lark_message_event,
+                process_lark_reply_candidate,
+            )
+            cand = ingest_lark_message_event(config, event if event else data)
+            if not cand:
+                return web.json_response({"ok": True, "matched": False})
+            result = await process_lark_reply_candidate(client, config, cand, kb=kb)
+            return web.json_response({"ok": True, "matched": True, **result})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("tech support event failed")
+            return web.json_response({"ok": False, "error": str(exc)[:200]}, status=500)
+
+
     app = web.Application()
     app.router.add_get("/health", health)
+    tech_path = str(getattr(config, "tech_support_event_path", "") or "/workflow/tech-support/event").strip() or "/workflow/tech-support/event"
+    if not tech_path.startswith("/"):
+        tech_path = "/" + tech_path
+    if getattr(config, "tech_support_enabled", False):
+        app.router.add_post(tech_path, tech_support_event)
+        app.router.add_get(tech_path, health)
+        logger.info("tech support Lark event route %s", tech_path)
     app.router.add_get(path, health)
     app.router.add_post(path, live_handler)
 

@@ -38,6 +38,7 @@ from bot.lark_sync import sync_lark_wiki
 from bot.workflow_form_dispatch import form_dispatch_loop, run_form_dispatch_once
 from bot.workflow_logo_fill import logo_fill_loop, run_logo_fill_once
 from bot.workflow_lark_webhook import start_live_webhook_server
+from bot.workflow_tech_support import tech_support_poll_loop
 from bot.workflow_deploy_status_watch import deploy_status_watch_loop
 from bot.workflow_live_watch import live_status_watch_loop
 from bot.workflow_live_trigger import startup_live_catchup
@@ -275,6 +276,10 @@ async def main() -> None:
             )
 
         await start_live_webhook_server(client, config, scope)
+
+        if getattr(config, "tech_support_enabled", False):
+            asyncio.create_task(tech_support_poll_loop(client, config, kb=kb))
+            logger.info("Tech support escalation enabled (poll + trigger)")
         if config.workflow_live_startup_scan:
             asyncio.create_task(startup_live_catchup(client, config, scope))
 
