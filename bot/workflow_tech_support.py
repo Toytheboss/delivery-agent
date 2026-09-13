@@ -160,6 +160,37 @@ def _send_lark_text(token: str, chat_id: str, text: str) -> str:
     return str(msg_id)
 
 
+
+def _flatten_post_paragraphs(blocks):
+    """Flatten Lark post paragraph blocks into plain lines."""
+    parts = []
+    if not isinstance(blocks, list):
+        return parts
+    for block in blocks:
+        if not isinstance(block, list):
+            continue
+        line = []
+        for span in block:
+            if not isinstance(span, dict):
+                continue
+            tag = str(span.get("tag") or "")
+            if tag == "text":
+                line.append(str(span.get("text") or ""))
+            elif tag == "a":
+                href = str(span.get("href") or "").strip()
+                text = str(span.get("text") or "").strip()
+                line.append(f"{text} ({href})" if text and href else (text or href))
+            elif tag == "at":
+                name = str(span.get("user_name") or span.get("user_id") or "").strip()
+                if name:
+                    line.append(f"@{name}")
+            elif tag == "img":
+                line.append("[image]")
+        if line:
+            parts.append("".join(line))
+    return parts
+
+
 def _extract_text_from_lark_content(msg_type: str, content_raw: str) -> str:
     try:
         content = json.loads(content_raw or "{}")
@@ -168,25 +199,31 @@ def _extract_text_from_lark_content(msg_type: str, content_raw: str) -> str:
     if msg_type == "text":
         return str(content.get("text") or "").strip()
     if msg_type == "post":
-        # Flatten post title + paragraphs
-        parts: list[str] = []
+        # Two shapes exist:
+        # 1) legacy multilingual: {"zh_cn": {"title": "...", "content": [[spans]]}}
+        # 2) im/v1 list/get: {"title": "...", "content": [[spans]], "content_v2": ...}
+        parts = []
+        if isinstance(content.get("content"), list) or isinstance(
+            content.get("content_v2"), list
+        ):
+            title = content.get("title")
+            if title:
+                parts.append(str(title))
+            blocks = content.get("content_v2") or content.get("content") or []
+            parts.extend(_flatten_post_paragraphs(blocks))
+            return "\n".join(parts).strip()
+
         for lang_body in content.values():
             if not isinstance(lang_body, dict):
                 continue
             title = lang_body.get("title")
             if title:
                 parts.append(str(title))
-            for block in lang_body.get("content") or []:
-                if not isinstance(block, list):
-                    continue
-                line = []
-                for span in block:
-                    if isinstance(span, dict) and span.get("tag") == "text":
-                        line.append(str(span.get("text") or ""))
-                if line:
-                    parts.append("".join(line))
+            parts.extend(_flatten_post_paragraphs(lang_body.get("content") or []))
         return "\n".join(parts).strip()
     return str(content.get("text") or content_raw or "").strip()
+
+
 
 
 def _assignees_from_config(config: Any) -> list[dict[str, str]]:
@@ -219,9 +256,9 @@ def build_lark_ticket_text(
     asker: str,
     assignees: list[dict[str, str]] | None = None,
 ) -> str:
+    # Keep full TG quote (Telegram cap ~4096). Truncating hid embed/code
+    # snippets that tech support needs to read in Lark.
     q = (question or "").strip()
-    if len(q) > 1200:
-        q = q[:1200].rstrip() + "…"
     people = assignees or []
     if people:
         at = " ".join(
@@ -327,7 +364,7 @@ async def escalate_tech_support(
         "tg_command_message_id": int(command_message.id),
         "chat_title": chat_title,
         "project_name": project_name,
-        "question_text": question[:2000],
+        "question_text": question[:8000],
         "asker": asker_name,
         "lark_chat_id": lark_chat_id,
         "lark_message_id": lark_msg_id,

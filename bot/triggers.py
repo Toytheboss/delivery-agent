@@ -389,12 +389,19 @@ def mentions_me(message: Message, my_id: int, my_username: str | None) -> bool:
 # Never FAQ / never retrieval — queue human_review + Lark 交付部.
 _VERIFY_ASK_RE = re.compile(
     r"(?is)\b("
-    r"(?:please|kindly|pls)\s+(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
-    r"(?:can|could|would)\s+you\s+(?:please\s+|kindly\s+)?"
+    r"(?:please|kindly|pls|plz)\s+(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
+    # "Can you verify" / "Could you please verify"
+    r"(?:can|could|would)\s+you\s+(?:please\s+|kindly\s+|pls\s+|plz\s+)?"
     r"(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
+    # "Can verify …" / "Can someone verify" (common partner shorthand)
+    r"(?:can|could|would)\s+(?:someone\s+|anyone\s+|somebody\s+)?"
+    r"(?:please\s+|kindly\s+)?verify|"
+    r"(?:can|could|would)\s+help\s+(?:me\s+)?(?:to\s+)?verify|"
     r"help\s+(?:me\s+)?(?:to\s+)?verify|"
+    r"verify\s+again\b|"
     r"verify\s+(?:the\s+)?(?:mainnet|deployment|deploy(?:ed)?|contract|contracts|"
     r"dapp|front\s*end|frontend|site|website|it|this|here|now|everything)|"
+    r"verify\s+if\b|"
     r"mainnet\s+verif(?:y|ication)|"
     r"verif(?:y|ication)\s+(?:on\s+)?mainnet|"
     r"mainnet\s+verification|"
@@ -434,7 +441,7 @@ def delivery_alert_kind(text: str) -> str | None:
     """Return alert kind for Lark/看板, or None if not an alert.
 
     - ``verify``: ask delivery to verify / mainnet verification status
-    - ``mainnet_live``: project announces live on BOT Chain Mainnet
+    - mainnet go-live announcements are intentionally NOT alerted (form posts etc.)
     """
     stripped = (text or "").strip()
     if not stripped:
@@ -444,12 +451,11 @@ def delivery_alert_kind(text: str) -> str | None:
     if not without:
         return None
 
-    # Mainnet go-live announcements (allow longer posts with contract links)
-    if len(without) <= 1200 and _MAINNET_LIVE_RE.search(without):
-        if not _VERIFY_TECH_EXCLUDE_RE.search(without):
-            return "mainnet_live"
+    # Mainnet live posts (Josh form / "Congrats … live on Mainnet") → no Lark alert.
+    # Keep _MAINNET_LIVE_RE for tests / future; only Verify 提醒 is wanted.
 
-    if len(without) > 500:
+    # Clear verify asks inside project intros — same budget as mainnet_live.
+    if len(without) > 1200:
         return None
     if _VERIFY_TECH_EXCLUDE_RE.search(without):
         return None
@@ -463,6 +469,38 @@ def delivery_alert_kind(text: str) -> str | None:
     if len(without) <= 80 and re.search(
         r"(?is)^(?:hey|hi|hello)?[\s,]*"
         r"(?:mainnet\s+)?verif(?:y|ication)(?:\s+mainnet)?[\s!.。！?？~…🙏👍]*$",
+        without,
+    ):
+        return "verify"
+    return None
+
+
+
+
+def delivery_alert_kind_for_internal(text: str) -> str | None:
+    """Like delivery_alert_kind, plus looser verify pings from internal BD.
+
+    Internal ignore-list senders often write "after verifying" / "need verify"
+    instead of "please verify". Still never FAQ — Lark forward only.
+    """
+    kind = delivery_alert_kind(text)
+    if kind:
+        return kind
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) > 1200:
+        return None
+    without = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without = re.sub(r"\s+", " ", without).strip()
+    if not without:
+        return None
+    if _VERIFY_TECH_EXCLUDE_RE.search(without):
+        return None
+    if _VERIFY_SELF_RE.search(without):
+        return None
+    if _VERIFY_NEGATE_RE.search(without):
+        return None
+    if re.search(
+        r"(?is)\bverif(?:y|ying|ication)\b|(?:核实|验证|核查)",
         without,
     ):
         return "verify"
