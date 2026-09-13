@@ -9,6 +9,8 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 
 > **Maintaining this doc:** every new / changed / removed bot capability must be reflected in **Features** (and Config / Env / Ops tables if needed) in the same change set. See `.cursor/rules/readme-feature-sync.mdc`.
 
+> **迭代记录：** 按时间整理的功能更新说明见 [CHANGELOG.md](CHANGELOG.md)（类似应用商店更新日志）。每次实质功能推送请同步追加一条。
+
 ---
 
 ## Features (full list)
