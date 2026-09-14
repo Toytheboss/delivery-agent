@@ -54,6 +54,7 @@ COUNTER_KEYS = (
     "logo_fill_fail",
     "logo_fill_no_logo",
     "mark_live_triggers",
+    "mark_live_resolve",
     "send_form_triggers",
     "absorb_learn_success",
     "agent_kb_lark_sync_success",

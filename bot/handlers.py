@@ -40,7 +40,13 @@ from bot.triggers import (
 )
 from bot.trusted_auto_learn import auto_learn_trusted_reply, is_trusted_sender
 from bot.workflow_form_dispatch import is_manual_form_command, send_form_manual
-from bot.workflow_mark_live import is_mark_live_command, mark_live_from_group
+from bot.workflow_mark_live import (
+    is_mark_live_command,
+    mark_live_from_group,
+    peek_mark_live_pending,
+    resolve_mark_live_reply,
+    save_mark_live_pending,
+)
 from bot.workflow_tech_support import escalate_tech_support, is_tech_support_command
 
 _STATS_COMMANDS = frozenset({"/stats", "交付统计"})
@@ -279,6 +285,52 @@ class MessageHandler:
         )
         can_ops = qa_tester or delivery_account or workflow_op
 
+        # Mark-live disambiguation: quote Ambiguous reply + project name.
+        # Runs before BD ignore so ops can resolve even on shared accounts.
+        reply_to_msg_id = getattr(message, "reply_to_msg_id", None)
+        if (
+            self.config.workflow_enabled
+            and not event.is_private
+            and can_ops
+            and reply_to_msg_id is not None
+            and text
+            and not is_mark_live
+            and not is_form_cmd
+            and not is_tech_cmd
+            and not is_stats_cmd
+            and not is_report_cmd
+            and not is_daily_cmd
+        ):
+            if peek_mark_live_pending(chat_id, int(reply_to_msg_id)) is not None:
+                msg_id = message.id
+                if msg_id not in self._processing:
+                    self._processing.add(msg_id)
+                    try:
+                        chat = await event.get_chat()
+                        title = getattr(chat, "title", None) or ""
+                        resolved = await resolve_mark_live_reply(
+                            self.client,
+                            self.config,
+                            chat_id=chat_id,
+                            chat_title=title,
+                            quoted_msg_id=int(reply_to_msg_id),
+                            picked_text=text,
+                        )
+                        if resolved is not None:
+                            inc("mark_live_resolve")
+                            await message.reply(resolved)
+                            return
+                    except Exception:
+                        logger.exception(
+                            "Mark-live resolve failed in chat %s", chat_id
+                        )
+                        await message.reply(
+                            "Failed to resolve ambiguous mark-live. Check logs."
+                        )
+                        return
+                    finally:
+                        self._processing.discard(msg_id)
+
         # Trusted subject-matter experts remain on the no-reply list, but their
         # contextual business answers can be learned before that early return.
         if (
@@ -435,10 +487,17 @@ class MessageHandler:
                 chat = await event.get_chat()
                 title = getattr(chat, "title", None) or ""
                 inc("mark_live_triggers")
-                result = await mark_live_from_group(
+                outcome = await mark_live_from_group(
                     self.client, self.config, chat_id, title
                 )
-                await message.reply(result)
+                reply_msg = await message.reply(outcome.text)
+                if outcome.candidates:
+                    save_mark_live_pending(
+                        chat_id=chat_id,
+                        reply_msg_id=int(reply_msg.id),
+                        chat_title=title,
+                        candidates=outcome.candidates,
+                    )
             except Exception:
                 logger.exception("Mark-live failed in chat %s", chat_id)
                 await message.reply("Failed to update Lark status. Check logs.")
