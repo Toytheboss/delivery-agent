@@ -279,6 +279,17 @@ def _rewrite_query_for_search(
     q = _focus_question(question)
     if not q:
         return q
+    # Tiny rhetorical asks rewrite into invented product keywords — skip.
+    try:
+        from bot.triggers import is_contextless_confirm
+
+        if is_contextless_confirm(q):
+            return q
+    except Exception:  # noqa: BLE001
+        pass
+    sig = _significant_tokens(q)
+    if len(q) <= 40 and len(sig) <= 2:
+        return q
     try:
         OpenAI = _get_openai_client_class()
         client = OpenAI(api_key=creds.api_key, base_url=creds.base_url)
@@ -295,7 +306,8 @@ def _rewrite_query_for_search(
                         "key product terms in Chinese and English "
                         "(mix of the asker's own topic words; never invent a "
                         "product the user did not mention). Keep proper nouns. "
-                        "If the input is only an @mention or empty, output exactly: SKIP. "
+                        "If the input is only an @mention, empty, or a rhetorical "
+                        "confirm with no topic (e.g. 'are you sure??'), output exactly: SKIP. "
                         "No sentences, no quotes, no explanation."
                     ),
                 },
@@ -311,6 +323,28 @@ def _rewrite_query_for_search(
         if rewritten.upper() == "SKIP":
             return q
         if rewritten.startswith("抱歉") or rewritten.startswith("Sorry"):
+            return q
+        # Reject rewrites that invent new content words absent from the ask.
+        rewritten_sig = _significant_tokens(rewritten)
+        invented = rewritten_sig - sig - {
+            "bot",
+            "botchain",
+            "chain",
+            "what",
+            "how",
+            "where",
+            "when",
+            "why",
+            "which",
+            "please",
+        }
+        if len(sig) <= 3 and invented and len(invented) >= max(2, len(sig)):
+            logger.info(
+                "Query rewrite rejected (invented terms %s): %r → %r",
+                sorted(invented)[:8],
+                q[:80],
+                rewritten[:80],
+            )
             return q
         return rewritten
     except Exception as exc:  # noqa: BLE001
@@ -510,6 +544,12 @@ def _answer_grounded_in_context(answer: str, context: str, question: str) -> boo
     if len(ans_tokens) < 4:
         # Very short replies (yes/link) — don't over-filter
         return True
+    q_tokens = _significant_tokens(question)
+    # Short vague asks ("are you sure??"): wrong KB context must not self-justify
+    # a long answer that shares no tokens with the question itself.
+    if len(q_tokens) <= 2 and len(ans_tokens) >= 8:
+        if not (ans_tokens & q_tokens):
+            return False
     base = _significant_tokens(f"{question}\n{context}")
     if not base:
         return False
@@ -813,6 +853,14 @@ async def generate_reply(
     config: AppConfig,
 ) -> ReplyDecision:
     lang = detect_reply_language(question, config.reply_language)
+
+    try:
+        from bot.triggers import is_contextless_confirm
+    except Exception:  # noqa: BLE001
+        is_contextless_confirm = None  # type: ignore
+    if is_contextless_confirm is not None and is_contextless_confirm(question):
+        logger.info("Silencing contextless confirm: %r", question[:120])
+        return _silent_decision("contextless confirm", language=lang)
 
     if _is_topicless_progress_check(question):
         logger.info("Silencing topicless progress check: %r", question[:120])

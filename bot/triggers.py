@@ -548,6 +548,41 @@ def is_ack_or_chitchat(text: str) -> bool:
     return False
 
 
+# Rhetorical confirmations with no topic. FAQ retrieval invents an unrelated
+# answer (e.g. "are you sure??" → gas preload FAQ). Stay silent — these need
+# prior conversation context that the bot does not have.
+_CONTEXTLESS_CONFIRM_RE = re.compile(
+    r"(?is)^\s*(?:"
+    r"(?:are\s+you\s+)?sure(?:\s+about\s+(?:this|that|it))?\??|"
+    r"you\s+sure\??|"
+    r"really\??|"
+    r"for\s+real\??|"
+    r"(?:is\s+that|is\s+this|is\s+it)\s+(?:true|real|correct|right|ok|okay)\??|"
+    r"(?:can\s+you\s+)?confirm(?:\s+that)?\??|"
+    r"真的(?:吗|么|？|\?)?|"
+    r"确定(?:吗|么|？|\?)?|"
+    r"确认(?:一下|下)?(?:吗|么|？|\?)?|"
+    r"是这样吗|对吗|没错吧"
+    r")"
+    r"[\s!！.。?？~…]*$"
+)
+
+
+def is_contextless_confirm(text: str) -> bool:
+    """True for bare 'are you sure?' / '真的吗' with no concrete topic."""
+    stripped = (text or "").strip()
+    if not stripped or len(stripped) > 80:
+        return False
+    without = _MENTION_TOKEN_RE.sub(" ", stripped)
+    without = re.sub(r"\s+", " ", without).strip()
+    if not without:
+        return False
+    # Already handled as ack ("sure", "ok") — leave those to the casual path.
+    if _ACK_RE.match(without):
+        return False
+    return bool(_CONTEXTLESS_CONFIRM_RE.match(without))
+
+
 
 def looks_like_question(text: str) -> bool:
     stripped = (text or "").strip()
@@ -621,6 +656,10 @@ def should_process(
 
     # "Will do!" / "收到" etc. — never FAQ, even for QA testers or @mentions
     if is_ack_or_chitchat(text):
+        return False
+
+    # "are you sure??" / "真的吗" — no topic; silence (not casual, not FAQ)
+    if is_contextless_confirm(text):
         return False
 
     # QA 测试号：在 Delivery 群内任意提问即可触发，无需 @ 主号

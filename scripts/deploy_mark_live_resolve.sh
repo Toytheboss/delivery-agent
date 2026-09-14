@@ -11,6 +11,8 @@ FILES=(
   bot/workflow_mark_live.py
   bot/handlers.py
   bot/metrics.py
+  bot/triggers.py
+  bot/rag.py
 )
 
 ssh_cmd() {
@@ -41,7 +43,7 @@ set -euo pipefail
 TS=$(date +%Y%m%d%H%M%S)
 for dest in /opt/delivery-agent /opt/botchain-qa-tg-bot; do
   [[ -d "$dest/bot" ]] || continue
-  for f in workflow_mark_live.py handlers.py metrics.py; do
+  for f in workflow_mark_live.py handlers.py metrics.py triggers.py rag.py; do
     if [[ -f "$dest/bot/$f" ]]; then
       cp -a "$dest/bot/$f" "$dest/bot/${f}.bak-marklive-resolve-$TS"
     fi
