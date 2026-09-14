@@ -1,5 +1,8 @@
 #!/usr/bin/env bash
-# Deploy mark-live disambiguation to production (delivery-agent + QA bot).
+# Deploy mark-live disambiguation to the QA bot.
+#
+# Do not copy these files wholesale into /opt/delivery-agent: that service is
+# currently on an older code line and its handlers/triggers imports differ.
 # Usage:
 #   export SSHPASS='...'   # or use SSH key
 #   ./scripts/deploy_mark_live_resolve.sh
@@ -41,20 +44,19 @@ done
 ssh_cmd 'bash -s' <<'EOF'
 set -euo pipefail
 TS=$(date +%Y%m%d%H%M%S)
-for dest in /opt/delivery-agent /opt/botchain-qa-tg-bot; do
-  [[ -d "$dest/bot" ]] || continue
-  for f in workflow_mark_live.py handlers.py metrics.py triggers.py rag.py; do
-    if [[ -f "$dest/bot/$f" ]]; then
-      cp -a "$dest/bot/$f" "$dest/bot/${f}.bak-marklive-resolve-$TS"
-    fi
-    install -m 644 "/tmp/$f" "$dest/bot/$f"
-    chown botuser:botuser "$dest/bot/$f" 2>/dev/null || true
-    echo "updated $dest/bot/$f"
-  done
+dest=/opt/botchain-qa-tg-bot
+test -d "$dest/bot"
+for f in workflow_mark_live.py handlers.py metrics.py triggers.py rag.py; do
+  if [[ -f "$dest/bot/$f" ]]; then
+    cp -a "$dest/bot/$f" "$dest/bot/${f}.bak-marklive-resolve-$TS"
+  fi
+  install -m 644 "/tmp/$f" "$dest/bot/$f"
+  chown botuser:botuser "$dest/bot/$f" 2>/dev/null || true
+  echo "updated $dest/bot/$f"
 done
-systemctl restart delivery-agent botchain-qa
+systemctl restart botchain-qa
 sleep 2
-systemctl is-active delivery-agent botchain-qa
+systemctl is-active botchain-qa
 EOF
 
 echo "Done."
