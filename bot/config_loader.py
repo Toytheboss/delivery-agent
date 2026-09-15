@@ -70,6 +70,11 @@ class AppConfig:
     agent_kb_lark_sync_enabled: bool
     agent_kb_app_token: str
     agent_kb_table_id: str
+    trusted_auto_learn_enabled: bool
+    trusted_auto_learn_user_ids: set[int]
+    trusted_auto_learn_usernames: set[str]
+    trusted_auto_learn_min_chars: int
+    trusted_auto_learn_state_file: str
     lark_sync_enabled: bool
     lark_sync_interval_minutes: int
     lark_sync_on_startup: bool
@@ -425,6 +430,10 @@ def load_config() -> AppConfig:
     learn = cfg.get("learn", {})
     learn_scopes = learn.get("scopes", {}) or {}
     agent_kb = learn.get("agent_kb", {}) or {}
+    trusted_auto_learn = learn.get("trusted_auto_learn", {}) or {}
+    trusted_auto_learn_user_ids, trusted_auto_learn_usernames = _parse_user_entries(
+        trusted_auto_learn.get("users")
+    )
     lark = cfg.get("lark", {}) or {}
     workflow = cfg.get("workflow", {}) or {}
     workflow_operator_user_ids, workflow_operator_usernames = _parse_user_entries(
@@ -520,6 +529,17 @@ def load_config() -> AppConfig:
             agent_kb.get("app_token", "Kb6rbLenJa4FzWsi6pzlTkdjg0e")
         ),
         agent_kb_table_id=str(agent_kb.get("table_id", "tblP28CyWdY5ml8r")),
+        trusted_auto_learn_enabled=bool(trusted_auto_learn.get("enabled", False)),
+        trusted_auto_learn_user_ids=trusted_auto_learn_user_ids,
+        trusted_auto_learn_usernames=trusted_auto_learn_usernames,
+        trusted_auto_learn_min_chars=max(
+            int(trusted_auto_learn.get("min_chars", 20)), 10
+        ),
+        trusted_auto_learn_state_file=str(
+            trusted_auto_learn.get(
+                "state_file", "data/trusted_auto_learn_state.json"
+            )
+        ),
         lark_sync_enabled=bool(lark.get("enabled", False)),
         lark_sync_interval_minutes=int(lark.get("sync_interval_minutes", 60)),
         lark_sync_on_startup=bool(lark.get("sync_on_startup", True)),
