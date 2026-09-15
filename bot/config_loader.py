@@ -625,7 +625,7 @@ def load_config() -> AppConfig:
             workflow.get("baseline_existing_live", True)
         ),
         workflow_logo_fill_enabled=bool(workflow.get("logo_fill_enabled", True)),
-        workflow_logo_field=str(workflow.get("logo_field", "项目logo")),
+        workflow_logo_field=str(workflow.get("logo_field", "项目logo（文件）")),
         workflow_live_link_field=str(
             workflow.get("live_link_field", "已上线链接🔗")
         ),

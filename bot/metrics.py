@@ -666,7 +666,9 @@ def _progress_table_daily_counts(
             getattr(config, "workflow_project_name_field", "项目名称 Project Name")
             or "项目名称 Project Name"
         )
-        logo_field = str(getattr(config, "workflow_logo_field", "项目logo") or "项目logo")
+        logo_field = str(
+            getattr(config, "workflow_logo_field", "项目logo（文件）") or "项目logo（文件）"
+        )
         live_status = str(
             getattr(config, "workflow_trigger_status", "") or ""
         ).strip()

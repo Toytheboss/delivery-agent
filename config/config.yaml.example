@@ -146,9 +146,9 @@ workflow:
     At the same time, could you please fill in this form for follow-up onboarding? We are collecting the project's address for future gas return and potential grant provision. Thank you. ⬇️
     {form_url}
   state_file: "data/form_dispatch_state.json"
-  # On Lark live (poll) OR TG mark-live: fetch site logo into 项目logo (no retry on fail)
+  # On Lark live (poll) OR TG mark-live: fetch site logo into 项目logo（文件） (no retry on fail)
   logo_fill_enabled: true
-  logo_field: "项目logo"
+  logo_field: "项目logo（文件）"
   live_link_field: "已上线链接🔗"
   project_link_field: "项目链接"
   logo_state_file: "data/logo_fill_state.json"

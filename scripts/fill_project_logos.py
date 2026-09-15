@@ -22,7 +22,7 @@ load_dotenv(ROOT / ".env")
 BASE = "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
 TABLE = "tbl5wXOwCptng06w"
 NAME = "项目名称 Project Name"
-LOGO = "项目logo"
+LOGO = "项目logo（文件）"
 LIVE_LINK = "已上线链接🔗"
 PROJ_LINK = "项目链接"
 LIVE_STATUS = "Mainnet Live"
