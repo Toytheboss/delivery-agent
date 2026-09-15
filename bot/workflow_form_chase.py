@@ -21,6 +21,7 @@ from bot.workflow_form_dispatch import (
     _field_text,
     _normalize_name,
     build_form_message,
+    match_project_to_chat,
 )
 
 if TYPE_CHECKING:
@@ -258,6 +259,47 @@ def _find_wallet_fields(
     return _best(exact_rows) or _best(partial_rows)
 
 
+def _load_title_cache() -> dict[int, str]:
+    path = ROOT / "data" / "folder_title_cache.json"
+    if not path.exists():
+        return {}
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    entries = raw.get("titles") if isinstance(raw.get("titles"), dict) else raw
+    out: dict[int, str] = {}
+    if not isinstance(entries, dict):
+        return out
+    for key, entry in entries.items():
+        try:
+            chat_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(entry, dict):
+            title = str(entry.get("title") or "").strip()
+        else:
+            title = str(entry or "").strip()
+        if title:
+            out[chat_id] = title
+    return out
+
+
+def _chase_chat_still_matches(
+    project_name: str, chat_id: int, titles: dict[int, str]
+) -> tuple[bool, str]:
+    """False when this TG group is a longer/different product than the Lark name."""
+    title = str(titles.get(chat_id) or "").strip()
+    if not title:
+        return True, "title_unknown"
+    matched, reason = match_project_to_chat(project_name, {chat_id: title})
+    if matched == chat_id:
+        return True, reason
+    return False, reason or "weak_title_match"
+
+
 async def run_form_chase_once(
     client: TelegramClient,
     config: AppConfig,
@@ -302,6 +344,7 @@ async def run_form_chase_once(
     threshold = after_hours * 3600.0
     reminded = 0
     dirty = False
+    titles = _load_title_cache()
 
     for rid, meta in list(projects.items()):
         if not isinstance(meta, dict):
@@ -312,6 +355,22 @@ async def run_form_chase_once(
         try:
             chat_id = int(meta.get("chat_id"))
         except (TypeError, ValueError):
+            continue
+        ok_chat, chat_reason = _chase_chat_still_matches(project_name, chat_id, titles)
+        if not ok_chat:
+            meta["done"] = True
+            meta["cancelled"] = True
+            meta["cancel_reason"] = f"wrong_chat:{chat_reason}"
+            meta["completed_at"] = now
+            dirty = True
+            logger.warning(
+                "form-chase cancelled record=%s project=%r chat_id=%s title=%r reason=%s",
+                rid,
+                project_name,
+                chat_id,
+                titles.get(chat_id),
+                chat_reason,
+            )
             continue
         try:
             first_sent_at = float(meta.get("first_sent_at") or 0)
