@@ -22,6 +22,13 @@
 
 ---
 
+## 2026-09-15 · 修复 Verify 推送 disabled
+
+### 修复
+- `config_loader` 丢失 `verify_alert_*` 字段导致识别到 verify 却以 `lark=disabled` 跳过；已恢复并回补 Climalink「please verify again」
+
+---
+
 ## 2026-09-15 · 表单追缴改每日午夜
 
 ### 优化
