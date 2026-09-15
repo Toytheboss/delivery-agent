@@ -123,12 +123,22 @@ def maybe_send_verify_alert(
         "project_name": project_name_from_chat_title(chat_title),
         "lark_chat_id": "",
     }
-    if not bool(getattr(config, "workflow_verify_alert_enabled", False)):
+    if not hasattr(config, "workflow_verify_alert_enabled"):
+        result["skipped"] = True
+        result["reason"] = "config_field_missing"
+        logger.error(
+            "verify alert: workflow_verify_alert_enabled missing on AppConfig "
+            "(config_loader sync drop) — refusing silent disable"
+        )
+        return result
+    if not bool(config.workflow_verify_alert_enabled):
         result["skipped"] = True
         result["reason"] = "disabled"
         return result
 
-    lark_chat_id = str(getattr(config, "workflow_verify_alert_lark_chat_id", "") or "").strip()
+    lark_chat_id = str(
+        getattr(config, "workflow_verify_alert_lark_chat_id", "") or ""
+    ).strip()
     result["lark_chat_id"] = lark_chat_id
     if not lark_chat_id:
         result["skipped"] = True

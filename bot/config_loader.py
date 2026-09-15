@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +10,40 @@ import yaml
 
 ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = ROOT / "config"
+
+# Must remain on AppConfig. Sync/partial deploy that drops these caused silent
+# feature disable (verify → lark=disabled). Keep this list in sync when adding
+# high-impact alert/learn switches.
+CRITICAL_CONFIG_FIELDS: tuple[str, ...] = (
+    "workflow_verify_alert_enabled",
+    "workflow_verify_alert_lark_chat_id",
+    "workflow_verify_alert_cooldown_hours",
+    "workflow_verify_alert_state_file",
+    "trusted_auto_learn_enabled",
+    "trusted_auto_learn_user_ids",
+    "trusted_auto_learn_usernames",
+    "trusted_auto_learn_min_chars",
+    "trusted_auto_learn_state_file",
+    "tech_support_enabled",
+    "tech_support_lark_chat_id",
+)
+
+
+def assert_critical_config_fields(cfg: Any) -> None:
+    """Fail loud if critical fields were dropped from AppConfig / load_config."""
+    missing = [name for name in CRITICAL_CONFIG_FIELDS if not hasattr(cfg, name)]
+    if missing:
+        raise RuntimeError(
+            "AppConfig missing critical fields (sync/partial deploy likely dropped "
+            f"them from config_loader): {', '.join(missing)}"
+        )
+    declared = {f.name for f in fields(AppConfig)}
+    undeclared = [name for name in CRITICAL_CONFIG_FIELDS if name not in declared]
+    if undeclared:
+        raise RuntimeError(
+            "CRITICAL_CONFIG_FIELDS not declared on AppConfig dataclass: "
+            + ", ".join(undeclared)
+        )
 
 
 @dataclass
@@ -446,7 +480,7 @@ def load_config() -> AppConfig:
 
     knowledge_dir = ROOT / knowledge.get("directory", "knowledge")
 
-    return AppConfig(
+    config = AppConfig(
         raw=cfg,
         folder_name=str(
             (scope.get("folder_names") or [scope.get("folder_name", "Delivery")])[0]
@@ -931,3 +965,5 @@ def load_config() -> AppConfig:
             (cfg.get("metrics") or {}).get("message_log_text_max", 500) or 500
         ),
     )
+    assert_critical_config_fields(config)
+    return config

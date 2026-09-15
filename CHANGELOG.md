@@ -11,6 +11,15 @@
 
 ---
 
+## 2026-09-15 · 防止 config_loader 再丢关键开关
+
+### 优化
+- `load_config()` 启动时校验 `verify_alert_*` / `trusted_auto_learn_*` / `tech_support_*`，缺字段直接报错，不再静默当成关闭
+- verify 推送若发现字段缺失，日志记 `config_field_missing`（不再误报 `disabled`）
+- 新增 `scripts/check_critical_config_fields.py`，部署前可本地跑一遍
+
+---
+
 ## 2026-09-15 · 阻断博客与跨主题 fallback
 
 ### 修复
