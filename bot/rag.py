@@ -558,6 +558,109 @@ def _answer_grounded_in_context(answer: str, context: str, question: str) -> boo
     return overlap >= 2 and ratio >= 0.18
 
 
+# Only curated, short, structured answers may be used when the LLM is unavailable.
+# Free-form crawls and editorial content must never become a Telegram reply body.
+_FORMAL_FALLBACK_ALLOW = (
+    "botchain_delivery_ops_faq",
+    "botchain_integration_blockers_faq",
+    "botchain_help_center_",
+    "botchain_project_integration_guide",
+    "botchain_integration_guide.csv",
+    "bd_faq_batch1.csv",
+)
+_FORMAL_FALLBACK_DENY = (
+    "blog",
+    "news",
+    "whitepaper",
+    "crawl",
+    "ecosystem_support",
+    "project_party",
+    "complete_faq_builder",
+)
+
+_FAQ_TOPIC_RE = re.compile(
+    r"(?i)\b("
+    r"gas|rpc|chain\s*id|677|faucet|bridge|dex|explorer|scan\.botchain|"
+    r"mainnet\s+bot|bot\s+token|wss|json-rpc|deploy(?:ment|ed|er)?|"
+    r"contract\s+address|onboarding\s+form|chainlink|oracle|pyth|"
+    r"twitter|\bx\b|social\s+account"
+    r")\b"
+    r"|主网\s*BOT|水龙头|跨链|浏览器|表单|预言机"
+)
+
+_BD_SCHEDULE_RE = re.compile(
+    r"(?i)\b("
+    r"availabilit(?:y|ies)|follow[- ]?up\s+call|schedule\s+a\s+call|"
+    r"collaboration\s+opportunit|partnership|intro(?:duce|duction)|"
+    r"pitch\s+deck|sponsor(?:ing|ship)?|grant\s+support|"
+    r"are\s+you\s+free|when\s+can\s+we\s+meet|next\s+week"
+    r")\b"
+    r"|档期|约个时间|方便的时间|合作机会|介绍一下团队"
+)
+
+
+def _is_formal_kb_source(source: str) -> bool:
+    """Return True only for explicitly curated fallback sources."""
+    value = (source or "").replace("\\", "/").lower()
+    if value.startswith("learned/") or "/learned/" in value:
+        return False
+    if value.startswith("lark_") or "/lark_" in value:
+        return False
+    base = value.rsplit("/", 1)[-1]
+    if any(deny in base for deny in _FORMAL_FALLBACK_DENY):
+        return False
+    return any(allow in base for allow in _FORMAL_FALLBACK_ALLOW)
+
+
+def _chunk_on_topic_for_fallback(question: str, hit: SearchHit) -> bool:
+    """Require question/keyword overlap; whole-document similarity is insufficient."""
+    q = question or ""
+    if _BD_SCHEDULE_RE.search(q) and not _FAQ_TOPIC_RE.search(q):
+        return False
+    q_tokens = {
+        token.lower()
+        for token in re.findall(r"[a-z0-9]{4,}|[\u4e00-\u9fff]+", q.lower())
+    }
+    rel_tokens = set(hit.chunk.question_tokens or []) | set(
+        hit.chunk.keyword_tokens or []
+    )
+    overlap = q_tokens & {token.lower() for token in rel_tokens}
+    contentful = {
+        token
+        for token in overlap
+        if token
+        not in {
+            "this",
+            "that",
+            "with",
+            "from",
+            "have",
+            "been",
+            "your",
+            "team",
+            "next",
+        }
+    }
+    if _FAQ_TOPIC_RE.search(q) and _FAQ_TOPIC_RE.search(
+        (hit.chunk.text or "")[:800]
+    ):
+        return True
+    return len(contentful) >= 2
+
+
+def _is_safe_fallback_hit(
+    question: str, hit: SearchHit, min_score: float
+) -> bool:
+    if hit.score < min_score or not _is_formal_kb_source(hit.chunk.source):
+        return False
+    body = hit.chunk.text or ""
+    source = hit.chunk.source or ""
+    structured = "【参考回答" in body or ".csv#" in source.lower() or (
+        source.lower().endswith(".csv") and "#" in source
+    )
+    return structured and _chunk_on_topic_for_fallback(question, hit)
+
+
 def _fallback_compose(
     question: str,
     hits: list[SearchHit],
@@ -565,29 +668,52 @@ def _fallback_compose(
     *,
     min_score: float = 0.50,
 ) -> ReplyDecision:
-    if not hits:
-        return _silent_decision("no relevant knowledge", 0.0)
-    best = hits[0]
-    if best.score < min_score:
-        return _silent_decision("low relevance", best.score)
+    """Safe outage fallback; never paste free-form knowledge chunks."""
+    best_score = hits[0].score if hits else 0.0
+    safe_hits = [
+        hit for hit in hits if _is_safe_fallback_hit(question, hit, min_score)
+    ]
+    if not safe_hits:
+        logger.warning(
+            "Blocked unsafe retrieval fallback (score=%.3f, src=%s)",
+            best_score,
+            hits[0].chunk.source if hits else "none",
+        )
+        return _silent_decision(
+            "unsafe retrieval fallback blocked", best_score, language=lang
+        )
 
-    body, used = _labeled_answer_from_hits(hits, lang)
+    best = safe_hits[0]
+    body, used = _labeled_answer_from_hits(safe_hits, lang)
     if not body and used is not None:
         body = used.chunk.text.strip()
     body = _clean_fallback_answer(body)
-    # Drop absorb markdown chrome if we still fell back to the raw chunk
-    if body.startswith("# 学习记录") or body.startswith("<!--"):
-        labeled, _ = _labeled_answer_from_hits(hits, lang)
-        if labeled:
-            body = _clean_fallback_answer(labeled)
-    body = _append_missing_links(body, hits)
+    body = _append_missing_links(body, safe_hits)
     body = _scrub_blocked_urls(body)
-    # Keep fallback short — no long preamble
     if len(body) > 500:
         body = body[:500].rstrip() + "…"
+
+    if lang == "en":
+        cjk = sum(1 for char in body if "一" <= char <= "鿿")
+        letters = sum(
+            1 for char in body if char.isascii() and char.isalpha()
+        )
+        if cjk >= 40 and cjk > letters:
+            logger.warning(
+                "Blocked Chinese-heavy fallback for English question"
+            )
+            return _silent_decision(
+                "fallback language mismatch blocked",
+                best.score,
+                language=lang,
+            )
     if not body:
-        return _silent_decision("blocked-url scrub emptied fallback", best.score)
-    return ReplyDecision(True, body, "retrieval fallback", best.score, language=lang)
+        return _silent_decision(
+            "blocked-url scrub emptied fallback", best.score, language=lang
+        )
+    return ReplyDecision(
+        True, body, "retrieval fallback", best.score, language=lang
+    )
 
 
 def split_reply_bubbles(text: str) -> list[str]:
@@ -830,23 +956,6 @@ def _call_llm(
 
 
 
-def _is_formal_kb_source(source: str) -> bool:
-    """Curated FAQ/docs — not free-form learned absorb notes."""
-    s = (source or "").replace("\\", "/")
-    if s.startswith("learned/") or "/learned/" in s:
-        return False
-    if s.startswith("lark_") or "/lark_" in s:
-        return False
-    return True
-
-
-def _has_strong_formal_hit(hits: list[SearchHit], min_score: float = 0.80) -> bool:
-    if not hits:
-        return False
-    best = hits[0]
-    return best.score >= min_score and _is_formal_kb_source(best.chunk.source)
-
-
 async def generate_reply(
     question: str,
     kb: KnowledgeBase,
@@ -912,17 +1021,8 @@ async def generate_reply(
         return _silent_decision("no reply needed", best_score, language=lang)
 
     if NEEDS_HUMAN in answer or not answer.strip():
-        # High-confidence curated FAQ hit: answer from retrieval instead of going silent.
-        if _has_strong_formal_hit(hits, min_score=0.80):
-            logger.info(
-                "LLM returned NEEDS_HUMAN but formal FAQ hit is strong "
-                "(score=%.3f, src=%s) — using retrieval fallback",
-                best_score,
-                hits[0].chunk.source,
-            )
-            return _fallback_compose(
-                question, hits, lang, min_score=config.min_relevance_score
-            )
+        # Never override this with retrieval score. Document-level similarity can
+        # be high for an unrelated blog or crawl, as seen in Dungeon Cities.
         return _silent_decision("llm needs human", best_score, language=lang)
 
     answer = re.sub(r"\s*NEEDS_HUMAN\s*", "", answer).strip()
