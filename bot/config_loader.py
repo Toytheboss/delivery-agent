@@ -146,6 +146,10 @@ class AppConfig:
     workflow_lark_group_member_emails: list[str]
     workflow_lark_group_name_template: str
     workflow_lark_group_state_file: str
+    workflow_verify_alert_enabled: bool
+    workflow_verify_alert_lark_chat_id: str
+    workflow_verify_alert_cooldown_hours: float
+    workflow_verify_alert_state_file: str
     tech_support_enabled: bool
     tech_support_owner: str
     tech_support_lark_chat_id: str
@@ -795,7 +799,24 @@ def load_config() -> AppConfig:
                 "data/lark_wallet_group_state.json",
             )
         ),
-        
+        workflow_verify_alert_enabled=bool(
+            workflow.get("verify_alert_enabled", True)
+        ),
+        workflow_verify_alert_lark_chat_id=str(
+            workflow.get(
+                "verify_alert_lark_chat_id",
+                "oc_717a560011483216c49329fda5e43b41",
+            )
+        ).strip(),
+        workflow_verify_alert_cooldown_hours=float(
+            workflow.get("verify_alert_cooldown_hours", 0)
+        ),
+        workflow_verify_alert_state_file=str(
+            workflow.get(
+                "verify_alert_state_file",
+                "data/verify_alert_state.json",
+            )
+        ),
         tech_support_enabled=bool((workflow.get("tech_support") or {}).get("enabled", False)),
         tech_support_owner=str((workflow.get("tech_support") or {}).get("owner") or "delivery").strip(),
         tech_support_lark_chat_id=str((workflow.get("tech_support") or {}).get("lark_chat_id") or "").strip(),
