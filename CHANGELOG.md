@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-15 · Mark Live 状态提示只显示英文
+
+### 修复
+- Mark live 成功回复里的 `Status:` 不再带 Lark 选项的中文前缀（例如 `主网部署中 Deploying…` → `Deploying on BOT Chain Mainnet`）
+- 写入飞书仍用原选项文案，只改 Telegram 展示
+
+---
+
 ## 2026-09-14 · 抑制无主题确认句乱答 FAQ
 
 ### 修复

@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -32,6 +33,27 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 PENDING_PATH = ROOT / "data" / "mark_live_pending.json"
 PENDING_TTL_SECONDS = 24 * 3600
+_CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
+
+
+def _english_status_label(text: str) -> str:
+    """Show only the English part of bilingual Lark option labels in TG.
+
+    Lark values look like ``主网部署中 Deploying on BOT Chain Mainnet``.
+    Writes to Lark still use the original option text.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return "(empty)"
+    last = None
+    for match in _CJK_RE.finditer(raw):
+        last = match
+    if last is not None:
+        suffix = raw[last.end() :].strip()
+        if suffix:
+            return suffix
+    stripped = re.sub(r"\s+", " ", _CJK_RE.sub(" ", raw)).strip()
+    return stripped or raw
 
 
 @dataclass
@@ -234,7 +256,7 @@ async def _apply_mark_live(
         )
         lines = [
             f"Lark already live: {project_name}",
-            f"Status: {new_status}",
+            f"Status: {_english_status_label(new_status)}",
         ]
     else:
         try:
@@ -261,7 +283,7 @@ async def _apply_mark_live(
         )
         lines = [
             f"Lark updated: {project_name}",
-            f"Status: {old_status or '(empty)'} → {new_status}",
+            f"Status: {_english_status_label(old_status)} → {_english_status_label(new_status)}",
         ]
 
     note = await _maybe_write_tg_chat_id(
@@ -384,7 +406,7 @@ async def mark_live_from_group(
     if not matches:
         return MarkLiveOutcome(
             f"No Lark project matched this group title ({chat_title!r}). "
-            "Align Progress Tracker「项目名称」with the TG group name."
+            "Align Progress Tracker project name with the TG group name."
         )
     if len(matches) > 1:
         candidates = [(rid, name) for rid, name, _fields in matches]
