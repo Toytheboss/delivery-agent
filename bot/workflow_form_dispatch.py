@@ -205,6 +205,9 @@ def find_project_chat_matches(
                         or token.startswith(project_core)
                     )
                 ):
+                    extra_len = abs(len(token) - len(project_core))
+                    if extra_len < 3:
+                        continue
                     extra_other = [
                         t
                         for t in title_tokens
@@ -236,6 +239,32 @@ def find_project_chat_matches(
         if score >= 0:
             candidates.append((score, int(chat_id), title_text, reason))
 
+    if (
+        len(project_tokens) == 1
+        and len(project_tokens[0]) < 6
+        and project_tokens[0] not in _MATCH_GENERIC_PROJECTS
+    ):
+        token = project_tokens[0]
+        overlapping: list[tuple[int, str]] = []
+        seen: set[int] = set()
+        for chat_id, title in title_by_chat.items():
+            title_text = str(title or "").strip()
+            if not title_text:
+                continue
+            t_norm = _normalize_name(title_text)
+            t_tokens = _meaningful_match_tokens(title_text)
+            if token in t_tokens or token in t_norm:
+                cid = int(chat_id)
+                if cid not in seen:
+                    seen.add(cid)
+                    overlapping.append((cid, title_text))
+        if len(overlapping) > 1:
+            overlapping.sort(key=lambda item: (item[1].lower(), item[0]))
+            return [
+                (cid, title, 50, "short-token overlap")
+                for cid, title in overlapping
+            ]
+
     if not candidates:
         return []
     candidates = _collapse_migrated_chat_duplicates(candidates)
@@ -261,6 +290,30 @@ def build_form_message(config: AppConfig, project_name: str) -> str:
         form_url=config.workflow_google_form_url,
         project_name=project_name or "your project",
     )
+
+
+def _chat_ids_already_sent_form(config: Any) -> set[int]:
+    """Chat IDs that already received a live/form message (from chase tracking)."""
+    rel = str(
+        getattr(config, "workflow_form_chase_state_file", "data/form_chase_state.json")
+        or "data/form_chase_state.json"
+    )
+    path = ROOT / rel
+    if not path.exists():
+        return set()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return set()
+    out: set[int] = set()
+    for meta in (raw.get("projects") or {}).values():
+        if not isinstance(meta, dict):
+            continue
+        try:
+            out.add(int(meta.get("chat_id")))
+        except (TypeError, ValueError):
+            continue
+    return out
 
 
 def match_project_to_chat(
@@ -469,6 +522,7 @@ async def run_form_dispatch_once(
     sent = _load_state(state_path)
     sent_now = 0
     state_dirty = False
+    already_sent_chats = _chat_ids_already_sent_form(config)
 
     # First run: mark all currently-live rows as already handled (no spam)
     if config.workflow_baseline_existing_live and not state_path.exists():
@@ -536,6 +590,17 @@ async def run_form_dispatch_once(
                 pass
             continue
 
+        if chat_id in already_sent_chats:
+            sent.add(record_id)
+            state_dirty = True
+            logger.info(
+                "Skip live project %r (%s): form already sent to chat_id=%s",
+                project_name,
+                record_id,
+                chat_id,
+            )
+            continue
+
         text = build_form_message(config, project_name)
         try:
             await client.send_message(chat_id, text)
@@ -556,6 +621,7 @@ async def run_form_dispatch_once(
         sent.add(record_id)
         sent_now += 1
         state_dirty = True
+        already_sent_chats.add(chat_id)
         try:
             from bot.metrics import record_form_outcome
 

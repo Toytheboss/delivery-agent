@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING, Any
 
 from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.workflow_form_dispatch import (
+    _chat_ids_already_sent_form,
     _field_text,
     _load_state,
     _mark_sent_in_lark,
@@ -174,6 +175,16 @@ async def process_live_project(
                 result["form"] = f"no_group:{match_reason}"
                 logger.warning(
                     "live-trigger form skip %r (%s): %s", name, rid, match_reason
+                )
+            elif chat_id in _chat_ids_already_sent_form(config):
+                sent.add(rid)
+                _save_state(state_path, sent)
+                result["form"] = "already_sent_chat"
+                logger.info(
+                    "live-trigger form skip %r (%s): already sent to chat_id=%s",
+                    name,
+                    rid,
+                    chat_id,
                 )
             else:
                 try:
