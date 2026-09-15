@@ -224,13 +224,17 @@ def note_form_sent(
 
 
 def _find_wallet_fields(
-    wallet_records: list[dict[str, Any]], project_name: str
+    wallet_records: list[dict[str, Any]],
+    project_name: str,
+    fields_needed: list[str] | None = None,
 ) -> dict[str, Any] | None:
+    """Pick wallet row for project; if duplicates, prefer the most complete form."""
     want = _normalize_name(project_name)
     if not want:
         return None
-    exact: dict[str, Any] | None = None
-    partial: dict[str, Any] | None = None
+    needed = list(fields_needed or DEFAULT_CHASE_FIELDS)
+    exact_rows: list[dict[str, Any]] = []
+    partial_rows: list[dict[str, Any]] = []
     for record in wallet_records:
         fields = record.get("fields") or {}
         name = _field_text(fields, "Project name")
@@ -238,11 +242,20 @@ def _find_wallet_fields(
         if not nn:
             continue
         if nn == want:
-            exact = fields
-            break
-        if want in nn or nn in want:
-            partial = fields
-    return exact or partial
+            exact_rows.append(fields)
+        elif want in nn or nn in want:
+            partial_rows.append(fields)
+
+    def _best(rows: list[dict[str, Any]]) -> dict[str, Any] | None:
+        if not rows:
+            return None
+        if len(rows) == 1:
+            return rows[0]
+        # Duplicate display names (e.g. "Bot Launch" vs "BotLaunch") must not
+        # lock onto an incomplete older row while a complete one also exists.
+        return max(rows, key=lambda f: count_filled_fields(f, needed))
+
+    return _best(exact_rows) or _best(partial_rows)
 
 
 async def run_form_chase_once(
@@ -306,7 +319,9 @@ async def run_form_chase_once(
             first_sent_at = 0.0
         reminders = int(meta.get("reminders_sent") or 0)
 
-        wallet_fields = _find_wallet_fields(wallet_records, project_name)
+        wallet_fields = _find_wallet_fields(
+            wallet_records, project_name, fields_needed=fields_needed
+        )
         filled_names = [
             n for n in fields_needed if field_is_filled(wallet_fields or {}, n)
         ]
