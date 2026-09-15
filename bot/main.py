@@ -45,6 +45,7 @@ from bot.workflow_live_trigger import startup_live_catchup
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loop
 from bot.workflow_form_chase import form_chase_loop
+from bot.workflow_logo_link_sync import logo_link_sync_loop
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -367,6 +368,18 @@ async def main() -> None:
                 len(getattr(config, "workflow_form_chase_fields", []) or []),
                 getattr(config, "workflow_form_chase_max_reminders", 1),
                 getattr(config, "workflow_form_chase_scan_minutes", 60),
+            )
+        if getattr(config, "workflow_logo_link_sync_enabled", True):
+            asyncio.create_task(logo_link_sync_loop(config))
+            logger.info(
+                "Workflow logo-link sync enabled (wallet Project logo → "
+                "progress %r, scan=%dm)",
+                getattr(config, "workflow_logo_link_field", "项目logo （链接）"),
+                int(
+                    getattr(config, "workflow_logo_link_sync_minutes", 0)
+                    or getattr(config, "workflow_form_chase_scan_minutes", 60)
+                    or 60
+                ),
             )
         if config.workflow_lark_digest_enabled:
             await sync_wallet_first_seen(config)

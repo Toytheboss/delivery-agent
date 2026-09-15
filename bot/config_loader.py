@@ -108,6 +108,11 @@ class AppConfig:
     workflow_baseline_existing_live: bool
     workflow_logo_fill_enabled: bool
     workflow_logo_field: str
+    workflow_logo_link_sync_enabled: bool
+    workflow_logo_link_field: str
+    workflow_wallet_logo_field: str
+    workflow_wallet_name_field: str
+    workflow_logo_link_sync_minutes: int
     workflow_live_link_field: str
     workflow_project_link_field: str
     workflow_logo_state_file: str
@@ -626,6 +631,21 @@ def load_config() -> AppConfig:
         ),
         workflow_logo_fill_enabled=bool(workflow.get("logo_fill_enabled", True)),
         workflow_logo_field=str(workflow.get("logo_field", "项目logo（文件）")),
+        workflow_logo_link_sync_enabled=bool(
+            workflow.get("logo_link_sync_enabled", True)
+        ),
+        workflow_logo_link_field=str(
+            workflow.get("logo_link_field", "项目logo （链接）")
+        ),
+        workflow_wallet_logo_field=str(
+            workflow.get("wallet_logo_field", "Project logo")
+        ),
+        workflow_wallet_name_field=str(
+            workflow.get("wallet_name_field", "Project name")
+        ),
+        workflow_logo_link_sync_minutes=int(
+            workflow.get("logo_link_sync_minutes", 0) or 0
+        ),
         workflow_live_link_field=str(
             workflow.get("live_link_field", "已上线链接🔗")
         ),
