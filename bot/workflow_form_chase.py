@@ -12,6 +12,7 @@ import json
 import logging
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -386,14 +387,34 @@ async def form_chase_loop(
     config: AppConfig,
     scope: FolderScope | None = None,
 ) -> None:
-    interval = max(int(getattr(config, "workflow_form_chase_scan_minutes", 60) or 60), 5) * 60
-    # Stagger first run so startup flood stays light
-    await asyncio.sleep(min(120, interval))
+    """Run form chase once per day at the same hour as the wallet Lark digest."""
+    from bot.workflow_lark_wallet_group import (
+        TZ,
+        _digest_hour,
+        _seconds_until_next_hour,
+    )
+
+    hour = _digest_hour(config)
+    logger.info(
+        "form-chase scheduled daily at %02d:00 Asia/Shanghai (with wallet digest)",
+        hour,
+    )
+    # Wait for the next digest window so restarts do not re-chase midday.
+    await asyncio.sleep(await _seconds_until_next_hour(hour) + 1)
     while True:
-        try:
-            n = await run_form_chase_once(client, config, scope)
-            if n:
-                logger.info("form-chase cycle sent %d reminder(s)", n)
-        except Exception:
-            logger.exception("form-chase cycle failed")
-        await asyncio.sleep(interval)
+        path = _state_path(config)
+        state = _load_state(path)
+        day_key = datetime.now(TZ).strftime("%Y-%m-%d")
+        if state.get("last_chase_date") == day_key:
+            logger.info("form-chase already ran for %s — skip", day_key)
+        else:
+            try:
+                n = await run_form_chase_once(client, config, scope)
+                if n:
+                    logger.info("form-chase cycle sent %d reminder(s)", n)
+                state = _load_state(path)
+                state["last_chase_date"] = day_key
+                _save_state(path, state)
+            except Exception:
+                logger.exception("form-chase cycle failed")
+        await asyncio.sleep(await _seconds_until_next_hour(hour) + 1)

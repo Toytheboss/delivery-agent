@@ -362,24 +362,20 @@ async def main() -> None:
             asyncio.create_task(form_chase_loop(client, config, scope))
             logger.info(
                 "Workflow form-chase enabled (after=%sh, min_filled=%d/%d, "
-                "max_reminders=%d, scan=%dm)",
+                "max_reminders=%d, daily@%02d:00 with wallet digest)",
                 getattr(config, "workflow_form_chase_after_hours", 24),
                 getattr(config, "workflow_form_chase_min_filled", 4),
                 len(getattr(config, "workflow_form_chase_fields", []) or []),
                 getattr(config, "workflow_form_chase_max_reminders", 1),
-                getattr(config, "workflow_form_chase_scan_minutes", 60),
+                int(getattr(config, "workflow_lark_digest_hour", 0) or 0),
             )
         if getattr(config, "workflow_logo_link_sync_enabled", True):
             asyncio.create_task(logo_link_sync_loop(config))
             logger.info(
                 "Workflow logo-link sync enabled (wallet Project logo → "
-                "progress %r, scan=%dm)",
+                "progress %r, daily@%02d:00 with wallet digest)",
                 getattr(config, "workflow_logo_link_field", "项目logo （链接）"),
-                int(
-                    getattr(config, "workflow_logo_link_sync_minutes", 0)
-                    or getattr(config, "workflow_form_chase_scan_minutes", 60)
-                    or 60
-                ),
+                int(getattr(config, "workflow_lark_digest_hour", 0) or 0),
             )
         if config.workflow_lark_digest_enabled:
             await sync_wallet_first_seen(config)

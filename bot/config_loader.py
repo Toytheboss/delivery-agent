@@ -668,7 +668,7 @@ def load_config() -> AppConfig:
             workflow.get("form_chase_after_hours", 24) or 24
         ),
         workflow_form_chase_scan_minutes=int(
-            workflow.get("form_chase_scan_minutes", 60) or 60
+            workflow.get("form_chase_scan_minutes", 1440) or 1440
         ),
         workflow_form_chase_min_filled=int(
             workflow.get("form_chase_min_filled", 4) or 4

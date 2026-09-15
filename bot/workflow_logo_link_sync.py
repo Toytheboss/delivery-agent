@@ -202,23 +202,34 @@ async def run_logo_link_sync_once(config: AppConfig) -> dict[str, int]:
 
 
 async def logo_link_sync_loop(config: AppConfig) -> None:
-    """Periodic sync; interval reuses form-chase scan minutes (default 60)."""
-    interval = max(
-        int(
-            getattr(config, "workflow_logo_link_sync_minutes", 0)
-            or getattr(config, "workflow_form_chase_scan_minutes", 60)
-            or 60
-        ),
-        5,
-    ) * 60
-    await asyncio.sleep(min(150, interval))
+    """Run once per day at the wallet Lark digest hour (with form-chase)."""
+    from datetime import datetime
+
+    from bot.workflow_lark_wallet_group import (
+        TZ,
+        _digest_hour,
+        _seconds_until_next_hour,
+    )
+
+    hour = _digest_hour(config)
+    logger.info(
+        "logo-link sync scheduled daily at %02d:00 Asia/Shanghai (with wallet digest)",
+        hour,
+    )
+    await asyncio.sleep(await _seconds_until_next_hour(hour) + 1)
+    last_day = ""
     while True:
-        try:
-            stats = await run_logo_link_sync_once(config)
-            if stats.get("updated"):
-                logger.info(
-                    "logo-link sync cycle updated %d row(s)", stats["updated"]
-                )
-        except Exception:  # noqa: BLE001
-            logger.exception("logo-link sync cycle failed")
-        await asyncio.sleep(interval)
+        day_key = datetime.now(TZ).strftime("%Y-%m-%d")
+        if day_key == last_day:
+            logger.info("logo-link sync already ran for %s — skip", day_key)
+        else:
+            try:
+                stats = await run_logo_link_sync_once(config)
+                last_day = day_key
+                if stats.get("updated"):
+                    logger.info(
+                        "logo-link sync cycle updated %d row(s)", stats["updated"]
+                    )
+            except Exception:  # noqa: BLE001
+                logger.exception("logo-link sync cycle failed")
+        await asyncio.sleep(await _seconds_until_next_hour(hour) + 1)

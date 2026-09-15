@@ -154,7 +154,7 @@ workflow:
   logo_link_field: "项目logo （链接）"
   wallet_logo_field: "Project logo"
   wallet_name_field: "Project name"
-  # 0 = reuse form_chase_scan_minutes
+  # 0 = reuse daily digest hour schedule
   logo_link_sync_minutes: 0
   live_link_field: "已上线链接🔗"
   project_link_field: "项目链接"
@@ -170,7 +170,8 @@ workflow:
   # 表单发出后：钱包表 5 项里不足 4 项时，满 24h 自动催收再发一次
   form_chase_enabled: true
   form_chase_after_hours: 24
-  form_chase_scan_minutes: 60
+  # Legacy knob; chase now runs once daily at lark_digest_hour (default 00:00)
+  form_chase_scan_minutes: 1440
   form_chase_min_filled: 4
   form_chase_max_reminders: 1
   form_chase_fields:
