@@ -11,6 +11,15 @@
 
 ---
 
+## 2026-09-17 · BotFundMe CSS 品牌标可抓取
+
+### 修复
+- Logo 抓取支持 CSS `.brand-mark` 渐变圆（无 `<img>` 的站点）
+- `data:image/svg` favicon 不再被 href 里的 `>` 截断
+- Playwright 失败改为 warning，避免静默跳过
+
+---
+
 ## 2026-09-16 · 禁止匹配规则变更后重发历史 live 表单
 
 ### 修复

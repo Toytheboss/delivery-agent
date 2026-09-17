@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html as html_lib
 import io
 import json
 import logging
@@ -225,9 +226,33 @@ def _fname_for(data: bytes, url: str) -> str:
     return "logo.png"
 
 
+def _tags(html: str, name: str) -> list[str]:
+    """Return raw tags, including attributes that contain '>' (data:image SVG)."""
+    out: list[str] = []
+    for m in re.finditer(rf"<{name}\b", html, flags=re.I):
+        i = m.start()
+        quote = ""
+        j = i
+        while j < len(html):
+            ch = html[j]
+            if quote:
+                if ch == quote:
+                    quote = ""
+            elif ch in ('"', "'"):
+                quote = ch
+            elif ch == ">":
+                out.append(html[i : j + 1])
+                break
+            j += 1
+        if len(out) >= 80:
+            break
+    return out
+
+
 def _decode_data_uri(url: str) -> tuple[bytes, str] | None:
     if not url.startswith("data:image"):
         return None
+    url = html_lib.unescape(url.strip())
     try:
         header, payload = url.split(",", 1)
     except ValueError:
@@ -239,6 +264,9 @@ def _decode_data_uri(url: str) -> tuple[bytes, str] | None:
             raw = unquote(payload).encode("utf-8", errors="ignore")
     except Exception:
         return None
+    # Truncated/HTML-escaped SVG sometimes still has &lt;svg after unescape miss.
+    if raw.lstrip().startswith(b"&lt;svg"):
+        raw = html_lib.unescape(raw.decode("utf-8", errors="ignore")).encode("utf-8")
     ext = "png"
     h = header.lower()
     if "svg" in h:
@@ -284,7 +312,9 @@ def download_image(url: str) -> tuple[bytes, str] | None:
 
 def _attr(tag: str, name: str) -> str | None:
     m = re.search(rf"""{name}\s*=\s*["']([^"']+)["']""", tag, flags=re.I)
-    return m.group(1).strip() if m else None
+    if not m:
+        return None
+    return html_lib.unescape(m.group(1).strip())
 
 
 def _extract_data_image_uris(html: str) -> list[str]:
@@ -327,7 +357,7 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
     )
     region = "\n".join(header_chunks) if header_chunks else top[:20000]
 
-    for tag in re.findall(r"<img\b[^>]*>", region, flags=re.I):
+    for tag in _tags(region, "img"):
         src = (
             _attr(tag, "src")
             or _attr(tag, "data-src")
@@ -362,7 +392,7 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
         order += 1
 
     # Whole-page imgs with explicit logo/brand hints (outside header scrape window).
-    for tag in re.findall(r"<img\b[^>]*>", html[:80000], flags=re.I):
+    for tag in _tags(html[:80000], "img"):
         blob = tag.lower()
         if not any(k in blob for k in ("logo", "brand", "navbar-brand", "site-title")):
             continue
@@ -375,8 +405,7 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
         add(src, 70, order)
         order += 1
 
-    for m in re.finditer(r"""<link\b[^>]*>""", head, flags=re.I):
-        tag = m.group(0)
+    for tag in _tags(head, "link"):
         rel = (_attr(tag, "rel") or "").lower()
         href = _attr(tag, "href")
         sizes = (_attr(tag, "sizes") or "").lower()
@@ -611,6 +640,10 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
             if result is None:
                 # Element screenshot for svg/img/brand text.
                 selectors = [
+                    "a.brand",
+                    ".brand-mark",
+                    "header a.brand",
+                    "[class*='brand-mark' i]",
                     "header [class*='logo' i]",
                     "nav [class*='logo' i]",
                     "[class*='logo' i]",
@@ -654,8 +687,114 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
             browser.close()
             return result
     except Exception:
-        logger.debug("browser logo fetch failed for %s", site, exc_info=True)
+        logger.warning("browser logo fetch failed for %s", site, exc_info=True)
         return None
+
+
+def _css_vars(css: str) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for block in re.findall(r":root\s*\{([^}]+)\}", css, flags=re.I):
+        for key, val in re.findall(
+            r"--([a-z0-9-]+)\s*:\s*([^;]+)", block, flags=re.I
+        ):
+            out[key.lower()] = val.strip()
+    return out
+
+
+def _resolve_css_color(token: str, variables: dict[str, str]) -> str | None:
+    token = (token or "").strip()
+    seen: set[str] = set()
+    for _ in range(4):
+        m = re.match(r"var\(\s*--([a-z0-9-]+)", token, flags=re.I)
+        if not m:
+            break
+        key = m.group(1).lower()
+        if key in seen:
+            return None
+        seen.add(key)
+        token = variables.get(key, "")
+    if re.match(r"^#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$", token, flags=re.I):
+        return token
+    m = re.match(r"rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)", token)
+    if m:
+        return "#{:02x}{:02x}{:02x}".format(
+            int(m.group(1)), int(m.group(2)), int(m.group(3))
+        )
+    return None
+
+
+def _svg_circle_from_gradient(colors: list[str], ring: str | None = None) -> bytes:
+    c0 = colors[0]
+    c1 = colors[1] if len(colors) > 1 else colors[0]
+    ring_svg = (
+        f'<circle cx="64" cy="64" r="58" fill="none" stroke="{ring}" stroke-width="6"/>'
+        if ring
+        else ""
+    )
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">'
+        "<defs><radialGradient id=\"g\" cx=\"35%\" cy=\"30%\">"
+        f'<stop offset="0%" stop-color="{c0}"/>'
+        f'<stop offset="70%" stop-color="{c1}"/>'
+        "</radialGradient></defs>"
+        '<circle cx="64" cy="64" r="54" fill="url(#g)"/>'
+        f"{ring_svg}"
+        "</svg>"
+    ).encode("utf-8")
+
+
+def _logo_from_stylesheets(html: str, base_url: str) -> tuple[bytes, str] | None:
+    """Turn CSS brand marks (e.g. .brand-mark radial-gradient) into an SVG."""
+    hrefs: list[str] = []
+    for tag in _tags(html[:30000], "link"):
+        rel = (_attr(tag, "rel") or "").lower()
+        href = _attr(tag, "href")
+        if href and "stylesheet" in rel:
+            hrefs.append(urljoin(base_url, href))
+    p = urlparse(base_url)
+    origin = f"{p.scheme}://{p.netloc}"
+    for path in ("/style.css", "/styles.css", "/index.css", "/app.css"):
+        hrefs.append(origin + path)
+    seen: set[str] = set()
+    for href in hrefs:
+        key = href.split("?", 1)[0]
+        if key in seen or href.startswith("data:"):
+            continue
+        seen.add(key)
+        r = http_get(href, timeout=8.0)
+        if r is None or not r.text:
+            continue
+        css = r.text
+        variables = _css_vars(css)
+        block_m = re.search(
+            r"\.(?:brand-mark|logo-mark|brand-logo|site-mark)\s*\{([^}]+)\}",
+            css,
+            flags=re.I,
+        )
+        if not block_m:
+            continue
+        block = block_m.group(1)
+        if "radial-gradient" not in block.lower() and "border-radius" not in block:
+            continue
+        raw_colors = re.findall(
+            r"var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8}|rgb\(\s*\d+\s*,\s*\d+\s*,\s*\d+\s*\)",
+            block,
+        )
+        colors: list[str] = []
+        for token in raw_colors:
+            resolved = _resolve_css_color(token, variables)
+            if resolved and resolved not in colors:
+                colors.append(resolved)
+        if not colors:
+            continue
+        ring = None
+        shadow = re.search(r"box-shadow:[^;]*?(var\(--[a-z0-9-]+\)|#[0-9a-fA-F]{3,8})", block, flags=re.I)
+        if shadow:
+            ring = _resolve_css_color(shadow.group(1), variables)
+        svg = _svg_circle_from_gradient(colors, ring)
+        if _image_quality_ok(svg, "logo.svg"):
+            return svg, "logo.svg"
+    return None
 
 
 def _try_candidates(candidates: list[str]) -> tuple[bytes, str] | None:
@@ -678,12 +817,20 @@ def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
             continue
         tried_pages.add(key)
         html = page.text or ""
-        # Tiny SPA shells (<1KB) rarely contain assets; still try common paths + browser.
+        if re.search(r"class=[\"'][^\"']*\bbrand-mark\b", html, flags=re.I) or re.search(
+            r"class=[\"'][^\"']*\blogo-mark\b", html, flags=re.I
+        ):
+            css_logo = _logo_from_stylesheets(html, final_url)
+            if css_logo:
+                return css_logo
         candidates = logo_candidates_from_html(html, final_url)
         candidates = _expand_manifest_candidates(candidates, final_url)
         got = _try_candidates(candidates)
         if got:
             return got
+        css_logo = _logo_from_stylesheets(html, final_url)
+        if css_logo:
+            return css_logo
         p = urlparse(final_url)
         origin = f"{p.scheme}://{p.netloc}"
         for path in (
