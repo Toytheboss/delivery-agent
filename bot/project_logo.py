@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import html as html_lib
 import io
 import json
@@ -18,6 +19,12 @@ import requests
 from bot.lark_bitable import update_record
 
 logger = logging.getLogger(__name__)
+
+# Default Create React App / CRA PWA icons — not the product brand.
+_REJECT_IMAGE_MD5 = {
+    "917515db74ea8d1aee6a246cfbcc0b45",  # CRA public/logo512.png React atom
+    "33dbdd0177549353eeeb785d02c294af",  # CRA public/logo192.png React atom
+}
 
 API = "https://open.larksuite.com/open-apis"
 UA = (
@@ -190,6 +197,8 @@ def _is_image_bytes(data: bytes, ctype: str) -> bool:
 def _image_quality_ok(data: bytes, fname: str) -> bool:
     """Reject tiny/corrupt rasters that are usually wrong favicons/screenshots."""
     if not data:
+        return False
+    if hashlib.md5(data).hexdigest() in _REJECT_IMAGE_MD5:
         return False
     low = (fname or "").lower()
     stripped = data.lstrip()
@@ -542,6 +551,10 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
     global _BROWSER_UNAVAILABLE
     if _BROWSER_UNAVAILABLE:
         return None
+    os.environ.setdefault(
+        "PLAYWRIGHT_BROWSERS_PATH",
+        str(Path(__file__).resolve().parent.parent / ".cache" / "ms-playwright"),
+    )
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -587,6 +600,15 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
     const src = img.currentSrc || img.src || '';
     if (src) return { type: 'url', src: absUrl(src) };
     return { type: 'el', selector: 'img' };
+  }
+  const brandEl = document.querySelector(
+    'a.brand, .brand-mark, [class*="brand-mark" i], a[class*="brand" i], [class*="logo" i], [id*="logo" i]'
+  );
+  if (brandEl) {
+    const r = brandEl.getBoundingClientRect();
+    if (r.width >= 12 && r.height >= 12 && r.top < 220) {
+      return { type: 'brand' };
+    }
   }
   // CSS background logos in the header band.
   const nodes = [...header.querySelectorAll('a, div, span, i, button')].slice(0, 80);
@@ -696,7 +718,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
         msg = str(exc)
         if "Executable doesn't exist" in msg:
             _BROWSER_UNAVAILABLE = True
-            logger.warning("playwright chromium missing; skip browser logo fallback")
+            logger.warning("playwright chromium missing; skip browser logo fetch")
         else:
             logger.warning("browser logo fetch failed for %s: %s", site, msg)
         return None
@@ -817,6 +839,8 @@ def _try_candidates(candidates: list[str]) -> tuple[bytes, str] | None:
 
 
 def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
+    """Downloadable assets first; Playwright if none; CSS brand-mark last."""
+    pages: list[tuple[str, str]] = []
     tried_pages: set[str] = set()
     for variant in _site_variants(site):
         page = http_get(variant, timeout=15.0)
@@ -828,20 +852,12 @@ def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
             continue
         tried_pages.add(key)
         html = page.text or ""
-        if re.search(r"class=[\"'][^\"']*\bbrand-mark\b", html, flags=re.I) or re.search(
-            r"class=[\"'][^\"']*\blogo-mark\b", html, flags=re.I
-        ):
-            css_logo = _logo_from_stylesheets(html, final_url)
-            if css_logo:
-                return css_logo
+        pages.append((final_url, html))
         candidates = logo_candidates_from_html(html, final_url)
         candidates = _expand_manifest_candidates(candidates, final_url)
         got = _try_candidates(candidates)
         if got:
             return got
-        css_logo = _logo_from_stylesheets(html, final_url)
-        if css_logo:
-            return css_logo
         p = urlparse(final_url)
         origin = f"{p.scheme}://{p.netloc}"
         for path in (
@@ -869,11 +885,15 @@ def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
             if got:
                 return got
 
-    # Browser fallback on homepage-first variants.
     for variant in _site_variants(site)[:2]:
         got = fetch_logo_via_browser(variant)
         if got:
             return got
+
+    for final_url, html in pages:
+        css_logo = _logo_from_stylesheets(html, final_url)
+        if css_logo:
+            return css_logo
     return None
 
 
