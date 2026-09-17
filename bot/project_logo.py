@@ -535,7 +535,13 @@ def _expand_manifest_candidates(candidates: list[str], base_url: str) -> list[st
     return out
 
 
+_BROWSER_UNAVAILABLE = False
+
+
 def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
+    global _BROWSER_UNAVAILABLE
+    if _BROWSER_UNAVAILABLE:
+        return None
     try:
         from playwright.sync_api import sync_playwright
     except ImportError:
@@ -686,8 +692,13 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                     pass
             browser.close()
             return result
-    except Exception:
-        logger.warning("browser logo fetch failed for %s", site, exc_info=True)
+    except Exception as exc:
+        msg = str(exc)
+        if "Executable doesn't exist" in msg:
+            _BROWSER_UNAVAILABLE = True
+            logger.warning("playwright chromium missing; skip browser logo fallback")
+        else:
+            logger.warning("browser logo fetch failed for %s: %s", site, msg)
         return None
 
 
