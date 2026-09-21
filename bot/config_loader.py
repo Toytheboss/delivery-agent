@@ -740,8 +740,10 @@ def load_config() -> AppConfig:
                 workflow.get("form_chase_fields")
                 or [
                     "Project name",
+                    "A brief introduction of your project",
+                    "Project X ( Formly Twitter) Profile Page",
                     "Project logo",
-                    "Contract Addresss/主网合约",
+                    "Mainnet Contract Addresss",
                     "Treasury Address",
                     "Fee Collector / Revenue Wallet Address",
                 ]
@@ -767,7 +769,7 @@ def load_config() -> AppConfig:
                 workflow.get("wallet_required_fields")
                 or [
                     "Project name",
-                    "Contract Addresss/主网合约",
+                    "Mainnet Contract Addresss",
                     "Treasury Address",
                 ]
             )

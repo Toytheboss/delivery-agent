@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 ADDRESS_FIELDS = [
-    "Contract Addresss/主网合约",
+    "Mainnet Contract Addresss",
     "Treasury Address",
     "Fee Collector / Revenue Wallet Address",
     "Grant Receiving Wallet (Optional)",

@@ -99,7 +99,28 @@ _MATCH_NOISE = {
     "x",
     "grant",
     "program",
+    "and",
+    "of",
+    "vs",
+    "with",
+    "for",
+    "app",
+    "web",
+    "web3",
+    "official",
+    "community",
+    "telegram",
+    "dao",
+    "fi",
+    "labs",
+    "lab",
+    "pwa",
+    "dapp",
+    "oracle",
 }
+_CAMEL_SPLIT = re.compile(
+    r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]+|[a-z]+|[A-Z]+|[0-9]+"
+)
 _MATCH_GENERIC_PROJECTS = {
     "test",
     "safe",
@@ -115,7 +136,76 @@ _MATCH_GENERIC_PROJECTS = {
 
 
 def _match_tokens(text: str) -> list[str]:
-    return re.findall(r"[a-z0-9]+", str(text or "").lower())
+    """Split on separators and CamelCase (CloudChain → cloud, chain).
+
+    Do not split when a fragment is shorter than 3 letters, so ``TaskOn``
+    stays ``taskon`` instead of ``task`` + ``on``.
+    """
+    out: list[str] = []
+    for chunk in re.findall(r"[a-zA-Z0-9]+", str(text or "")):
+        parts = [part.lower() for part in _CAMEL_SPLIT.findall(chunk) if part]
+        if not parts:
+            out.append(chunk.lower())
+        elif len(parts) >= 2 and any(len(part) < 3 or part in _MATCH_NOISE for part in parts):
+            out.append(chunk.lower())
+        else:
+            out.extend(parts)
+    return out
+
+
+def _stem_token(token: str) -> str:
+    if len(token) > 4 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _tokens_equivalent(left: str, right: str) -> bool:
+    if left == right:
+        return True
+    return _stem_token(left) == _stem_token(right)
+
+
+def _token_covered_by_title(token: str, title_tokens: list[str], title_core: str) -> bool:
+    return any(_tokens_equivalent(token, title_token) for title_token in title_tokens)
+
+
+def _project_tokens_covered(project_tokens: list[str], title_tokens: list[str]) -> bool:
+    if not project_tokens:
+        return False
+    if all(_token_covered_by_title(token, title_tokens, "") for token in project_tokens):
+        return True
+    if len(project_tokens) < 2:
+        return False
+    if not all(_token_covered_by_title(token, title_tokens, "") for token in project_tokens[:-1]):
+        return False
+    last = project_tokens[-1]
+    return any(
+        len(title_token) >= 3
+        and len(last) - len(title_token) >= 2
+        and last.startswith(title_token)
+        for title_token in title_tokens
+    )
+
+
+def _contains_as_name(needle: str, haystack: str, title_tokens: list[str]) -> bool:
+    """True if needle appears in haystack without being a prefix of a longer word.
+
+    ``botsea`` must not match ``botseal``; ``botsea`` may still match
+    ``botseapixeloptimus`` when ``pixel`` is a real title token.
+    """
+    if not needle or not haystack:
+        return False
+    start = 0
+    while True:
+        idx = haystack.find(needle, start)
+        if idx < 0:
+            return False
+        rest = haystack[idx + len(needle) :]
+        if not rest or not rest[0].isalnum():
+            return True
+        if any(rest.startswith(token) for token in title_tokens if len(token) >= 4):
+            return True
+        start = idx + 1
 
 
 def _meaningful_match_tokens(text: str) -> list[str]:
@@ -144,10 +234,10 @@ def find_project_chat_matches(
     """Return best fuzzy TG title matches as (chat_id, title, score, reason)."""
     project = str(project_name or "").strip()
     raw_project_tokens = _match_tokens(project)
-    project_tokens = _meaningful_match_tokens(project)
+    project_tokens = _meaningful_match_tokens(project) or raw_project_tokens
     project_token_set = set(project_tokens)
     project_norm = _normalize_name(project)
-    project_core = "".join(project_tokens)
+    project_core = "".join(raw_project_tokens) or "".join(project_tokens)
     if not project_core or len(project) < 2:
         return []
     if len(raw_project_tokens) == 1 and project_core in _MATCH_GENERIC_PROJECTS:
@@ -158,6 +248,7 @@ def find_project_chat_matches(
         title_text = str(title or "").strip()
         if not title_text:
             continue
+        title_text = re.sub(r"\([^)]*\)", " ", title_text)
         title_norm = _normalize_name(title_text)
         title_tokens = _meaningful_match_tokens(title_text)
         title_core = "".join(title_tokens)
@@ -166,17 +257,17 @@ def find_project_chat_matches(
 
         if project_norm == title_norm:
             score, reason = 100, "exact title match"
-        elif project_norm and project_norm in title_norm:
+        elif project_norm and _contains_as_name(project_norm, title_norm, title_tokens):
             score, reason = 96, "title contains project"
-        elif title_norm and title_norm in project_norm:
+        elif title_norm and _contains_as_name(title_norm, project_norm, project_tokens):
             score, reason = 94, "project contains title"
 
         if project_core and project_core == title_core:
             score, reason = max(score, 95), "core title match"
-        elif project_core and len(project_core) >= 4 and project_core in title_core:
+        elif project_core and len(project_core) >= 4 and _contains_as_name(project_core, title_core, title_tokens):
             score, reason = max(score, 90), "core title contains project"
 
-        if project_tokens and all(token in title_tokens for token in project_tokens):
+        if project_tokens and _project_tokens_covered(project_tokens, title_tokens):
             score, reason = max(score, 92), "meaningful token match"
 
         if (
@@ -186,14 +277,6 @@ def find_project_chat_matches(
             and project_tokens[0] in title_tokens
         ):
             score, reason = max(score, 88), "single token match"
-
-        if (
-            len(project_tokens) > 1
-            and len(project_tokens[0]) >= 4
-            and project_tokens[0] not in _MATCH_GENERIC_PROJECTS
-            and project_tokens[0] in title_tokens
-        ):
-            score, reason = max(score, 74), "leading project token match"
 
         if len(project_core) >= 5:
             for token in title_tokens:
@@ -208,6 +291,13 @@ def find_project_chat_matches(
                     extra_len = abs(len(token) - len(project_core))
                     if extra_len < 3:
                         continue
+                    leftover = (
+                        project_core[len(token) :]
+                        if project_core.startswith(token)
+                        else token[len(project_core) :]
+                    )
+                    if leftover and leftover not in title_core:
+                        continue
                     extra_other = [
                         t
                         for t in title_tokens
@@ -218,7 +308,15 @@ def find_project_chat_matches(
                     score, reason = max(score, 64), "compact alias match"
                     break
 
-        extra_title = [t for t in title_tokens if t not in project_token_set]
+        extra_title = [
+            t
+            for t in title_tokens
+            if t not in project_token_set
+            and t not in _MATCH_NOISE
+            and not any(_tokens_equivalent(t, p) for p in project_token_set)
+            and t not in project_core
+            and _stem_token(t) not in project_core
+        ]
         weak_extra_title_reasons = {
             "title contains project",
             "core title contains project",
@@ -231,9 +329,17 @@ def find_project_chat_matches(
             and reason in weak_extra_title_reasons
             and project_core != title_core
             and project_norm != title_norm
+            and (
+                reason == "leading project token match"
+                or (
+                    len(project_tokens) == 1
+                    and len(project_tokens[0]) < 6
+                )
+            )
         ):
             # Short Lark names must not bind a longer distinct product group.
             # "Space" → "BOT Chain | Space Runners" used to score 96.
+            # Leading-token-only hits with leftover product words are also skipped.
             score, reason = -1, ""
 
         if score >= 0:

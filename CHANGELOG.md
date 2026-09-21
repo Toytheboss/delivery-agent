@@ -11,6 +11,27 @@
 
 ---
 
+## 2026-09-21 · 项目名匹配、表单字段与 verify 口径对齐线上
+
+### 优化
+- 识别 CloudChain / BOTLatch 这类粘写，以及括号、`.fi`、web3 app、and、复数 Markets
+- 「Space → Space Runners」短名防配错保留；不再把 Archon、Nexar Network 等唯一群误判成对不上
+- 表单催收 / 钱包回写跟上新谷歌表单：简介、Twitter、`Mainnet Contract Addresss`
+- `form_chase_max_reminders` 默认 7 次
+
+### 修复
+- `botsea` 不再误配 `botseal`；`Bountyhunter` / `Agent Bazaar` 不再误配 BountyBoard、AgentX
+- `check if verified` / 短句 `verified` 也会进 Lark verify 提醒
+
+---
+
+## 2026-09-17 · 表单催收最多 7 次
+
+### 优化
+- `form_chase_max_reminders` 由 4 调整为 7，未填完的项目可继续催
+
+---
+
 ## 2026-09-17 · Logo 改回原图优先
 
 ### 优化

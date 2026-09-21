@@ -402,8 +402,12 @@ _VERIFY_ASK_RE = re.compile(
     r"verify\s+(?:the\s+)?(?:mainnet|deployment|deploy(?:ed)?|contract|contracts|"
     r"dapp|front\s*end|frontend|site|website|it|this|here|now|everything)|"
     r"verify\s+if\b|"
-    r"mainnet\s+verif(?:y|ication)|"
-    r"verif(?:y|ication)\s+(?:on\s+)?mainnet|"
+    # "check if verified" / "is it verified" (partner shorthand)
+    r"check\s+(?:if\s+)?(?:it(?:\'s|\s+is)\s+|this\s+is\s+)?verified|"
+    r"(?:please|kindly|pls|plz)\s+check\s+(?:if\s+)?verified|"
+    r"(?:is|are)\s+(?:it|this|they)\s+verified|"
+    r"mainnet\s+verif(?:y|ied|ication)|"
+    r"verif(?:y|ied|ication)\s+(?:on\s+)?mainnet|"
     r"mainnet\s+verification|"
     r"verify\s+(?:and\s+)?(?:let|check|look)"
     r")\b"
@@ -465,10 +469,10 @@ def delivery_alert_kind(text: str) -> str | None:
         return None
     if _VERIFY_ASK_RE.search(without):
         return "verify"
-    # Bare short "verify" / "mainnet verify" after stripping mentions
+    # Bare short "verify" / "verified" / "mainnet verify" after stripping mentions
     if len(without) <= 80 and re.search(
         r"(?is)^(?:hey|hi|hello)?[\s,]*"
-        r"(?:mainnet\s+)?verif(?:y|ication)(?:\s+mainnet)?[\s!.。！?？~…🙏👍]*$",
+        r"(?:mainnet\s+)?verif(?:y|ied|ication)(?:\s+mainnet)?[\s!.。！?？~…🙏👍]*$",
         without,
     ):
         return "verify"
@@ -500,7 +504,7 @@ def delivery_alert_kind_for_internal(text: str) -> str | None:
     if _VERIFY_NEGATE_RE.search(without):
         return None
     if re.search(
-        r"(?is)\bverif(?:y|ying|ication)\b|(?:核实|验证|核查)",
+        r"(?is)\bverif(?:y|ied|ying|ication)\b|(?:核实|验证|核查)",
         without,
     ):
         return "verify"

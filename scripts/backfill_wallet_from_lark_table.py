@@ -56,7 +56,7 @@ SRC_CONTRACT = "Mainnet Contract Address"
 DST_NAME = "Project name"
 DST_LOGO_TEXT = "Project logo"  # Text
 DST_LOGO_ATT = "Project log"  # Attachment (field name typo in dest)
-DST_CONTRACT = "Contract Addresss/主网合约"
+DST_CONTRACT = "Mainnet Contract Addresss"
 
 # Source has no separate treasury/fee fields — only contract maps.
 ADDRESS_MAP = [

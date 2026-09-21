@@ -22,13 +22,17 @@ var LARK_API = 'https://open.larksuite.com/open-apis';
 var APP_TOKEN = PropertiesService.getScriptProperties().getProperty('LARK_APP_TOKEN') || 'YOUR_BITABLE_APP_TOKEN';
 var TABLE_ID = PropertiesService.getScriptProperties().getProperty('LARK_TABLE_ID') || 'YOUR_TABLE_ID';
 
-// Google 表单「问题标题」→ Lark 字段名（已按 Form_Responses 表头对齐）
+// Google 表单「问题标题」→ Lark 字段名（已按 Form_Responses / 钱包表对齐）
 var FIELD_MAP = {
   'Project Name': 'Project name',
   'Project name': 'Project name',
+  'A brief introduction of your project': 'A brief introduction of your project',
+  'Project X ( Formly Twitter) Profile Page': 'Project X ( Formly Twitter) Profile Page',
   'Project logo': 'Project logo',
-  'Mainnet Contract Address': 'Contract Addresss/主网合约',
-  'Contract Addresss/主网合约': 'Contract Addresss/主网合约',
+  'Mainnet Contract Address': 'Mainnet Contract Addresss',
+  'Mainnet Contract Addresss': 'Mainnet Contract Addresss',
+  // legacy form / sheet headers
+  'Contract Addresss/主网合约': 'Mainnet Contract Addresss',
   'Treasury Address': 'Treasury Address',
   'Fee Collector / Revenue Wallet Address': 'Fee Collector / Revenue Wallet Address',
   'Multi-sig Threshold (Optional)': 'Multi-sig Threshold (Optional)',

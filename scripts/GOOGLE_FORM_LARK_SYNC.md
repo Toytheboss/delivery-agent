@@ -36,13 +36,16 @@ Apps Script 左侧 **项目设置（齿轮）→ 脚本属性 → 添加属性**
 
 Lark 目标列目前是：
 - Project name  
+- A brief introduction of your project  
+- Project X ( Formly Twitter) Profile Page  
 - Project logo  
-- Contract Addresss/主网合约  
+- Mainnet Contract Addresss  
 - Treasury Address  
 - Fee Collector / Revenue Wallet Address  
 - Multi-sig Threshold (Optional)  
 - Grant Receiving Wallet (Optional)  
 - MM / LP Wallet （Optional）  
+- Bridge Pool / Relayer Wallet (Optional)  
 
 若表单标题不同，只改 `FIELD_MAP` 左侧。
 

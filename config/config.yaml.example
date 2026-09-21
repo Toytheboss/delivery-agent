@@ -173,7 +173,7 @@ workflow:
   # Legacy knob; chase now runs once daily at lark_digest_hour (default 00:00)
   form_chase_scan_minutes: 1440
   form_chase_min_filled: 4
-  form_chase_max_reminders: 1
+  form_chase_max_reminders: 7
   form_chase_fields:
     - "Project name"
     - "Project logo"

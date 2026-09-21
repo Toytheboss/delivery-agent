@@ -35,8 +35,10 @@ ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_CHASE_FIELDS = [
     "Project name",
+    "A brief introduction of your project",
+    "Project X ( Formly Twitter) Profile Page",
     "Project logo",
-    "Contract Addresss/主网合约",
+    "Mainnet Contract Addresss",
     "Treasury Address",
     "Fee Collector / Revenue Wallet Address",
 ]
@@ -120,8 +122,11 @@ def missing_fields(fields: dict[str, Any], names: list[str]) -> list[str]:
 # Lark column → wording closer to the Google Form questions
 _FIELD_LABELS = {
     "Project name": "Project Name",
+    "A brief introduction of your project": "A brief introduction of your project",
+    "Project X ( Formly Twitter) Profile Page": "Project X / Twitter profile page",
     "Project logo": "Project logo",
-    "Contract Addresss/主网合约": "Mainnet Contract Address",
+    "Mainnet Contract Addresss": "Mainnet Contract Address",
+    "Contract Addresss/主网合约": "Mainnet Contract Address",  # legacy
     "Treasury Address": "Treasury Address",
     "Fee Collector / Revenue Wallet Address": "Fee Collector / Revenue Wallet Address",
 }
