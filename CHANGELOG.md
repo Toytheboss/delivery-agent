@@ -15,7 +15,7 @@
 
 ### 新增
 - 在项目 TG 群 quote PR 消息，回复 `pr support`，把链接覆盖写入正式进度表 `KPI 2 - PR 新闻链接验证`
-- 写入成功后通知 Botchain Delivery 群；TG / Lark 文案均为英文
+- 写入成功后通知 Botchain Delivery 群；TG 回复不出现 KPI 字样，Lark 内部通知保留
 - 不改「新闻验证结果」；群对不上或一对多时不写表
 
 ---

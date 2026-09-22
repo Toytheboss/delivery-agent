@@ -251,7 +251,7 @@ async def capture_pr_tweet(
         names = ", ".join(name for _rid, name, _fields in matches)
         return (
             f"Ambiguous ({len(matches)} projects): {names}. "
-            "Not writing KPI 2 until the group maps to one project."
+            "Not writing the PR link until the group maps to one project."
         )
 
     record_id, project_name, _fields = matches[0]
@@ -271,7 +271,7 @@ async def capture_pr_tweet(
             project_name,
             record_id,
         )
-        return f"Matched {project_name!r} but failed to write KPI 2: {exc}"
+        return f"Matched {project_name!r} but failed to write the PR link: {exc}"
 
     logger.info(
         "PR KPI 2 overwritten chat=%s project=%r record=%s url=%s",
@@ -281,7 +281,7 @@ async def capture_pr_tweet(
         url[:120],
     )
     lines = [
-        "Overwrote KPI 2 PR link.",
+        "Saved PR link.",
         f"Project: {project_name}",
         url,
     ]
@@ -299,8 +299,8 @@ async def capture_pr_tweet(
             await loop.run_in_executor(None, send_text_to_chat, token, lark_chat, msg)
             lines.append("Notified Botchain Delivery.")
         except Exception:  # noqa: BLE001
-            logger.exception("pr_capture: KPI 2 saved but Lark notify failed")
-            lines.append("KPI 2 saved, but failed to notify Botchain Delivery. Check logs.")
+            logger.exception("pr_capture: PR link saved but Lark notify failed")
+            lines.append("Saved the PR link, but failed to notify Botchain Delivery. Check logs.")
     elif notify_on:
-        lines.append("KPI 2 saved; Lark notify skipped (no chat id).")
+        lines.append("Saved the PR link; Lark notify skipped (no chat id).")
     return "\n".join(lines)
