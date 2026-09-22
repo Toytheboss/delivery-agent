@@ -47,6 +47,7 @@ from bot.workflow_mark_live import (
     resolve_mark_live_reply,
     save_mark_live_pending,
 )
+from bot.workflow_pr_capture import capture_pr_tweet, is_pr_capture_command
 from bot.workflow_tech_support import escalate_tech_support, is_tech_support_command
 
 _STATS_COMMANDS = frozenset({"/stats", "交付统计"})
@@ -277,6 +278,9 @@ class MessageHandler:
             text, self.config.workflow_manual_commands
         )
         is_tech_cmd = is_tech_support_command(text)
+        is_pr_cmd = is_pr_capture_command(
+            text, getattr(self.config, "pr_capture_commands", None)
+        )
         is_stats_cmd = text in _STATS_COMMANDS
         is_report_cmd = text in _REPORT_COMMANDS
         is_daily_cmd = _is_daily_report_command(text)
@@ -297,6 +301,7 @@ class MessageHandler:
             and not is_mark_live
             and not is_form_cmd
             and not is_tech_cmd
+            and not is_pr_cmd
             and not is_stats_cmd
             and not is_report_cmd
             and not is_daily_cmd
@@ -406,7 +411,7 @@ class MessageHandler:
                 self.config.ignore_user_ids,
                 self.config.ignore_usernames,
             )
-            and not (workflow_op and (is_mark_live or is_form_cmd))
+            and not (workflow_op and (is_mark_live or is_form_cmd or is_pr_cmd))
         ):
             _internal_alert = delivery_alert_kind_for_internal(text)
             # Verify must not wait for folder/pilot scope — new groups often
@@ -459,6 +464,37 @@ class MessageHandler:
             except Exception:
                 logger.exception("Tech support failed in chat %s", chat_id)
                 await message.reply("Failed to escalate tech support. Check logs.")
+            finally:
+                self._processing.discard(msg_id)
+            return
+
+        # PR capture: quote PR post + "pr support" → overwrite official KPI 2.
+        # Only the bot account that typed the command (message.out) to avoid double fire.
+        if (
+            getattr(self.config, "pr_capture_enabled", False)
+            and not event.is_private
+            and is_pr_cmd
+        ):
+            if not (message.out or (self.my_id is not None and sender_id == self.my_id)):
+                return
+            msg_id = message.id
+            if msg_id in self._processing:
+                return
+            self._processing.add(msg_id)
+            try:
+                chat = await event.get_chat()
+                title = getattr(chat, "title", None) or ""
+                result = await capture_pr_tweet(
+                    self.client,
+                    self.config,
+                    command_message=message,
+                    chat_id=chat_id,
+                    chat_title=title,
+                )
+                await message.reply(result)
+            except Exception:
+                logger.exception("PR capture failed in chat %s", chat_id)
+                await message.reply("Failed to save PR tweet. Check logs.")
             finally:
                 self._processing.discard(msg_id)
             return

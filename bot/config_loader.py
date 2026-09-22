@@ -199,6 +199,9 @@ class AppConfig:
     tech_support_auto_learn: bool
     tech_support_auto_learn_min_chars: int
     tech_support_auto_learn_state_file: str
+    pr_capture_enabled: bool
+    pr_capture_commands: list[str]
+    pr_capture_link_field: str
     welcome_enabled: bool
     welcome_name_keywords: list[str]
     welcome_message: str
@@ -896,6 +899,19 @@ def load_config() -> AppConfig:
                 "/opt/botchain-shared/tech_support_auto_learn.json",
             )
         ),
+        pr_capture_enabled=bool((workflow.get("pr_capture") or {}).get("enabled", False)),
+        pr_capture_commands=[
+            str(x).strip()
+            for x in (
+                (workflow.get("pr_capture") or {}).get("commands")
+                or ["pr support"]
+            )
+            if str(x).strip()
+        ],
+        pr_capture_link_field=str(
+            (workflow.get("pr_capture") or {}).get("link_field")
+            or "KPI 2 - PR 新闻链接验证"
+        ).strip(),
         welcome_enabled=bool((cfg.get("welcome") or {}).get("enabled", False)),
         welcome_name_keywords=[
             str(x).strip()

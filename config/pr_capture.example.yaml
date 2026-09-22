@@ -1,0 +1,5 @@
+# Add under workflow: in config/config.yaml (local only; not committed)
+  pr_capture:
+    enabled: true
+    commands: ["pr support"]
+    link_field: "KPI 2 - PR 新闻链接验证"
