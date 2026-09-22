@@ -72,7 +72,7 @@ def test_notify_text_includes_project_and_url():
         operator="@trent_one",
         record_id="recABC",
     )
-    assert text.startswith("【KPI-PR 已收录】")
+    assert text.startswith("[KPI-PR captured]")
     assert "TipJar" in text
     assert "https://x.com/a/status/1" in text
     assert "@trent_one" in text

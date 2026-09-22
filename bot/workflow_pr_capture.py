@@ -164,15 +164,15 @@ def build_pr_notify_text(
     record_id: str = "",
 ) -> str:
     lines = [
-        "【KPI-PR 已收录】",
-        f"项目：{project_name or '未知项目'}",
-        f"TG 群：{chat_title or '未知群'}",
-        f"链接：{url}",
+        "[KPI-PR captured]",
+        f"Project: {project_name or 'unknown project'}",
+        f"TG group: {chat_title or 'unknown group'}",
+        f"Link: {url}",
     ]
     if operator:
-        lines.append(f"操作：{operator}")
+        lines.append(f"By: {operator}")
     if record_id:
-        lines.append(f"进度表：{_PROGRESS_BASE_URL}&record={record_id}")
+        lines.append(f"Tracker: {_PROGRESS_BASE_URL}&record={record_id}")
     return "\n".join(lines)
 
 
@@ -297,10 +297,10 @@ async def capture_pr_tweet(
         )
         try:
             await loop.run_in_executor(None, send_text_to_chat, token, lark_chat, msg)
-            lines.append("Notified Botchain 交付部.")
+            lines.append("Notified Botchain Delivery.")
         except Exception:  # noqa: BLE001
             logger.exception("pr_capture: KPI 2 saved but Lark notify failed")
-            lines.append("KPI 2 saved, but failed to notify 交付部. Check logs.")
+            lines.append("KPI 2 saved, but failed to notify Botchain Delivery. Check logs.")
     elif notify_on:
         lines.append("KPI 2 saved; Lark notify skipped (no chat id).")
     return "\n".join(lines)
