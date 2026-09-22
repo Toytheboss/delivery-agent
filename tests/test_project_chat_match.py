@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from bot.workflow_form_dispatch import find_project_chat_matches, match_project_to_chat
 
 
@@ -107,7 +109,119 @@ def test_shieldguard_spaces():
     assert cid == 18, reason
 
 
-def test_kolmarket_two_same_title_still_ambiguous():
+def test_kolmarket_two_same_title_picks_one():
     cid, reason = match_project_to_chat("KOLMarket", TITLES)
+    assert cid in {15, 16}, reason
+    assert cid is not None
+
+
+def _amb() -> dict[int, str]:
+    return {
+        101: "Veris X Botchain",
+        102: "VeriSettle <> Botchain",
+        103: "Sent x Bot chain",
+        104: "Sentinel X Botchain",
+        105: "BOT Chain x Consent Registry",
+        106: "Trace Chain <> Botchain",
+        107: "Traceonchain X Botchain",
+        108: "Link Chain <> Botchain",
+        109: "Linkchain | BOT Chain",
+        -100109: "Linkchain | BOT Chain",
+        110: "BotChain <> Chainlink",
+        111: "BOTCHAIN DEX <> BOTCHAIN",
+        112: "ArcadeX <> Botchain (Live)",
+        113: "CrossBiDex | BOT Chain",
+        114: "The Card | BOT Chain",
+        115: "TeavuUcard&botchain",
+        117: "Dappbnb <> Botchain",
+        118: "BotChain",
+        119: "banshanbook&botchain",
+        120: "BanshanBook&botchain",
+        121: "Botfund <> Bot Chain",
+        122: "BOTFUND <> Bot Chain",
+        123: "Boost | BOT Chain",
+        125: "BotID Protocol <> Botchain",
+        127: "Agent Vault X Bot Chain",
+        128: "AgentVault | BOT Chain",
+        129: "CompulsePulse X Bot Chain",
+        130: "Pulse Vote <> Botchain",
+        131: "pulsegrid <> Botchain",
+        -100123: "Boost | BOT Chain",
+        -100114: "The Card | BOT Chain",
+        -100111: "BOTCHAIN DEX <> BOTCHAIN",
+        -100125: "BotID Protocol <> Botchain",
+    }
+
+
+def test_veris_not_verisettle():
+    cid, reason = match_project_to_chat("Veris", _amb())
+    assert cid == 101, reason
+
+
+def test_sent_not_sentinel():
+    cid, reason = match_project_to_chat("Sent", _amb())
+    assert cid == 103, reason
+
+
+def test_trace_chain_not_traceonchain():
+    cid, reason = match_project_to_chat("Trace Chain", _amb())
+    assert cid == 106, reason
+
+
+def test_link_chain_not_linkchain():
+    cid, reason = match_project_to_chat("Link Chain", _amb())
+    assert cid == 108, reason
+
+
+def test_linkchain_still_own_group():
+    cid, reason = match_project_to_chat("Linkchain", _amb())
+    assert cid == -100109, reason
+
+
+def test_botchain_dex_not_other_dex():
+    cid, reason = match_project_to_chat("BOTCHAIN DEX", _amb())
+    assert cid == -100111, reason
+
+
+def test_the_card_prefers_migrated():
+    cid, reason = match_project_to_chat("The Card", _amb())
+    assert cid == -100114, reason
+
+
+def test_dappbnb_url_not_generic_botchain():
+    cid, reason = match_project_to_chat(
+        "https://dappbnb-botchain.vercel.app/", _amb()
+    )
+    assert cid == 117, reason
+
+
+def test_banshanbook_duplicate_titles():
+    cid, reason = match_project_to_chat("BanshanBook", _amb())
+    assert cid in {119, 120}, reason
+    assert cid is not None
+
+
+def test_botfund_duplicate_titles():
+    cid, reason = match_project_to_chat("BotFund", _amb())
+    assert cid in {121, 122}, reason
+
+
+def test_boost_prefers_migrated():
+    cid, reason = match_project_to_chat("Boost", _amb())
+    assert cid == -100123, reason
+
+
+def test_botid_duplicate_titles():
+    cid, reason = match_project_to_chat("Botid", _amb())
+    assert cid == -100125, reason
+
+
+def test_agentvault_same_project_two_titles():
+    cid, reason = match_project_to_chat("AgentVault", _amb())
+    assert cid in {127, 128}, reason
+    assert cid is not None
+
+
+def test_bot_chain_pulse_stays_unmatched():
+    cid, _reason = match_project_to_chat("BOT Chain Pulse", _amb())
     assert cid is None
-    assert "ambiguous" in reason

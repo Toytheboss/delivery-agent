@@ -37,7 +37,7 @@ Apps Script 左侧 **项目设置（齿轮）→ 脚本属性 → 添加属性**
 Lark 目标列目前是：
 - Project name  
 - A brief introduction of your project  
-- Project X ( Formly Twitter) Profile Page  
+- Project X ( Formerly Twitter) Profile Page  
 - Project logo  
 - Mainnet Contract Addresss  
 - Treasury Address  

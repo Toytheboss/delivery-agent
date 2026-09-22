@@ -36,7 +36,7 @@ ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CHASE_FIELDS = [
     "Project name",
     "A brief introduction of your project",
-    "Project X ( Formly Twitter) Profile Page",
+    "Project X ( Formerly Twitter) Profile Page",
     "Project logo",
     "Mainnet Contract Addresss",
     "Treasury Address",
@@ -123,6 +123,7 @@ def missing_fields(fields: dict[str, Any], names: list[str]) -> list[str]:
 _FIELD_LABELS = {
     "Project name": "Project Name",
     "A brief introduction of your project": "A brief introduction of your project",
+    "Project X ( Formerly Twitter) Profile Page": "Project X / Twitter profile page",
     "Project X ( Formly Twitter) Profile Page": "Project X / Twitter profile page",
     "Project logo": "Project logo",
     "Mainnet Contract Addresss": "Mainnet Contract Address",

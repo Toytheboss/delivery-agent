@@ -27,7 +27,10 @@ var FIELD_MAP = {
   'Project Name': 'Project name',
   'Project name': 'Project name',
   'A brief introduction of your project': 'A brief introduction of your project',
-  'Project X ( Formly Twitter) Profile Page': 'Project X ( Formly Twitter) Profile Page',
+  'Project X ( Formerly Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
+  // legacy titles before the column was renamed
+  'Project X ( Formly Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
+  'Project X ( Formely Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
   'Project logo': 'Project logo',
   'Mainnet Contract Address': 'Mainnet Contract Addresss',
   'Mainnet Contract Addresss': 'Mainnet Contract Addresss',

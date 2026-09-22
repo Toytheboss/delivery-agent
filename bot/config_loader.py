@@ -741,7 +741,7 @@ def load_config() -> AppConfig:
                 or [
                     "Project name",
                     "A brief introduction of your project",
-                    "Project X ( Formly Twitter) Profile Page",
+                    "Project X ( Formerly Twitter) Profile Page",
                     "Project logo",
                     "Mainnet Contract Addresss",
                     "Treasury Address",

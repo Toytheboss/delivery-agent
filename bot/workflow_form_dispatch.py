@@ -188,10 +188,11 @@ def _project_tokens_covered(project_tokens: list[str], title_tokens: list[str]) 
 
 
 def _contains_as_name(needle: str, haystack: str, title_tokens: list[str]) -> bool:
-    """True if needle appears in haystack without being a prefix of a longer word.
+    """True if needle appears in haystack without being inside a longer word.
 
-    ``botsea`` must not match ``botseal``; ``botsea`` may still match
-    ``botseapixeloptimus`` when ``pixel`` is a real title token.
+    ``botsea`` must not match ``botseal``; ``sent`` must not match ``consent``.
+    ``botsea`` may still match ``botseapixeloptimus`` when ``pixel`` is a
+    real title token after the needle.
     """
     if not needle or not haystack:
         return False
@@ -200,11 +201,17 @@ def _contains_as_name(needle: str, haystack: str, title_tokens: list[str]) -> bo
         idx = haystack.find(needle, start)
         if idx < 0:
             return False
+        prev = haystack[idx - 1] if idx > 0 else ""
+        prefix_ok = idx == 0 or not prev.isalnum()
         rest = haystack[idx + len(needle) :]
-        if not rest or not rest[0].isalnum():
-            return True
-        if any(rest.startswith(token) for token in title_tokens if len(token) >= 4):
-            return True
+        suffix_ok = (not rest or not rest[0].isalnum()) or any(
+            rest.startswith(token) for token in title_tokens if len(token) >= 4
+        )
+        if prefix_ok and suffix_ok:
+            if not rest or not rest[0].isalnum():
+                return True
+            if any(rest.startswith(token) for token in title_tokens if len(token) >= 4):
+                return True
         start = idx + 1
 
 
@@ -212,19 +219,69 @@ def _meaningful_match_tokens(text: str) -> list[str]:
     return [token for token in _match_tokens(text) if token not in _MATCH_NOISE]
 
 
+def _project_name_for_match(project: str) -> str:
+    """Use the site slug when Lark stored a URL as the project name."""
+    text = str(project or "").strip()
+    if not re.match(r"^https?://", text, flags=re.I):
+        return text
+    host = re.sub(r"^https?://", "", text, flags=re.I).split("/", 1)[0].lower()
+    if host.startswith("www."):
+        host = host[4:]
+    skip = {
+        "vercel",
+        "netlify",
+        "github",
+        "app",
+        "io",
+        "com",
+        "xyz",
+        "site",
+        "online",
+        "pages",
+        "dev",
+    }
+    for label in host.split("."):
+        if label and label not in skip:
+            return label.replace("-", " ")
+    return text
+
+
+def _title_has_project_phrase(project: str, title: str) -> bool:
+    """True when the project words appear as a contiguous phrase in the title."""
+    proj = re.sub(r"[^a-z0-9]+", " ", str(project or "").lower()).strip()
+    titl = re.sub(r"[^a-z0-9]+", " ", str(title or "").lower()).strip()
+    if not proj or not titl:
+        return False
+    return f" {proj} " in f" {titl} "
+
+
+def _prefer_chat_item(
+    items: list[tuple[int, int, str, str]],
+) -> tuple[int, int, str, str]:
+    live = [item for item in items if str(item[1]).startswith("-100")]
+    pool = live or items
+    return min(pool, key=lambda item: item[1])
+
+
+def _title_collapse_key(title: str) -> str:
+    """Group duplicate chats without gluing different words together.
+
+    ``BanshanBook&botchain`` and ``banshanbook&botchain`` collapse; ``Link Chain``
+    and ``Linkchain`` stay distinct so Sudeep/Nicoley groups are not merged.
+    """
+    text = re.sub(r"\([^)]*\)", " ", str(title or ""))
+    text = re.sub(r"[^a-z0-9]+", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _collapse_migrated_chat_duplicates(
     candidates: list[tuple[int, int, str, str]],
 ) -> list[tuple[int, int, str, str]]:
-    """Drop legacy basic-group IDs when Telegram has a same-title -100 group."""
+    """Keep one chat per display title; prefer a migrated -100 group."""
     by_title: dict[str, list[tuple[int, int, str, str]]] = {}
     for item in candidates:
-        by_title.setdefault(_normalize_name(item[2]), []).append(item)
-    hidden: set[tuple[int, int, str, str]] = set()
-    for group in by_title.values():
-        live = [item for item in group if str(item[1]).startswith("-100")]
-        if live and len(live) < len(group):
-            hidden.update(item for item in group if item not in live)
-    return [item for item in candidates if item not in hidden]
+        by_title.setdefault(_title_collapse_key(item[2]), []).append(item)
+    return [_prefer_chat_item(group) for group in by_title.values()]
 
 
 def find_project_chat_matches(
@@ -232,7 +289,7 @@ def find_project_chat_matches(
     title_by_chat: dict[int, str],
 ) -> list[tuple[int, str, int, str]]:
     """Return best fuzzy TG title matches as (chat_id, title, score, reason)."""
-    project = str(project_name or "").strip()
+    project = _project_name_for_match(str(project_name or "").strip())
     raw_project_tokens = _match_tokens(project)
     project_tokens = _meaningful_match_tokens(project) or raw_project_tokens
     project_token_set = set(project_tokens)
@@ -252,11 +309,15 @@ def find_project_chat_matches(
         title_norm = _normalize_name(title_text)
         title_tokens = _meaningful_match_tokens(title_text)
         title_core = "".join(title_tokens)
+        if not title_tokens and not title_core:
+            continue
         score = -1
         reason = ""
 
         if project_norm == title_norm:
             score, reason = 100, "exact title match"
+        elif _title_has_project_phrase(project, title_text):
+            score, reason = 98, "phrase match"
         elif project_norm and _contains_as_name(project_norm, title_norm, title_tokens):
             score, reason = 96, "title contains project"
         elif title_norm and _contains_as_name(title_norm, project_norm, project_tokens):
@@ -313,6 +374,7 @@ def find_project_chat_matches(
             for t in title_tokens
             if t not in project_token_set
             and t not in _MATCH_NOISE
+            and t not in _MATCH_GENERIC_PROJECTS
             and not any(_tokens_equivalent(t, p) for p in project_token_set)
             and t not in project_core
             and _stem_token(t) not in project_core
@@ -345,37 +407,32 @@ def find_project_chat_matches(
         if score >= 0:
             candidates.append((score, int(chat_id), title_text, reason))
 
-    if (
-        len(project_tokens) == 1
-        and len(project_tokens[0]) < 6
-        and project_tokens[0] not in _MATCH_GENERIC_PROJECTS
-    ):
-        token = project_tokens[0]
-        overlapping: list[tuple[int, str]] = []
-        seen: set[int] = set()
-        for chat_id, title in title_by_chat.items():
-            title_text = str(title or "").strip()
-            if not title_text:
-                continue
-            t_norm = _normalize_name(title_text)
-            t_tokens = _meaningful_match_tokens(title_text)
-            if token in t_tokens or token in t_norm:
-                cid = int(chat_id)
-                if cid not in seen:
-                    seen.add(cid)
-                    overlapping.append((cid, title_text))
-        if len(overlapping) > 1:
-            overlapping.sort(key=lambda item: (item[1].lower(), item[0]))
-            return [
-                (cid, title, 50, "short-token overlap")
-                for cid, title in overlapping
-            ]
-
     if not candidates:
         return []
     candidates = _collapse_migrated_chat_duplicates(candidates)
     best = max(item[0] for item in candidates)
     top = [item for item in candidates if item[0] == best]
+    if len(top) > 1:
+        phrase_hits = [
+            item
+            for item in top
+            if item[3] == "phrase match" or _title_has_project_phrase(project, item[2])
+        ]
+        if len(phrase_hits) == 1:
+            top = phrase_hits
+        else:
+            core_hits = [
+                item
+                for item in top
+                if "".join(
+                    _meaningful_match_tokens(re.sub(r"\([^)]*\)", " ", item[2]))
+                )
+                == project_core
+            ]
+            if len(core_hits) == 1:
+                top = core_hits
+            elif len(core_hits) == len(top) and len(top) > 1:
+                top = [_prefer_chat_item(top)]
     top.sort(key=lambda item: (item[2].lower(), item[1]))
     return [(chat_id, title, score, reason) for score, chat_id, title, reason in top]
 
