@@ -3,6 +3,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from bot.workflow_pr_capture import (
+    build_pr_notify_text,
     collect_urls_from_message,
     is_pr_capture_command,
     is_tweet_url,
@@ -61,3 +62,18 @@ def test_collect_urls_from_text_and_entities():
 def test_tg_message_link_strips_minus_100():
     assert tg_message_link(-1001234567890, 42) == "https://t.me/c/1234567890/42"
     assert tg_message_link(-5404824061, 7) == "https://t.me/c/5404824061/7"
+
+
+def test_notify_text_includes_project_and_url():
+    text = build_pr_notify_text(
+        project_name="TipJar",
+        chat_title="TipJar <> Botchain",
+        url="https://x.com/a/status/1",
+        operator="@trent_one",
+        record_id="recABC",
+    )
+    assert text.startswith("【KPI-PR 已收录】")
+    assert "TipJar" in text
+    assert "https://x.com/a/status/1" in text
+    assert "@trent_one" in text
+    assert "record=recABC" in text

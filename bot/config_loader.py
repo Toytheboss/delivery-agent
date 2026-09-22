@@ -202,6 +202,8 @@ class AppConfig:
     pr_capture_enabled: bool
     pr_capture_commands: list[str]
     pr_capture_link_field: str
+    pr_capture_notify_enabled: bool
+    pr_capture_notify_chat_id: str
     welcome_enabled: bool
     welcome_name_keywords: list[str]
     welcome_message: str
@@ -911,6 +913,14 @@ def load_config() -> AppConfig:
         pr_capture_link_field=str(
             (workflow.get("pr_capture") or {}).get("link_field")
             or "KPI 2 - PR 新闻链接验证"
+        ).strip(),
+        pr_capture_notify_enabled=bool(
+            (workflow.get("pr_capture") or {}).get("notify_enabled", True)
+        ),
+        pr_capture_notify_chat_id=str(
+            (workflow.get("pr_capture") or {}).get("notify_chat_id")
+            or workflow.get("verify_alert_lark_chat_id")
+            or "oc_717a560011483216c49329fda5e43b41"
         ).strip(),
         welcome_enabled=bool((cfg.get("welcome") or {}).get("enabled", False)),
         welcome_name_keywords=[

@@ -3,3 +3,5 @@
     enabled: true
     commands: ["pr support"]
     link_field: "KPI 2 - PR 新闻链接验证"
+    notify_enabled: true
+    notify_chat_id: "oc_717a560011483216c49329fda5e43b41"  # BotChian交付部

@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from bot.lark_bitable import get_tenant_access_token, list_records, update_record
+from bot.lark_im import send_text_to_chat
 from bot.workflow_form_dispatch import (
     _field_text,
     _parse_chat_id,
@@ -34,6 +35,11 @@ _PR_CMD_RE = re.compile(
     r"(?is)^\s*(?:[/@])?pr[\s_-]*support\s*[!.。！]*\s*$"
 )
 _DEFAULT_LINK_FIELD = "KPI 2 - PR 新闻链接验证"
+_DEFAULT_NOTIFY_CHAT = "oc_717a560011483216c49329fda5e43b41"
+_PROGRESS_BASE_URL = (
+    "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e"
+    "?table=tbl5wXOwCptng06w"
+)
 
 
 def is_pr_capture_command(text: str, commands: list[str] | None = None) -> bool:
@@ -149,6 +155,35 @@ def _collect_matches(
     return matches
 
 
+def build_pr_notify_text(
+    *,
+    project_name: str,
+    chat_title: str,
+    url: str,
+    operator: str = "",
+    record_id: str = "",
+) -> str:
+    lines = [
+        "【KPI-PR 已收录】",
+        f"项目：{project_name or '未知项目'}",
+        f"TG 群：{chat_title or '未知群'}",
+        f"链接：{url}",
+    ]
+    if operator:
+        lines.append(f"操作：{operator}")
+    if record_id:
+        lines.append(f"进度表：{_PROGRESS_BASE_URL}&record={record_id}")
+    return "\n".join(lines)
+
+
+def _notify_chat_id(config: AppConfig) -> str:
+    return str(
+        getattr(config, "pr_capture_notify_chat_id", "")
+        or getattr(config, "workflow_verify_alert_lark_chat_id", "")
+        or _DEFAULT_NOTIFY_CHAT
+    ).strip()
+
+
 async def capture_pr_tweet(
     client: TelegramClient,
     config: AppConfig,
@@ -178,6 +213,12 @@ async def capture_pr_tweet(
             "Quoted message has no link. Quote the post that contains "
             "the URL, then reply `pr support`."
         )
+
+    sender = await command_message.get_sender()
+    operator = ""
+    if sender is not None:
+        username = getattr(sender, "username", None)
+        operator = f"@{username}" if username else str(getattr(sender, "id", "") or "")
 
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
@@ -239,10 +280,27 @@ async def capture_pr_tweet(
         record_id,
         url[:120],
     )
-    return "\n".join(
-        [
-            "Overwrote KPI 2 PR link.",
-            f"Project: {project_name}",
-            url,
-        ]
-    )
+    lines = [
+        "Overwrote KPI 2 PR link.",
+        f"Project: {project_name}",
+        url,
+    ]
+    notify_on = bool(getattr(config, "pr_capture_notify_enabled", True))
+    lark_chat = _notify_chat_id(config) if notify_on else ""
+    if notify_on and lark_chat:
+        msg = build_pr_notify_text(
+            project_name=project_name,
+            chat_title=chat_title,
+            url=url,
+            operator=operator,
+            record_id=record_id,
+        )
+        try:
+            await loop.run_in_executor(None, send_text_to_chat, token, lark_chat, msg)
+            lines.append("Notified Botchain 交付部.")
+        except Exception:  # noqa: BLE001
+            logger.exception("pr_capture: KPI 2 saved but Lark notify failed")
+            lines.append("KPI 2 saved, but failed to notify 交付部. Check logs.")
+    elif notify_on:
+        lines.append("KPI 2 saved; Lark notify skipped (no chat id).")
+    return "\n".join(lines)
