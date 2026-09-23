@@ -382,7 +382,7 @@ async def handle_backlink_trigger(
     progress = await loop.run_in_executor(None, list_records, token, app_token, progress_id)
     title_by_chat: dict[int, str] = {}
     if scope is not None and client is not None:
-        title_by_chat = await build_folder_title_map(client, scope.chat_ids())
+        title_by_chat = await build_folder_title_map(client, scope.chat_ids)
     results = await dispatch_backlinks(
         client,
         pending,
