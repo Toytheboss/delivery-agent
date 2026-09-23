@@ -20,6 +20,8 @@ tech_support:
 # Private chat to roy's lark agent:
 #   <message>
 #   send to <Lark display name or group name>
+#   <original>
+#   recall
 lark_relay:
   enabled: true
   owner_open_ids: []  # extra ou_ ids; assignee named Roy is included automatically

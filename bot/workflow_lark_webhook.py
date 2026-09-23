@@ -95,13 +95,18 @@ async def start_live_webhook_server(
     scope: FolderScope,
     kb: Any | None = None,
 ) -> web.AppRunner | None:
-    if not getattr(config, "workflow_live_webhook_enabled", False):
-        return None
-    if not _webhook_secret(config):
+    live_on = bool(getattr(config, "workflow_live_webhook_enabled", False))
+    tech_on = bool(getattr(config, "tech_support_enabled", False)) or bool(
+        getattr(config, "lark_relay_enabled", True)
+    )
+    backlink_on = bool(getattr(config, "pr_backlink_enabled", False))
+    if live_on and not _webhook_secret(config):
         logger.error(
             "live webhook enabled but WORKFLOW_LIVE_WEBHOOK_SECRET / "
-            "workflow.live_webhook_secret is empty — not starting"
+            "workflow.live_webhook_secret is empty — live route not started"
         )
+        live_on = False
+    if not (live_on or tech_on or backlink_on):
         return None
 
     path = getattr(config, "workflow_live_webhook_path", "/workflow/live") or "/workflow/live"
@@ -204,12 +209,17 @@ async def start_live_webhook_server(
             return web.json_response({"ok": True, "ignored": True, "reason": "not_message_event"})
 
         try:
+            from bot.workflow_lark_recall import maybe_handle_lark_recall
             from bot.workflow_lark_relay import maybe_handle_lark_relay
             from bot.workflow_tech_support import (
                 ingest_lark_message_event,
                 process_lark_reply_candidate,
             )
-            relay = maybe_handle_lark_relay(config, event if isinstance(event, dict) and event else data)
+            payload = event if isinstance(event, dict) and event else data
+            recall = maybe_handle_lark_recall(config, payload)
+            if recall is not None:
+                return web.json_response(recall)
+            relay = maybe_handle_lark_relay(config, payload)
             if relay is not None:
                 return web.json_response(relay)
             cand = ingest_lark_message_event(config, event if event else data)
@@ -227,12 +237,13 @@ async def start_live_webhook_server(
     tech_path = str(getattr(config, "tech_support_event_path", "") or "/workflow/tech-support/event").strip() or "/workflow/tech-support/event"
     if not tech_path.startswith("/"):
         tech_path = "/" + tech_path
-    if getattr(config, "tech_support_enabled", False) or getattr(config, "lark_relay_enabled", True):
+    if tech_on:
         app.router.add_post(tech_path, tech_support_event)
         app.router.add_get(tech_path, health)
         logger.info("tech support Lark event route %s", tech_path)
-    app.router.add_get(path, health)
-    app.router.add_post(path, live_handler)
+    if live_on:
+        app.router.add_get(path, health)
+        app.router.add_post(path, live_handler)
 
     backlink_path = str(
         getattr(config, "pr_backlink_path", "") or "/workflow/pr-backlink"
@@ -265,9 +276,10 @@ async def start_live_webhook_server(
             return web.json_response({"ok": False, "error": str(exc)[:200]}, status=500)
         return web.json_response(result)
 
-    app.router.add_get(backlink_path, health)
-    app.router.add_post(backlink_path, pr_backlink_handler)
-    logger.info("PR backlink webhook %s", backlink_path)
+    if backlink_on:
+        app.router.add_get(backlink_path, health)
+        app.router.add_post(backlink_path, pr_backlink_handler)
+        logger.info("PR backlink webhook %s", backlink_path)
 
     host = getattr(config, "workflow_live_webhook_host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(config, "workflow_live_webhook_port", 8787) or 8787)
@@ -275,11 +287,17 @@ async def start_live_webhook_server(
     await runner.setup()
     site = web.TCPSite(runner, host=host, port=port)
     await site.start()
+    routes = []
+    if live_on:
+        routes.append(path)
+    if tech_on:
+        routes.append(tech_path)
+    if backlink_on:
+        routes.append(backlink_path)
     logger.info(
-        "Live webhook listening on http://%s:%s%s "
-        "(Lark automation → POST JSON {record_id|project_name})",
+        "Lark HTTP listening on http://%s:%s %s",
         host,
         port,
-        path,
+        " ".join(routes) or "/health",
     )
     return runner
