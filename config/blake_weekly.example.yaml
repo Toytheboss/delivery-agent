@@ -1,0 +1,12 @@
+# Add under workflow: in config/config.yaml (local only; not committed)
+# Sunday 00:00 Asia/Shanghai → fill 官网项目收集-每周更新 → ping Blake
+blake_weekly:
+  enabled: true
+  chat_id: "oc_xxxxxxxx"  # 项目方信息整理&推送（钱包/ logo/官网）
+  at_open_id: "ou_xxxxxxxx"  # Blake-APP-Android (布莱克)
+  at_name: "Blake-APP-Android (布莱克)"
+  table_id: "tblsPBJW1HUmkM6X"
+  view_id: "vewVJL9hzD"
+  weekday: 6   # Monday=0, Sunday=6
+  hour: 0
+  state_file: "data/blake_weekly_state.json"

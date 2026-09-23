@@ -22,6 +22,8 @@ CRITICAL_CONFIG_FIELDS: tuple[str, ...] = (
     "workflow_verify_alert_lark_chat_id",
     "workflow_verify_alert_cooldown_hours",
     "workflow_verify_alert_state_file",
+    "workflow_blake_weekly_enabled",
+    "workflow_blake_weekly_chat_id",
     "trusted_auto_learn_enabled",
     "trusted_auto_learn_user_ids",
     "trusted_auto_learn_usernames",

@@ -19,6 +19,8 @@ CRITICAL_CONFIG_FIELDS: tuple[str, ...] = (
     "workflow_verify_alert_lark_chat_id",
     "workflow_verify_alert_cooldown_hours",
     "workflow_verify_alert_state_file",
+    "workflow_blake_weekly_enabled",
+    "workflow_blake_weekly_chat_id",
     "trusted_auto_learn_enabled",
     "trusted_auto_learn_user_ids",
     "trusted_auto_learn_usernames",
@@ -184,6 +186,16 @@ class AppConfig:
     workflow_verify_alert_lark_chat_id: str
     workflow_verify_alert_cooldown_hours: float
     workflow_verify_alert_state_file: str
+    workflow_blake_weekly_enabled: bool
+    workflow_blake_weekly_chat_id: str
+    workflow_blake_weekly_at_open_id: str
+    workflow_blake_weekly_at_name: str
+    workflow_blake_weekly_table_id: str
+    workflow_blake_weekly_view_id: str
+    workflow_blake_weekly_table_url: str
+    workflow_blake_weekly_weekday: int
+    workflow_blake_weekly_hour: int
+    workflow_blake_weekly_state_file: str
     tech_support_enabled: bool
     tech_support_owner: str
     tech_support_lark_chat_id: str
@@ -746,7 +758,7 @@ def load_config() -> AppConfig:
                 or [
                     "Project name",
                     "A brief introduction of your project",
-                    "Project X ( Formerly Twitter) Profile Page",
+                    "Link of Project X ( Formerly Twitter) Profile Page",
                     "Project logo",
                     "Mainnet Contract Addresss",
                     "Treasury Address",
@@ -856,6 +868,42 @@ def load_config() -> AppConfig:
             workflow.get(
                 "verify_alert_state_file",
                 "data/verify_alert_state.json",
+            )
+        ),
+        workflow_blake_weekly_enabled=bool(
+            (workflow.get("blake_weekly") or {}).get("enabled", False)
+        ),
+        workflow_blake_weekly_chat_id=str(
+            (workflow.get("blake_weekly") or {}).get("chat_id") or ""
+        ).strip(),
+        workflow_blake_weekly_at_open_id=str(
+            (workflow.get("blake_weekly") or {}).get("at_open_id") or ""
+        ).strip(),
+        workflow_blake_weekly_at_name=str(
+            (workflow.get("blake_weekly") or {}).get("at_name")
+            or "Blake-APP-Android (布莱克)"
+        ).strip(),
+        workflow_blake_weekly_table_id=str(
+            (workflow.get("blake_weekly") or {}).get("table_id")
+            or "tblsPBJW1HUmkM6X"
+        ).strip(),
+        workflow_blake_weekly_view_id=str(
+            (workflow.get("blake_weekly") or {}).get("view_id")
+            or "vewVJL9hzD"
+        ).strip(),
+        workflow_blake_weekly_table_url=str(
+            (workflow.get("blake_weekly") or {}).get("table_url") or ""
+        ).strip(),
+        workflow_blake_weekly_weekday=int(
+            (workflow.get("blake_weekly") or {}).get("weekday", 6)
+        ),
+        workflow_blake_weekly_hour=int(
+            (workflow.get("blake_weekly") or {}).get("hour", 0)
+        ),
+        workflow_blake_weekly_state_file=str(
+            (workflow.get("blake_weekly") or {}).get(
+                "state_file",
+                "data/blake_weekly_state.json",
             )
         ),
         tech_support_enabled=bool((workflow.get("tech_support") or {}).get("enabled", False)),
