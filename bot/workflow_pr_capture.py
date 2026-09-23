@@ -11,12 +11,14 @@ from urllib.parse import urlparse
 
 from bot.lark_bitable import get_tenant_access_token, list_records, update_record
 from bot.lark_im import send_text_to_chat
+from bot.project_logo import link_str
 from bot.workflow_form_dispatch import (
     _field_text,
     _parse_chat_id,
     is_manual_form_command,
     match_project_to_chat,
 )
+from bot.workflow_pr_weekly import log_capture_event
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -272,6 +274,20 @@ async def capture_pr_tweet(
             record_id,
         )
         return f"Matched {project_name!r} but failed to write the PR link: {exc}"
+
+    live_link_field = str(
+        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+    )
+    try:
+        log_capture_event(
+            config,
+            record_id=record_id,
+            project=project_name,
+            url=url,
+            site=link_str(_fields.get(live_link_field)) or _field_text(_fields, live_link_field),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("pr_capture: saved KPI 2 but failed to log weekly event")
 
     logger.info(
         "PR KPI 2 overwritten chat=%s project=%r record=%s url=%s",

@@ -21,6 +21,8 @@ CRITICAL_CONFIG_FIELDS: tuple[str, ...] = (
     "workflow_verify_alert_state_file",
     "workflow_blake_weekly_enabled",
     "workflow_blake_weekly_chat_id",
+    "pr_weekly_enabled",
+    "pr_weekly_chat_id",
     "trusted_auto_learn_enabled",
     "trusted_auto_learn_user_ids",
     "trusted_auto_learn_usernames",
@@ -198,6 +200,16 @@ class AppConfig:
     workflow_blake_weekly_weekday: int
     workflow_blake_weekly_hour: int
     workflow_blake_weekly_state_file: str
+    pr_weekly_enabled: bool
+    pr_weekly_chat_id: str
+    pr_weekly_table_id: str
+    pr_weekly_view_id: str
+    pr_weekly_table_url: str
+    pr_weekly_weekday: int
+    pr_weekly_hour: int
+    pr_weekly_state_file: str
+    pr_weekly_assignees: list
+    pr_capture_events_file: str
     tech_support_enabled: bool
     tech_support_owner: str
     tech_support_lark_chat_id: str
@@ -920,6 +932,47 @@ def load_config() -> AppConfig:
                 "data/blake_weekly_state.json",
             )
         ),
+        pr_weekly_enabled=bool((workflow.get("pr_weekly") or {}).get("enabled", False)),
+        pr_weekly_chat_id=str(
+            (workflow.get("pr_weekly") or {}).get("chat_id")
+            or "oc_4613e10ffde1fde8dc14c1899b4520dd"
+        ).strip(),
+        pr_weekly_table_id=str(
+            (workflow.get("pr_weekly") or {}).get("table_id") or "tbllA25Mz66e8wpv"
+        ).strip(),
+        pr_weekly_view_id=str(
+            (workflow.get("pr_weekly") or {}).get("view_id") or "vew1kZdFkc"
+        ).strip(),
+        pr_weekly_table_url=str(
+            (workflow.get("pr_weekly") or {}).get("table_url")
+            or (
+                "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e"
+                "?table=tbllA25Mz66e8wpv&view=vew1kZdFkc"
+            )
+        ).strip(),
+        pr_weekly_weekday=int((workflow.get("pr_weekly") or {}).get("weekday", 6)),
+        pr_weekly_hour=int((workflow.get("pr_weekly") or {}).get("hour", 0)),
+        pr_weekly_state_file=str(
+            (workflow.get("pr_weekly") or {}).get(
+                "state_file",
+                "data/pr_weekly_state.json",
+            )
+        ),
+        pr_weekly_assignees=[
+            {
+                "name": str(x.get("name") or "").strip(),
+                "open_id": str(x.get("open_id") or "").strip(),
+            }
+            for x in ((workflow.get("pr_weekly") or {}).get("assignees") or [])
+            if isinstance(x, dict)
+            and str(x.get("name") or "").strip()
+            and str(x.get("open_id") or "").strip()
+        ],
+        pr_capture_events_file=str(
+            (workflow.get("pr_weekly") or {}).get("events_file")
+            or (workflow.get("pr_capture") or {}).get("events_file")
+            or "/opt/botchain-shared/pr_capture_events.jsonl"
+        ).strip(),
         tech_support_enabled=bool((workflow.get("tech_support") or {}).get("enabled", False)),
         tech_support_owner=str((workflow.get("tech_support") or {}).get("owner") or "delivery").strip(),
         tech_support_lark_chat_id=str((workflow.get("tech_support") or {}).get("lark_chat_id") or "").strip(),

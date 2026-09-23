@@ -41,6 +41,7 @@ def list_records(
     table_id: str,
     *,
     page_size: int = 500,
+    automatic_fields: bool = False,
 ) -> list[dict[str, Any]]:
     """Fetch all records (paginated)."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -48,6 +49,8 @@ def list_records(
     page_token = ""
     while True:
         params: dict[str, Any] = {"page_size": min(page_size, 500)}
+        if automatic_fields:
+            params["automatic_fields"] = "true"
         if page_token:
             params["page_token"] = page_token
         resp = requests.get(

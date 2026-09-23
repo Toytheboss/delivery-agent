@@ -44,6 +44,7 @@ from bot.workflow_live_watch import live_status_watch_loop
 from bot.workflow_live_trigger import startup_live_catchup
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_blake_weekly import blake_weekly_loop
+from bot.workflow_pr_weekly import pr_weekly_loop
 from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loop
 from bot.workflow_form_chase import form_chase_loop
 from bot.workflow_logo_link_sync import logo_link_sync_loop
@@ -394,7 +395,14 @@ async def main() -> None:
                 getattr(config, "workflow_blake_weekly_weekday", 6),
                 getattr(config, "workflow_blake_weekly_hour", 0),
             )
-
+        if getattr(config, "pr_weekly_enabled", False):
+            asyncio.create_task(pr_weekly_loop(config))
+            logger.info(
+                "Workflow PR weekly enabled (chat_id=%s, weekday=%s hour=%s:00 Asia/Shanghai)",
+                getattr(config, "pr_weekly_chat_id", ""),
+                getattr(config, "pr_weekly_weekday", 6),
+                getattr(config, "pr_weekly_hour", 0),
+            )
     logger.info(
         "Bot running. Folders=%s, group_replies=%s, chats=%d, qa_test_groups=%s, "
         "knowledge_chunks=%d, lark_sync=%s, workflow=%s",
