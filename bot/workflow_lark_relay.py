@@ -18,6 +18,7 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _SEND_TO_RE = re.compile(r"(?is)^send\s+to\s+(.+?)\s*$")
+_MENTION_KEY_RE = re.compile(r"@_user_\d+")
 _SEEN_LIMIT = 400
 
 
@@ -43,6 +44,56 @@ def parse_relay_command(text: str) -> tuple[str, str] | None:
 
 def _fold(name: str) -> str:
     return (name or "").strip().casefold()
+
+
+def mention_users(message: dict[str, Any]) -> dict[str, dict[str, str]]:
+    """Map Lark ``@_user_1`` keys to the mentioned person."""
+    out: dict[str, dict[str, str]] = {}
+    for item in message.get("mentions") or []:
+        if not isinstance(item, dict):
+            continue
+        key = str(item.get("key") or "").strip()
+        ident = item.get("id") or {}
+        open_id = ""
+        if isinstance(ident, dict):
+            open_id = str(ident.get("open_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if key and open_id:
+            out[key] = {"kind": "user", "id": open_id, "name": name or key}
+    return out
+
+
+def target_from_mentions(
+    target: str, mentions: dict[str, dict[str, str]]
+) -> tuple[dict[str, str] | None, list[dict[str, str]]]:
+    """A last line that is only @mentions resolves to those people.
+
+    One person sends directly. Several people do not send.
+    """
+    keys: list[str] = []
+    for key in _MENTION_KEY_RE.findall(target or ""):
+        if key not in keys:
+            keys.append(key)
+    if not keys:
+        return None, []
+    rest = _MENTION_KEY_RE.sub("", target or "")
+    rest = re.sub(r"[\s@()（）]+", "", rest)
+    if rest:
+        return None, []
+    found = [mentions[key] for key in keys if key in mentions]
+    if len(found) == 1 and len(keys) == 1:
+        return found[0], found
+    return None, found
+
+
+def substitute_mentions(text: str, mentions: dict[str, dict[str, str]]) -> str:
+    def repl(match: re.Match[str]) -> str:
+        person = mentions.get(match.group(0))
+        if not person:
+            return match.group(0)
+        return "@" + person["name"]
+
+    return _MENTION_KEY_RE.sub(repl, text or "")
 
 
 def choose_target(users: list[dict[str, str]], groups: list[dict[str, str]], query: str) -> tuple[dict[str, str] | None, list[dict[str, str]]]:
@@ -274,6 +325,10 @@ def maybe_handle_lark_relay(config: Any, event_data: dict[str, Any]) -> dict[str
     if not parsed:
         return None
     body, target_name = parsed
+    mentions = mention_users(message)
+    body = substitute_mentions(body, mentions).strip()
+    if not body:
+        return None
 
     message_id = str(message.get("message_id") or "")
     if not claim_message(message_id):
@@ -297,20 +352,26 @@ def maybe_handle_lark_relay(config: Any, event_data: dict[str, Any]) -> dict[str
         logger.info("lark relay rejected sender=%s", sender_id)
         return {"ok": True, "relay": "forbidden"}
 
-    user_error = ""
-    try:
-        users = search_users(token, target_name)
-    except Exception as exc:
-        logger.exception("lark relay user search failed")
-        users = []
-        user_error = str(exc)
-    try:
-        groups = list_groups(token)
-    except Exception:
-        logger.exception("lark relay chat list failed")
-        groups = []
-
-    picked, found = choose_target(users, groups, target_name)
+    direct, mentioned = target_from_mentions(target_name, mentions)
+    if direct is not None or mentioned:
+        picked, found = direct, mentioned
+        user_error = ""
+    else:
+        query = substitute_mentions(target_name, mentions).lstrip("@").strip()
+        user_error = ""
+        try:
+            users = search_users(token, query)
+        except Exception as exc:
+            logger.exception("lark relay user search failed")
+            users = []
+            user_error = str(exc)
+        try:
+            groups = list_groups(token)
+        except Exception:
+            logger.exception("lark relay chat list failed")
+            groups = []
+        picked, found = choose_target(users, groups, query)
+        target_name = query
     if picked is None and not found and user_error:
         _reply(token, chat_id, f"没有找到「{target_name}」。按名字找人失败了，群里也没有这个名字。")
         return {"ok": False, "relay": "search_failed"}

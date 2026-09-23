@@ -8,8 +8,11 @@ from types import SimpleNamespace
 from bot.workflow_lark_relay import (
     choose_target,
     claim_message,
+    mention_users,
     owner_open_ids,
     parse_relay_command,
+    substitute_mentions,
+    target_from_mentions,
 )
 
 
@@ -60,6 +63,33 @@ def test_owner_includes_roy_assignee():
         ],
     )
     assert owner_open_ids(config) == {"ou_cfg", "ou_roy"}
+
+
+def test_at_mention_sends_to_that_open_id():
+    message = {
+        "mentions": [
+            {
+                "key": "@_user_1",
+                "id": {"open_id": "ou_brian"},
+                "name": "Brian Wong",
+            }
+        ]
+    }
+    mentions = mention_users(message)
+    picked, found = target_from_mentions("send to @_user_1".split("send to ", 1)[1], mentions)
+    assert picked == {"kind": "user", "id": "ou_brian", "name": "Brian Wong"}
+    assert len(found) == 1
+    assert substitute_mentions("hi @_user_1", mentions) == "hi @Brian Wong"
+
+
+def test_two_mentions_do_not_send():
+    mentions = {
+        "@_user_1": {"kind": "user", "id": "ou_a", "name": "Brian Wong"},
+        "@_user_2": {"kind": "user", "id": "ou_b", "name": "Roy"},
+    }
+    picked, found = target_from_mentions("@_user_1 @_user_2", mentions)
+    assert picked is None
+    assert len(found) == 2
 
 
 def test_claim_message_once():
