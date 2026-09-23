@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 _SEND_TO_RE = re.compile(r"(?is)^send\s+to\s+(.+?)\s*$")
 _MENTION_KEY_RE = re.compile(r"@_user_\d+")
 _SEEN_LIMIT = 400
+_SENT_LIMIT = 200
 
 
 def parse_relay_command(text: str) -> tuple[str, str] | None:
@@ -162,6 +163,88 @@ def _seen_path() -> Path:
     return Path("data/lark_relay_seen.json")
 
 
+def _sent_path() -> Path:
+    override = os.getenv("LARK_RELAY_SENT", "").strip()
+    if override:
+        return Path(override)
+    shared = Path("/opt/botchain-shared/lark_relay_sent.json")
+    if shared.parent.is_dir():
+        return shared
+    return Path("data/lark_relay_sent.json")
+
+
+def load_sent_messages() -> list[dict[str, str]]:
+    path = _sent_path()
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    if not isinstance(raw, list):
+        return []
+    out: list[dict[str, str]] = []
+    for item in raw:
+        if not isinstance(item, dict):
+            continue
+        mid = str(item.get("id") or "").strip()
+        text = str(item.get("text") or "")
+        if not mid:
+            continue
+        out.append(
+            {
+                "id": mid,
+                "text": text,
+                "name": str(item.get("name") or ""),
+                "kind": str(item.get("kind") or ""),
+                "target_id": str(item.get("target_id") or ""),
+            }
+        )
+    return out
+
+
+def log_sent_message(
+    *,
+    message_id: str,
+    text: str,
+    name: str,
+    kind: str,
+    target_id: str,
+) -> None:
+    """Remember an outbound send-to so recall can find private chats."""
+    message_id = (message_id or "").strip()
+    if not message_id:
+        return
+    path = _sent_path()
+    row = {
+        "id": message_id,
+        "text": text or "",
+        "name": name or "",
+        "kind": kind or "",
+        "target_id": target_id or "",
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                handle.seek(0)
+                raw_text = handle.read()
+                try:
+                    raw = json.loads(raw_text) if raw_text.strip() else []
+                except json.JSONDecodeError:
+                    raw = []
+                rows = [item for item in raw if isinstance(item, dict)] if isinstance(raw, list) else []
+                rows = [item for item in rows if str(item.get("id") or "") != message_id]
+                rows.append(row)
+                handle.seek(0)
+                handle.truncate()
+                handle.write(json.dumps(rows[-_SENT_LIMIT:], ensure_ascii=False))
+                handle.flush()
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+    except OSError:
+        logger.exception("lark relay sent-file failed")
+
+
 def claim_message(message_id: str) -> bool:
     """True the first time this Lark message is handled."""
     message_id = (message_id or "").strip()
@@ -219,7 +302,7 @@ def search_users(token: str, query: str) -> list[dict[str, str]]:
     return out
 
 
-def list_groups(token: str) -> list[dict[str, str]]:
+def list_groups(token: str, *, named_only: bool = True) -> list[dict[str, str]]:
     import requests
 
     from bot.lark_bitable import LARK_API_BASE
@@ -243,8 +326,12 @@ def list_groups(token: str) -> list[dict[str, str]]:
         for item in payload.get("items") or []:
             name = str(item.get("name") or "").strip()
             chat_id = str(item.get("chat_id") or "").strip()
-            if name and chat_id:
-                out.append({"kind": "group", "id": chat_id, "name": name})
+            if not chat_id:
+                continue
+            if named_only and not name:
+                continue
+            kind = "group" if name else "p2p"
+            out.append({"kind": kind, "id": chat_id, "name": name or chat_id})
         if not payload.get("has_more"):
             break
         page_token = str(payload.get("page_token") or "")
@@ -393,6 +480,13 @@ def maybe_handle_lark_relay(config: Any, event_data: dict[str, Any]) -> dict[str
         _reply(token, chat_id, f"发给「{picked['name']}」失败：{exc}")
         return {"ok": False, "relay": "send_failed"}
 
+    log_sent_message(
+        message_id=sent_id,
+        text=body,
+        name=str(picked.get("name") or ""),
+        kind=str(picked.get("kind") or ""),
+        target_id=str(picked.get("id") or ""),
+    )
     if picked["kind"] == "user":
         note = f"已发给 {picked['name']}"
     else:

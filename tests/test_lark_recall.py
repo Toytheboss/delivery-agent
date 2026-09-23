@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from bot.workflow_lark_recall import parse_recall_command, pick_recall_hits
+from bot.workflow_lark_recall import (
+    _hits_from_sent_log,
+    parse_recall_command,
+    pick_recall_hits,
+)
+from bot.workflow_lark_relay import log_sent_message, load_sent_messages
 
 
 def test_last_line_recall_uses_the_body():
@@ -41,3 +46,21 @@ def test_ambiguous_snippets_do_not_pick():
     picked, hits = pick_recall_hits(items, "本周 Botchain")
     assert picked is None
     assert len(hits) == 2
+
+
+def test_send_to_log_lets_recall_find_a_private_chat(monkeypatch, tmp_path):
+    sent = tmp_path / "sent.json"
+    monkeypatch.setenv("LARK_RELAY_SENT", str(sent))
+    log_sent_message(
+        message_id="om_stella",
+        text="How are you doing, my friend?",
+        name="Stella",
+        kind="user",
+        target_id="ou_stella",
+    )
+    rows = load_sent_messages()
+    assert rows[-1]["id"] == "om_stella"
+    hits = _hits_from_sent_log("How are you doing, my friend?")
+    picked, matched = pick_recall_hits(hits, "How are you doing, my friend?")
+    assert picked["id"] == "om_stella"
+    assert len(matched) == 1

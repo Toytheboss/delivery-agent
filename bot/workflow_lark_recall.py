@@ -25,6 +25,7 @@ from bot.workflow_lark_relay import (
     _sender_open_id,
     claim_message,
     list_groups,
+    load_sent_messages,
     owner_open_ids,
 )
 
@@ -204,6 +205,26 @@ def _as_hit(item: dict[str, Any], chat_name: str = "") -> dict[str, str] | None:
     }
 
 
+def _hits_from_sent_log(snippet: str) -> list[dict[str, str]]:
+    needle = _fold(snippet)
+    if not needle:
+        return []
+    hits: list[dict[str, str]] = []
+    for row in load_sent_messages():
+        text = row.get("text") or ""
+        if needle not in _fold(text):
+            continue
+        hits.append(
+            {
+                "id": row.get("id") or "",
+                "text": text,
+                "chat_id": row.get("target_id") or "",
+                "chat_name": row.get("name") or row.get("target_id") or "私聊",
+            }
+        )
+    return [item for item in hits if item.get("id")]
+
+
 def find_bot_messages(
     token: str, snippet: str, *, chat_id: str = ""
 ) -> list[dict[str, str]]:
@@ -218,6 +239,14 @@ def find_bot_messages(
             return
         seen.add(hit["id"])
         hits.append(hit)
+
+    for row in _hits_from_sent_log(snippet):
+        if row["id"] in seen:
+            continue
+        seen.add(row["id"])
+        hits.append(row)
+    if len(hits) == 1:
+        return hits
 
     try:
         ids = _search_message_ids(token, snippet, chat_id=chat_id)
@@ -238,11 +267,21 @@ def find_bot_messages(
     except Exception:
         logger.exception("lark recall search API failed, scanning chats")
 
-    if hits:
+    if len(hits) == 1:
         return hits
 
-    chats = [{"id": chat_id, "name": ""}] if chat_id else list_groups(token)
-    for chat in chats[:40]:
+    if chat_id:
+        chats = [{"id": chat_id, "name": "", "kind": "group"}]
+    else:
+        try:
+            chats = list_groups(token, named_only=False)
+        except Exception:
+            logger.exception("lark recall list chats failed")
+            chats = []
+        p2p = [item for item in chats if item.get("kind") == "p2p"]
+        groups = [item for item in chats if item.get("kind") != "p2p"]
+        chats = p2p[:30] + groups[:20]
+    for chat in chats:
         cid = str(chat.get("id") or "").strip()
         if not cid:
             continue
