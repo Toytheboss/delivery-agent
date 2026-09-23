@@ -15,3 +15,11 @@ tech_support:
   auto_learn: true
   auto_learn_min_chars: 20
   auto_learn_state_file: "/opt/botchain-shared/tech_support_auto_learn.json"
+
+# Snippet for config.yaml → workflow.lark_relay
+# Private chat to roy's lark agent:
+#   <message>
+#   send to <Lark display name or group name>
+lark_relay:
+  enabled: true
+  owner_open_ids: []  # extra ou_ ids; assignee named Roy is included automatically

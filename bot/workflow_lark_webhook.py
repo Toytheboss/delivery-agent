@@ -93,6 +93,7 @@ async def start_live_webhook_server(
     client: TelegramClient,
     config: AppConfig,
     scope: FolderScope,
+    kb: Any | None = None,
 ) -> web.AppRunner | None:
     if not getattr(config, "workflow_live_webhook_enabled", False):
         return None
@@ -203,10 +204,14 @@ async def start_live_webhook_server(
             return web.json_response({"ok": True, "ignored": True, "reason": "not_message_event"})
 
         try:
+            from bot.workflow_lark_relay import maybe_handle_lark_relay
             from bot.workflow_tech_support import (
                 ingest_lark_message_event,
                 process_lark_reply_candidate,
             )
+            relay = maybe_handle_lark_relay(config, event if isinstance(event, dict) and event else data)
+            if relay is not None:
+                return web.json_response(relay)
             cand = ingest_lark_message_event(config, event if event else data)
             if not cand:
                 return web.json_response({"ok": True, "matched": False})
@@ -222,7 +227,7 @@ async def start_live_webhook_server(
     tech_path = str(getattr(config, "tech_support_event_path", "") or "/workflow/tech-support/event").strip() or "/workflow/tech-support/event"
     if not tech_path.startswith("/"):
         tech_path = "/" + tech_path
-    if getattr(config, "tech_support_enabled", False):
+    if getattr(config, "tech_support_enabled", False) or getattr(config, "lark_relay_enabled", True):
         app.router.add_post(tech_path, tech_support_event)
         app.router.add_get(tech_path, health)
         logger.info("tech support Lark event route %s", tech_path)

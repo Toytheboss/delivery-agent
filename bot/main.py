@@ -277,7 +277,7 @@ async def main() -> None:
                 "form dispatch will not send until URL is set"
             )
 
-        await start_live_webhook_server(client, config, scope)
+        await start_live_webhook_server(client, config, scope, kb=kb)
 
         if getattr(config, "tech_support_enabled", False):
             asyncio.create_task(tech_support_poll_loop(client, config, kb=kb))

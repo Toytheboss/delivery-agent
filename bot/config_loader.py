@@ -213,6 +213,8 @@ class AppConfig:
     tech_support_auto_learn: bool
     tech_support_auto_learn_min_chars: int
     tech_support_auto_learn_state_file: str
+    lark_relay_enabled: bool
+    lark_relay_owner_open_ids: list[str]
     pr_capture_enabled: bool
     pr_capture_commands: list[str]
     pr_capture_link_field: str
@@ -957,6 +959,12 @@ def load_config() -> AppConfig:
                 "/opt/botchain-shared/tech_support_auto_learn.json",
             )
         ),
+        lark_relay_enabled=bool((workflow.get("lark_relay") or {}).get("enabled", True)),
+        lark_relay_owner_open_ids=[
+            str(item).strip()
+            for item in ((workflow.get("lark_relay") or {}).get("owner_open_ids") or [])
+            if str(item).strip()
+        ],
         pr_capture_enabled=bool((workflow.get("pr_capture") or {}).get("enabled", False)),
         pr_capture_commands=[
             str(x).strip()
