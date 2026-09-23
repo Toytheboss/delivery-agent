@@ -18,19 +18,27 @@
  */
 
 var LARK_API = 'https://open.larksuite.com/open-apis';
-// 在脚本属性或此处填写目标多维表格（勿把真实 token 提交到公开仓库）
-var APP_TOKEN = PropertiesService.getScriptProperties().getProperty('LARK_APP_TOKEN') || 'YOUR_BITABLE_APP_TOKEN';
-var TABLE_ID = PropertiesService.getScriptProperties().getProperty('LARK_TABLE_ID') || 'YOUR_TABLE_ID';
+// 脚本属性优先；没有属性时回落到钱包表，避免覆盖代码后写到空 token。
+var APP_TOKEN =
+  PropertiesService.getScriptProperties().getProperty('LARK_APP_TOKEN') ||
+  'Kb6rbLenJa4FzWsi6pzlTkdjg0e';
+var TABLE_ID =
+  PropertiesService.getScriptProperties().getProperty('LARK_TABLE_ID') ||
+  'tblj0FdKPrlc7PrM';
+
+// Lark 钱包表现在的推特列名（表头带 Link of；旧名 Formly / Formerly 都要对到这一列）
+var LARK_TWITTER_FIELD = 'Link of Project X ( Formerly Twitter) Profile Page';
 
 // Google 表单「问题标题」→ Lark 字段名（已按 Form_Responses / 钱包表对齐）
 var FIELD_MAP = {
   'Project Name': 'Project name',
   'Project name': 'Project name',
   'A brief introduction of your project': 'A brief introduction of your project',
-  'Project X ( Formerly Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
+  'Link of Project X ( Formerly Twitter) Profile Page': LARK_TWITTER_FIELD,
+  'Project X ( Formerly Twitter) Profile Page': LARK_TWITTER_FIELD,
   // legacy titles before the column was renamed
-  'Project X ( Formly Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
-  'Project X ( Formely Twitter) Profile Page': 'Project X ( Formerly Twitter) Profile Page',
+  'Project X ( Formly Twitter) Profile Page': LARK_TWITTER_FIELD,
+  'Project X ( Formely Twitter) Profile Page': LARK_TWITTER_FIELD,
   'Project logo': 'Project logo',
   'Mainnet Contract Address': 'Mainnet Contract Addresss',
   'Mainnet Contract Addresss': 'Mainnet Contract Addresss',
@@ -58,7 +66,11 @@ function onFormSubmit(e) {
   Object.keys(named).forEach(function (q) {
     var title = String(q || '').trim();
     // Google 有时带尾随空格/换行
-    var larkField = FIELD_MAP[title] || FIELD_MAP[title.replace(/\s+/g, ' ')];
+    var collapsed = title.replace(/\s+/g, ' ');
+    var larkField = FIELD_MAP[title] || FIELD_MAP[collapsed];
+    if (!larkField && /twitter|profile page/i.test(collapsed) && /x\b|twitter/i.test(collapsed)) {
+      larkField = LARK_TWITTER_FIELD;
+    }
     if (!larkField) {
       // 忽略时间戳类系统列
       if (/timestamp|时间戳|电子邮件地址|email/i.test(title)) return;
@@ -130,12 +142,29 @@ function listRecords_(token) {
   return items;
 }
 
+function fieldText_(value) {
+  if (value == null || value === '') return '';
+  if (Object.prototype.toString.call(value) === '[object String]') return value;
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    var parts = [];
+    for (var i = 0; i < value.length; i++) {
+      var piece = fieldText_(value[i]);
+      if (piece) parts.push(piece);
+    }
+    return parts.join(' ').trim();
+  }
+  if (typeof value === 'object') {
+    return String(value.text || value.name || value.link || value.url || '').trim();
+  }
+  return String(value).trim();
+}
+
 function findByProjectName_(token, projectName) {
   var target = String(projectName || '').trim().toLowerCase();
   var items = listRecords_(token);
   for (var i = 0; i < items.length; i++) {
-    var name = ((items[i].fields || {})['Project name'] || '');
-    if (String(name).trim().toLowerCase() === target) {
+    var name = fieldText_((items[i].fields || {})['Project name']);
+    if (name.trim().toLowerCase() === target) {
       return items[i].record_id;
     }
   }
