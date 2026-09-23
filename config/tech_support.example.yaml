@@ -22,6 +22,8 @@ tech_support:
 #   send to <Lark display name or group name>
 #   <original>
 #   recall
+# After send to, their reply is pushed here; reply that push to talk back.
+# Session closes after 24h with no messages.
 lark_relay:
   enabled: true
   owner_open_ids: []  # extra ou_ ids; assignee named Roy is included automatically

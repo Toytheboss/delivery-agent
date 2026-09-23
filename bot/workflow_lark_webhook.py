@@ -209,6 +209,7 @@ async def start_live_webhook_server(
             return web.json_response({"ok": True, "ignored": True, "reason": "not_message_event"})
 
         try:
+            from bot.workflow_lark_bridge import maybe_handle_lark_bridge
             from bot.workflow_lark_recall import maybe_handle_lark_recall
             from bot.workflow_lark_relay import maybe_handle_lark_relay
             from bot.workflow_tech_support import (
@@ -222,6 +223,9 @@ async def start_live_webhook_server(
             relay = maybe_handle_lark_relay(config, payload)
             if relay is not None:
                 return web.json_response(relay)
+            bridged = maybe_handle_lark_bridge(config, payload)
+            if bridged is not None:
+                return web.json_response(bridged)
             cand = ingest_lark_message_event(config, event if event else data)
             if not cand:
                 return web.json_response({"ok": True, "matched": False})

@@ -487,6 +487,18 @@ def maybe_handle_lark_relay(config: Any, event_data: dict[str, Any]) -> dict[str
         kind=str(picked.get("kind") or ""),
         target_id=str(picked.get("id") or ""),
     )
+    try:
+        from bot.workflow_lark_bridge import upsert_session
+
+        upsert_session(
+            kind=str(picked.get("kind") or "user"),
+            peer_id=str(picked.get("id") or ""),
+            peer_name=str(picked.get("name") or ""),
+            roy_chat_id=chat_id,
+            outbound_message_id=sent_id,
+        )
+    except Exception:
+        logger.exception("lark relay session save failed")
     if picked["kind"] == "user":
         note = f"已发给 {picked['name']}"
     else:
