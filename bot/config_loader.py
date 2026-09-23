@@ -220,6 +220,10 @@ class AppConfig:
     pr_capture_link_field: str
     pr_capture_notify_enabled: bool
     pr_capture_notify_chat_id: str
+    pr_backlink_enabled: bool
+    pr_backlink_table_id: str
+    pr_backlink_path: str
+    pr_backlink_state_file: str
     welcome_enabled: bool
     welcome_name_keywords: list[str]
     welcome_message: str
@@ -985,6 +989,20 @@ def load_config() -> AppConfig:
             (workflow.get("pr_capture") or {}).get("notify_chat_id")
             or workflow.get("verify_alert_lark_chat_id")
             or "oc_717a560011483216c49329fda5e43b41"
+        ).strip(),
+        pr_backlink_enabled=bool((workflow.get("pr_backlink") or {}).get("enabled", False)),
+        pr_backlink_table_id=str(
+            (workflow.get("pr_backlink") or {}).get("table_id") or "tbllA25Mz66e8wpv"
+        ).strip(),
+        pr_backlink_path=str(
+            (workflow.get("pr_backlink") or {}).get("path") or "/workflow/pr-backlink"
+        ).strip()
+        or "/workflow/pr-backlink",
+        pr_backlink_state_file=str(
+            (workflow.get("pr_backlink") or {}).get(
+                "state_file",
+                "/opt/botchain-shared/pr_backlink_state.json",
+            )
         ).strip(),
         welcome_enabled=bool((cfg.get("welcome") or {}).get("enabled", False)),
         welcome_name_keywords=[

@@ -1,0 +1,19 @@
+# Add under workflow: in config/config.yaml.
+# Leave enabled false until this is deployed to Roy号.
+# No poll. Lark automation on 项目方PR链接推送 calls this path once per edit.
+  pr_backlink:
+    enabled: false
+    table_id: "tbllA25Mz66e8wpv"  # 项目方PR链接推送 每周更新（自动）
+    path: "/workflow/pr-backlink"
+    state_file: "/opt/botchain-shared/pr_backlink_state.json"
+
+# Lark automation on that table only (do not edit 项目推送至前端):
+# Trigger: 回链 field changes
+# Action: POST {public}/workflow/pr-backlink?secret=...
+# Body:
+# {
+#   "table_id": "tbllA25Mz66e8wpv",
+#   "record_id": "{{记录 ID}}",
+#   "项目方": "{{项目方}}",
+#   "回链": "{{回链}}"
+# }

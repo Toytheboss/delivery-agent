@@ -234,6 +234,41 @@ async def start_live_webhook_server(
     app.router.add_get(path, health)
     app.router.add_post(path, live_handler)
 
+    backlink_path = str(
+        getattr(config, "pr_backlink_path", "") or "/workflow/pr-backlink"
+    ).strip() or "/workflow/pr-backlink"
+    if not backlink_path.startswith("/"):
+        backlink_path = "/" + backlink_path
+
+    async def pr_backlink_handler(request: web.Request) -> web.Response:
+        """Lark automation on the PR table: 回链 filled → send that URL to the TG group."""
+        try:
+            raw = await request.read()
+            data = json.loads(raw.decode("utf-8") or "{}") if raw else {}
+        except Exception:
+            data = {}
+        if isinstance(data, dict) and data.get("type") == "url_verification":
+            return web.json_response({"challenge": data.get("challenge", "")})
+        if not _authorized(request, config):
+            return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+        try:
+            from bot.workflow_pr_backlink import handle_backlink_trigger
+
+            result = await handle_backlink_trigger(
+                client,
+                config,
+                scope,
+                data if isinstance(data, dict) else {},
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("pr backlink webhook failed")
+            return web.json_response({"ok": False, "error": str(exc)[:200]}, status=500)
+        return web.json_response(result)
+
+    app.router.add_get(backlink_path, health)
+    app.router.add_post(backlink_path, pr_backlink_handler)
+    logger.info("PR backlink webhook %s", backlink_path)
+
     host = getattr(config, "workflow_live_webhook_host", "0.0.0.0") or "0.0.0.0"
     port = int(getattr(config, "workflow_live_webhook_port", 8787) or 8787)
     runner = web.AppRunner(app)
