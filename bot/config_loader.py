@@ -176,6 +176,8 @@ class AppConfig:
     workflow_lark_digest_chat_id: str
     workflow_lark_digest_hour: int
     workflow_lark_digest_state_file: str
+    workflow_lark_digest_at_open_id: str
+    workflow_lark_digest_at_name: str
     # legacy aliases
     workflow_lark_group_notify_enabled: bool
     workflow_lark_group_member_open_ids: list[str]
@@ -824,6 +826,12 @@ def load_config() -> AppConfig:
                 "data/lark_wallet_digest_state.json",
             )
         ),
+        workflow_lark_digest_at_open_id=str(
+            workflow.get("lark_digest_at_open_id") or ""
+        ).strip(),
+        workflow_lark_digest_at_name=str(
+            workflow.get("lark_digest_at_name") or "Angela-财务"
+        ).strip(),
         workflow_lark_group_notify_enabled=bool(
             workflow.get(
                 "lark_digest_enabled",

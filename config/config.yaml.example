@@ -193,6 +193,8 @@ workflow:
   lark_digest_chat_id: "oc_74ee8d69f6c00ff153bd78c301545a7f"
   lark_digest_hour: 0
   lark_digest_state_file: "data/lark_wallet_digest_state.json"
+  lark_digest_at_open_id: "ou_xxxxxxxx"  # Angela-财务
+  lark_digest_at_name: "Angela-财务"
 
   # Please verify / mainnet-live → 看板人工队列 + Lark「BotChian交付部」提醒
   verify_alert_enabled: true

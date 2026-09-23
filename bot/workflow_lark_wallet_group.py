@@ -86,15 +86,24 @@ def _build_digest_text(
     projects: list[tuple[str, int]],
     *,
     title: str | None = None,
+    at_open_id: str = "",
+    at_name: str = "Angela-财务",
 ) -> str:
     project_count = len(projects)
     address_total = sum(n for _, n in projects)
-    lines = [
-        title or f"【项目方地址日报】{date_str}",
-        f"今日新增项目：{project_count} 个",
-        f"地址填写数量：{address_total} 个",
-        "",
-    ]
+    lines: list[str] = []
+    oid = (at_open_id or "").strip()
+    name = (at_name or "Angela-财务").strip()
+    if oid:
+        lines.append(f'<at user_id="{oid}">{name}</at>')
+    lines.extend(
+        [
+            title or f"【项目方地址日报】{date_str}",
+            f"今日新增项目：{project_count} 个",
+            f"地址填写数量：{address_total} 个",
+            "",
+        ]
+    )
     if not projects:
         lines.append("今日暂无新的项目方地址写入。")
         return "\n".join(lines)
@@ -275,7 +284,12 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
             included_ids.append(rid)
 
     projects.sort(key=lambda x: x[0].lower())
-    text = _build_digest_text(date_str, projects)
+    text = _build_digest_text(
+        date_str,
+        projects,
+        at_open_id=str(getattr(config, "workflow_lark_digest_at_open_id", "") or ""),
+        at_name=str(getattr(config, "workflow_lark_digest_at_name", "") or "Angela-财务"),
+    )
 
     try:
         await loop.run_in_executor(None, send_text_to_chat, token, chat_id, text)
