@@ -686,15 +686,15 @@ def load_config() -> AppConfig:
         workflow_message_template=str(
             workflow.get("message_template")
             or (
-                "Congrats! {project_name} is live on Delivery Agent Mainnet. "
-                "We can now go ahead and push the PR announcement. "
-                "It'll be great if you can tweet about this integration — "
-                "we'll mention it on our official social media channels and "
-                "also share an announcement in our community channels.\n\n"
-                "At the same time, could you please fill in this form for "
-                "follow-up onboarding? We are collecting the project's address "
-                "for future gas return and potential grant provision. Thank you. ⬇️\n"
-                "{form_url}"
+                "🎉 Congratulations! {project_name} is now live on BOT Chain Mainnet.\n\n"
+                "Please submit your project info in this form. We will use it for "
+                "website showcase / future gas rebates / potential grant support:\n"
+                "{form_url}\n\n"
+                "You can also have your project displayed on DeFiLlama under the "
+                "BOT Chain section. Here's how:\n"
+                "https://docs.google.com/document/d/1BXDfXq5KwpCi-A4eEO7ngE-a40uz3OM1/"
+                "edit?usp=sharing&ouid=116519297133280129218&rtpof=true&sd=true\n\n"
+                "Thanks for your support ❤️"
             )
         ),
         workflow_state_file=str(
