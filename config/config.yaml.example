@@ -201,7 +201,7 @@ workflow:
 
     Thanks!
   live_onboard_enabled: true
-  # roy | josh; empty = infer (group_replies on → roy)
+  # roy | josh; empty = infer (group_replies on → roy). Lark ping is Roy号 only.
   live_onboard_account: ""
   # Project verification push
   live_onboard_lark_chat_id: "oc_d7e4175580c970a4f7853b6a4d10368e"

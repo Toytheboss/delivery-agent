@@ -18,6 +18,7 @@
 
 ### 修复
 - 交付号 webhook 不接受 kb 参数时也能启动；飞书群填入 Project verification push
+- Project verification push 只由 Roy号发；交付号只写进群状态和 TG 表单
 
 ---
 

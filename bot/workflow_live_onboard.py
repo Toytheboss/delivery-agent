@@ -125,6 +125,11 @@ def account_key(config: Any) -> str:
     return "roy" if bool(getattr(config, "group_replies_enabled", False)) else "josh"
 
 
+def sends_lark_notify(config: Any) -> bool:
+    """Only Roy号 / roy's lark agent #1 posts to Project verification push."""
+    return account_key(config) == "roy"
+
+
 def _state_path(config: Any) -> Path:
     override = str(getattr(config, "workflow_live_onboard_state_file", "") or "").strip()
     if override:
@@ -329,6 +334,8 @@ def _form_ok(status: str) -> bool:
 
 
 async def _notify_lark(config: Any, entry: dict[str, Any], fields: dict[str, Any]) -> str:
+    if not sends_lark_notify(config):
+        return "skipped_not_roy"
     chat_id = str(getattr(config, "workflow_live_onboard_lark_chat_id", "") or "").strip()
     if not chat_id:
         logger.warning("live-onboard: lark chat_id empty; skip notify")
@@ -365,6 +372,13 @@ async def _finalize_notify(
     fields: dict[str, Any],
     source: str,
 ) -> None:
+    if not sends_lark_notify(config):
+        path = _state_path(config)
+        with _locked_state(path) as data:
+            entry = _project_entry(data, rid)
+            if entry.get("notify") != "sent":
+                entry["notify"] = "need_roy"
+        return
     wait_s = max(int(getattr(config, "workflow_live_onboard_peer_wait_seconds", 90) or 0), 0)
     if wait_s:
         await asyncio.sleep(wait_s)
@@ -489,8 +503,11 @@ async def run_live_onboard(
             source not in _SKIP_NOTIFY_SOURCES
             and entry.get("notify") not in {"sent", "scheduled"}
         ):
-            entry["notify"] = "scheduled"
-            should_notify = True
+            if sends_lark_notify(config):
+                entry["notify"] = "scheduled"
+                should_notify = True
+            else:
+                entry["notify"] = "need_roy"
         out["case"] = case
         out["form"] = str(entry.get("form") or form_status)
         out["chat_id"] = entry.get("chat_id")
@@ -502,6 +519,51 @@ async def run_live_onboard(
             name=f"live-onboard-notify-{rid}",
         )
     return out
+
+
+async def drain_pending_roy_notifies(config: Any) -> int:
+    """Roy号 picks up Lark pings that Josh queued after a live/join check."""
+    if not sends_lark_notify(config):
+        return 0
+    if not getattr(config, "workflow_live_onboard_enabled", False):
+        return 0
+    path = _state_path(config)
+    with _locked_state(path) as data:
+        pending = [
+            rid
+            for rid, entry in (data.get("projects") or {}).items()
+            if isinstance(entry, dict) and str(entry.get("notify") or "") == "need_roy"
+        ]
+    if not pending:
+        return 0
+    from bot.workflow_live_trigger import _load_progress_records
+
+    try:
+        _token, records = await _load_progress_records(config)
+    except Exception:
+        logger.exception("live-onboard drain: failed to load Lark records")
+        return 0
+    by_id = {str(rec.get("record_id") or ""): rec for rec in records}
+    queued = 0
+    for rid in pending:
+        rec = by_id.get(rid)
+        if not rec:
+            continue
+        fields = rec.get("fields") or {}
+        with _locked_state(path) as data:
+            entry = _project_entry(data, rid)
+            if str(entry.get("notify") or "") != "need_roy":
+                continue
+            entry["notify"] = "scheduled"
+        asyncio.create_task(
+            _finalize_notify(
+                config, rid=rid, fields=fields, source="roy_drain"
+            ),
+            name=f"live-onboard-notify-{rid}",
+        )
+        queued += 1
+        logger.info("live-onboard drain queued Lark ping for %s", rid)
+    return queued
 
 
 async def maybe_onboard_on_join(

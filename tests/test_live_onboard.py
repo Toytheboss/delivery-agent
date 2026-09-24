@@ -4,6 +4,7 @@ from bot.workflow_live_onboard import (
     build_onboard_message,
     classify_case,
     parse_bd_person,
+    sends_lark_notify,
 )
 
 
@@ -73,3 +74,15 @@ def test_case4_form_not_sent():
     assert "were not detected" in text
     assert "Onboarding Google Form was not sent" in text
     assert "Create the project TG group" in text
+
+
+def test_only_roy_sends_lark_notify():
+    class Cfg:
+        def __init__(self, account: str, replies: bool = False):
+            self.workflow_live_onboard_account = account
+            self.group_replies_enabled = replies
+
+    assert sends_lark_notify(Cfg("roy")) is True
+    assert sends_lark_notify(Cfg("josh")) is False
+    assert sends_lark_notify(Cfg("", replies=True)) is True
+    assert sends_lark_notify(Cfg("", replies=False)) is False
