@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-09-24 · PR 保存成功改通知 social media team
+
+### 优化
+- `pr support` 写入成功后，TG 回复从 Notified Botchain Delivery 改为 Notified Botchain social media team；通知失败时同样改口
+
+---
+
 ## 2026-09-23 · send to 之后对方的回复会推回私聊
 
 ### 新增

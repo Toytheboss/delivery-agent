@@ -313,10 +313,10 @@ async def capture_pr_tweet(
         )
         try:
             await loop.run_in_executor(None, send_text_to_chat, token, lark_chat, msg)
-            lines.append("Notified Botchain Delivery.")
+            lines.append("Notified Botchain social media team.")
         except Exception:  # noqa: BLE001
             logger.exception("pr_capture: PR link saved but Lark notify failed")
-            lines.append("Saved the PR link, but failed to notify Botchain Delivery. Check logs.")
+            lines.append("Saved the PR link, but failed to notify Botchain social media team. Check logs.")
     elif notify_on:
         lines.append("Saved the PR link; Lark notify skipped (no chat id).")
     return "\n".join(lines)
