@@ -41,7 +41,7 @@ from bot.workflow_lark_webhook import start_live_webhook_server
 from bot.workflow_tech_support import tech_support_poll_loop
 from bot.workflow_deploy_status_watch import deploy_status_watch_loop
 from bot.workflow_live_watch import live_status_watch_loop
-from bot.workflow_live_trigger import startup_live_catchup
+from bot.workflow_live_onboard import register_live_onboard_join_handler
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_blake_weekly import blake_weekly_loop
 from bot.workflow_pr_weekly import pr_weekly_loop
@@ -263,6 +263,18 @@ async def main() -> None:
             config.folder_auto_add_scan_minutes,
         )
 
+    if config.workflow_enabled and getattr(
+        config, "workflow_live_onboard_enabled", False
+    ):
+        register_live_onboard_join_handler(
+            client, config, handler.my_id, scope=scope
+        )
+        logger.info(
+            "Live onboard join catch-up enabled (account=%s, lark_chat=%s)",
+            getattr(config, "workflow_live_onboard_account", "") or "auto",
+            getattr(config, "workflow_live_onboard_lark_chat_id", "") or "(empty)",
+        )
+
     asyncio.create_task(folder_refresh_loop(scope, config.refresh_interval_minutes))
     asyncio.create_task(knowledge_refresh_loop(kb, config.refresh_interval_minutes))
 
@@ -368,7 +380,7 @@ async def main() -> None:
                 getattr(config, "workflow_form_chase_after_hours", 24),
                 getattr(config, "workflow_form_chase_min_filled", 4),
                 len(getattr(config, "workflow_form_chase_fields", []) or []),
-                getattr(config, "workflow_form_chase_max_reminders", 1),
+                getattr(config, "workflow_form_chase_max_reminders", 10),
                 int(getattr(config, "workflow_lark_digest_hour", 0) or 0),
             )
         if getattr(config, "workflow_logo_link_sync_enabled", True):

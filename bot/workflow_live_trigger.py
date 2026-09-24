@@ -22,7 +22,7 @@ from bot.workflow_form_dispatch import (
     _parse_chat_id,
     _save_state,
     build_folder_title_map,
-    build_form_message,
+    send_form_messages,
     match_project_to_chat,
 )
 from bot.workflow_logo_fill import fill_logo_for_fields
@@ -138,7 +138,32 @@ async def process_live_project(
     root = Path(__file__).resolve().parent.parent
 
     # --- Google Form ---
-    if config.workflow_google_form_url:
+    if getattr(config, "workflow_live_onboard_enabled", False) and config.workflow_google_form_url:
+        try:
+            from bot.workflow_live_onboard import run_live_onboard
+
+            onboard = await run_live_onboard(
+                client,
+                config,
+                scope,
+                token=token,
+                rid=rid,
+                name=name,
+                fields=fields,
+                source=source,
+                preferred_chat_id=preferred_chat_id,
+                preferred_chat_title=preferred_chat_title,
+            )
+            result["form"] = str(onboard.get("form") or "skipped")
+            if onboard.get("chat_id") is not None:
+                result["chat_id"] = onboard.get("chat_id")
+            if onboard.get("chat_title"):
+                result["chat_title"] = onboard.get("chat_title")
+            result["onboard_case"] = onboard.get("case")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("live-onboard failed for %r", name)
+            result["form"] = f"onboard_failed:{exc}"
+    elif config.workflow_google_form_url:
         state_path = root / config.workflow_state_file
         sent = _load_state(state_path)
         if rid in sent:
@@ -188,7 +213,7 @@ async def process_live_project(
                 )
             else:
                 try:
-                    await client.send_message(chat_id, build_form_message(config, name))
+                    await send_form_messages(client, config, chat_id, name)
                     sent.add(rid)
                     _save_state(state_path, sent)
                     loop = asyncio.get_running_loop()

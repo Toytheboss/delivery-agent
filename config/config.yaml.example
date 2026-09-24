@@ -146,10 +146,15 @@ workflow:
     Please submit your project info in this form. We will use it for website showcase / future gas rebates / potential grant support:
     {form_url}
 
-    You can also have your project displayed on DeFiLlama under the BOT Chain section. Here's how:
+    ---
+    Could you also coordinate a PR announcement on Twitter, mention that your project is live on BOT Chain. We will help to amplify.
+
+    ---
+    You can also have your project displayed on DeFiLlama under the BOT Chain section if you want. Here's how:
     https://docs.google.com/document/d/1BXDfXq5KwpCi-A4eEO7ngE-a40uz3OM1/edit?usp=sharing&ouid=116519297133280129218&rtpof=true&sd=true
 
     Thanks for your support ❤️
+  form_message_gap_seconds: 10
   state_file: "data/form_dispatch_state.json"
   # On Lark live (poll) OR TG mark-live: fetch site logo into 项目logo（文件） (no retry on fail)
   logo_fill_enabled: true
@@ -172,26 +177,37 @@ workflow:
     - "Contract Addresss/主网合约"
     - "Treasury Address"
   wallet_notify_state_file: "data/wallet_notify_state.json"
-  # 表单发出后：钱包表 5 项里不足 4 项时，满 24h 自动催收再发一次
+  # 表单发出后：合约 / 推特 / logo / 简介未齐则每天催一次，最多 10 天
   form_chase_enabled: true
   form_chase_after_hours: 24
   # Legacy knob; chase now runs once daily at lark_digest_hour (default 00:00)
   form_chase_scan_minutes: 1440
   form_chase_min_filled: 4
-  form_chase_max_reminders: 7
+  form_chase_max_reminders: 10
   form_chase_fields:
-    - "Project name"
+    - "Mainnet Contract Addresss"
+    - "Link of Project X ( Formerly Twitter) Profile Page"
     - "Project logo"
-    - "Contract Addresss/主网合约"
-    - "Treasury Address"
-    - "Fee Collector / Revenue Wallet Address"
+    - "A brief introduction of your project"
   form_chase_state_file: "data/form_chase_state.json"
   form_chase_message_template: |
-    Hi {project_name} team — friendly reminder to complete the onboarding form. We are still missing:
+    Hi {project_name} team — friendly reminder to finish this form. We use it for website showcase / future gas rebates / potential grant support.
+
+    Still missing:
     {missing_fields}
 
-    Please fill these in when you can. Thank you! ⬇️
+    Please fill these in when you can:
     {form_url}
+
+    Thanks!
+  live_onboard_enabled: true
+  # roy | josh; empty = infer (group_replies on → roy)
+  live_onboard_account: ""
+  # Project verification push
+  live_onboard_lark_chat_id: ""
+  live_onboard_bd_field: "BD"
+  live_onboard_peer_wait_seconds: 90
+  live_onboard_state_file: "/opt/botchain-shared/live_onboard_state.json"
   notify_chat_ids: []
   notify_group_titles: []
   lark_digest_enabled: true

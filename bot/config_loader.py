@@ -30,6 +30,8 @@ CRITICAL_CONFIG_FIELDS: tuple[str, ...] = (
     "trusted_auto_learn_state_file",
     "tech_support_enabled",
     "tech_support_lark_chat_id",
+    "workflow_live_onboard_enabled",
+    "workflow_live_onboard_lark_chat_id",
 )
 
 
@@ -142,6 +144,7 @@ class AppConfig:
     workflow_form_sent_field: str
     workflow_google_form_url: str
     workflow_message_template: str
+    workflow_form_message_gap_seconds: int
     workflow_state_file: str
     workflow_manual_commands: list[str]
     workflow_mark_live_commands: list[str]
@@ -172,6 +175,12 @@ class AppConfig:
     workflow_form_chase_fields: list[str]
     workflow_form_chase_state_file: str
     workflow_form_chase_message_template: str
+    workflow_live_onboard_enabled: bool
+    workflow_live_onboard_account: str
+    workflow_live_onboard_lark_chat_id: str
+    workflow_live_onboard_bd_field: str
+    workflow_live_onboard_peer_wait_seconds: int
+    workflow_live_onboard_state_file: str
     workflow_notify_chat_ids: list[int]
     workflow_notify_group_titles: list[str]
     workflow_lark_digest_enabled: bool
@@ -690,12 +699,19 @@ def load_config() -> AppConfig:
                 "Please submit your project info in this form. We will use it for "
                 "website showcase / future gas rebates / potential grant support:\n"
                 "{form_url}\n\n"
+                "---\n"
+                "Could you also coordinate a PR announcement on Twitter, mention that "
+                "your project is live on BOT Chain. We will help to amplify.\n\n"
+                "---\n"
                 "You can also have your project displayed on DeFiLlama under the "
-                "BOT Chain section. Here's how:\n"
+                "BOT Chain section if you want. Here's how:\n"
                 "https://docs.google.com/document/d/1BXDfXq5KwpCi-A4eEO7ngE-a40uz3OM1/"
                 "edit?usp=sharing&ouid=116519297133280129218&rtpof=true&sd=true\n\n"
                 "Thanks for your support ❤️"
             )
+        ),
+        workflow_form_message_gap_seconds=int(
+            workflow.get("form_message_gap_seconds", 10) or 10
         ),
         workflow_state_file=str(
             workflow.get("state_file", "data/form_dispatch_state.json")
@@ -769,20 +785,17 @@ def load_config() -> AppConfig:
             workflow.get("form_chase_min_filled", 4) or 4
         ),
         workflow_form_chase_max_reminders=int(
-            workflow.get("form_chase_max_reminders", 1) or 1
+            workflow.get("form_chase_max_reminders", 10) or 10
         ),
         workflow_form_chase_fields=[
             str(x).strip()
             for x in (
                 workflow.get("form_chase_fields")
                 or [
-                    "Project name",
-                    "A brief introduction of your project",
+                    "Mainnet Contract Addresss",
                     "Link of Project X ( Formerly Twitter) Profile Page",
                     "Project logo",
-                    "Mainnet Contract Addresss",
-                    "Treasury Address",
-                    "Fee Collector / Revenue Wallet Address",
+                    "A brief introduction of your project",
                 ]
             )
             if str(x).strip()
@@ -793,11 +806,37 @@ def load_config() -> AppConfig:
         workflow_form_chase_message_template=str(
             workflow.get("form_chase_message_template")
             or (
-                "Hi {project_name} team — friendly reminder to complete the "
-                "onboarding form. We are still missing:\n"
+                "Hi {project_name} team — friendly reminder to finish this form. "
+                "We use it for website showcase / future gas rebates / potential "
+                "grant support.\n\n"
+                "Still missing:\n"
                 "{missing_fields}\n\n"
-                "Please fill these in when you can. Thank you! ⬇️\n"
-                "{form_url}"
+                "Please fill these in when you can:\n"
+                "{form_url}\n\n"
+                "Thanks!"
+            )
+        ),
+        workflow_live_onboard_enabled=bool(
+            workflow.get("live_onboard_enabled", True)
+        ),
+        workflow_live_onboard_account=str(
+            workflow.get("live_onboard_account") or ""
+        ).strip().lower(),
+        workflow_live_onboard_lark_chat_id=str(
+            workflow.get("live_onboard_lark_chat_id") or ""
+        ).strip(),
+        workflow_live_onboard_bd_field=str(
+            workflow.get("live_onboard_bd_field") or "BD"
+        ).strip()
+        or "BD",
+        workflow_live_onboard_peer_wait_seconds=max(
+            int(workflow.get("live_onboard_peer_wait_seconds", 90) or 90),
+            0,
+        ),
+        workflow_live_onboard_state_file=str(
+            workflow.get(
+                "live_onboard_state_file",
+                "/opt/botchain-shared/live_onboard_state.json",
             )
         ),
         workflow_wallet_required_fields=[
