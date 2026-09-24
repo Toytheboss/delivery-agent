@@ -204,7 +204,7 @@ workflow:
   # roy | josh; empty = infer (group_replies on → roy)
   live_onboard_account: ""
   # Project verification push
-  live_onboard_lark_chat_id: ""
+  live_onboard_lark_chat_id: "oc_d7e4175580c970a4f7853b6a4d10368e"
   live_onboard_bd_field: "BD"
   live_onboard_peer_wait_seconds: 90
   live_onboard_state_file: "/opt/botchain-shared/live_onboard_state.json"

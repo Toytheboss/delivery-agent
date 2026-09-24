@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import os
 import sys
@@ -41,6 +42,7 @@ from bot.workflow_lark_webhook import start_live_webhook_server
 from bot.workflow_tech_support import tech_support_poll_loop
 from bot.workflow_deploy_status_watch import deploy_status_watch_loop
 from bot.workflow_live_watch import live_status_watch_loop
+from bot.workflow_live_trigger import startup_live_catchup
 from bot.workflow_live_onboard import register_live_onboard_join_handler
 from bot.workflow_lark_wallet_group import lark_digest_loop, sync_wallet_first_seen
 from bot.workflow_blake_weekly import blake_weekly_loop
@@ -290,10 +292,16 @@ async def main() -> None:
                 "form dispatch will not send until URL is set"
             )
 
-        await start_live_webhook_server(client, config, scope, kb=kb)
+        _webhook_kwargs = {}
+        if "kb" in inspect.signature(start_live_webhook_server).parameters:
+            _webhook_kwargs["kb"] = kb
+        await start_live_webhook_server(client, config, scope, **_webhook_kwargs)
 
         if getattr(config, "tech_support_enabled", False):
-            asyncio.create_task(tech_support_poll_loop(client, config, kb=kb))
+            _tech_kwargs = {}
+            if "kb" in inspect.signature(tech_support_poll_loop).parameters:
+                _tech_kwargs["kb"] = kb
+            asyncio.create_task(tech_support_poll_loop(client, config, **_tech_kwargs))
             logger.info("Tech support escalation enabled (poll + trigger)")
         if config.workflow_live_startup_scan:
             asyncio.create_task(startup_live_catchup(client, config, scope))

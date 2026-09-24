@@ -16,6 +16,9 @@
 ### 新增
 - 进度表改成主网上线后，按 Roy / Josh 是否在对应 TG 群发表单（Onboarding Google Form），再用飞书 @ 对应 BD 推四种英文稿
 
+### 修复
+- 交付号 webhook 不接受 kb 参数时也能启动；飞书群填入 Project verification push
+
 ---
 
 ## 2026-09-25 · 进夹扫描跳过升级后留下的旧群 ID
