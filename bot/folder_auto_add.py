@@ -73,6 +73,15 @@ def _is_group_or_channel(entity: object) -> bool:
     return False
 
 
+def _is_stale_upgraded_chat(entity: object) -> bool:
+    """Leftover basic Chat after Telegram upgraded the group to a megagroup.
+
+    The dialog list still shows the deactivated id; the live ``-100…`` chat is
+    a different peer and is what belongs in the Folder.
+    """
+    return bool(getattr(entity, "deactivated", False))
+
+
 def _folder_sort_key(name: str) -> tuple:
     m = FOLDER_NUM_RE.match((name or "").strip())
     if m:
@@ -271,20 +280,29 @@ async def _write_folder(
 async def _resolve_live_chat(
     client: TelegramClient, chat: object
 ) -> tuple[object, int, Any]:
-    """Prefer migrated megagroup when a basic Chat was upgraded/deactivated."""
+    """Prefer migrated megagroup when a basic Chat was upgraded/deactivated.
+
+    Never fall back to a deactivated leftover id — that peer does not belong
+    in a Folder and the live megagroup is usually already there.
+    """
     migrated = getattr(chat, "migrated_to", None)
-    if migrated is not None or getattr(chat, "deactivated", False):
+    stale = _is_stale_upgraded_chat(chat)
+    if migrated is not None or stale:
         try:
             if migrated is not None:
                 live = await client.get_entity(migrated)
             else:
                 live = await client.get_entity(chat)
+            if _is_stale_upgraded_chat(live):
+                raise RuntimeError("resolved entity is still deactivated")
             return live, utils.get_peer_id(live), await client.get_input_entity(live)
         except Exception:
             logger.warning(
-                "folder_auto_add: failed to resolve migrated chat for %r; using original",
+                "folder_auto_add: failed to resolve migrated chat for %r; skip",
                 getattr(chat, "title", None),
             )
+            if stale:
+                raise
     return chat, utils.get_peer_id(chat), await client.get_input_entity(chat)
 
 
@@ -304,12 +322,21 @@ async def ensure_chat_in_folders(
     keywords = config.folder_auto_add_keywords or config.welcome_name_keywords
     if not title_matches_project(chat_title, keywords):
         return None
+    if _is_stale_upgraded_chat(chat) and getattr(chat, "migrated_to", None) is None:
+        logger.debug(
+            "folder_auto_add: skip deactivated chat with no migrate target %r",
+            chat_title,
+        )
+        return None
 
     try:
         chat, chat_id, input_peer = await _resolve_live_chat(client, chat)
         chat_title = getattr(chat, "title", None) or chat_title
     except Exception:
         logger.exception("folder_auto_add: cannot resolve chat %r", chat_title)
+        return None
+    if _is_stale_upgraded_chat(chat):
+        logger.debug("folder_auto_add: skip still-deactivated chat %r", chat_title)
         return None
 
     if chat_title:
@@ -433,6 +460,8 @@ async def scan_and_add_missing(
         async for dialog in client.iter_dialogs():
             entity = dialog.entity
             if not _is_group_or_channel(entity):
+                continue
+            if _is_stale_upgraded_chat(entity):
                 continue
             title = getattr(entity, "title", None) or ""
             if not title_matches_project(title, keywords):
