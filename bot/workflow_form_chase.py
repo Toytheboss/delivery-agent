@@ -1,8 +1,8 @@
-"""24h form chase: if wallet-table data still incomplete, resend Google Form once.
+"""Daily form chase: remind until required wallet fields are filled.
 
-After a project form is sent to TG, track it. Periodically scan Lark wallet table:
-if fewer than N of the configured form fields are filled after ``after_hours``,
-resend a reminder (up to ``max_reminders`` times).
+After a project form is sent to TG, track it. Once a day, scan Lark wallet
+table. If any of 主网合约 / 推特主页 / logo / 项目介绍 is still empty,
+resend a reminder (up to 10 days).
 """
 
 from __future__ import annotations
@@ -20,7 +20,6 @@ from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.workflow_form_dispatch import (
     _field_text,
     _normalize_name,
-    build_form_message,
     match_project_to_chat,
 )
 
@@ -34,14 +33,26 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 DEFAULT_CHASE_FIELDS = [
-    "Project name",
-    "A brief introduction of your project",
+    "Mainnet Contract Addresss",
     "Link of Project X ( Formerly Twitter) Profile Page",
     "Project logo",
-    "Mainnet Contract Addresss",
-    "Treasury Address",
-    "Fee Collector / Revenue Wallet Address",
+    "A brief introduction of your project",
 ]
+
+# Same meaning, older Lark column titles
+_FIELD_ALIASES: dict[str, tuple[str, ...]] = {
+    "Mainnet Contract Addresss": (
+        "Mainnet Contract Addresss",
+        "Mainnet Contract Address",
+        "Contract Addresss/主网合约",
+    ),
+    "Link of Project X ( Formerly Twitter) Profile Page": (
+        "Link of Project X ( Formerly Twitter) Profile Page",
+        "Project X ( Formerly Twitter) Profile Page",
+        "Project X ( Formly Twitter) Profile Page",
+        "Project X ( Formely Twitter) Profile Page",
+    ),
+}
 
 
 def _state_path(config: AppConfig) -> Path:
@@ -84,7 +95,11 @@ def _chase_fields(config: AppConfig) -> list[str]:
 
 def field_is_filled(fields: dict[str, Any], name: str) -> bool:
     """True when Lark cell has usable content (text / link / attachment)."""
-    value = fields.get(name)
+    keys = _FIELD_ALIASES.get(name, (name,))
+    return any(_value_is_filled(fields.get(key)) for key in keys)
+
+
+def _value_is_filled(value: Any) -> bool:
     if value is None:
         return False
     if isinstance(value, str):
@@ -97,17 +112,7 @@ def field_is_filled(fields: dict[str, Any], name: str) -> bool:
         text = str(value.get("text") or value.get("name") or "").strip()
         return bool(text)
     if isinstance(value, list):
-        for item in value:
-            if isinstance(item, str) and item.strip():
-                return True
-            if isinstance(item, dict) and (
-                item.get("file_token")
-                or item.get("url")
-                or item.get("link")
-                or str(item.get("text") or item.get("name") or "").strip()
-            ):
-                return True
-        return False
+        return any(_value_is_filled(item) for item in value)
     return bool(str(value).strip())
 
 
@@ -158,11 +163,14 @@ def build_chase_message(
     ).strip()
     if not template:
         template = (
-            "Hi {project_name} team — friendly reminder to complete the "
-            "onboarding form. We are still missing:\n"
+            "Hi {project_name} team — friendly reminder to finish this form. "
+            "We use it for website showcase / future gas rebates / potential "
+            "grant support.\n\n"
+            "Still missing:\n"
             "{missing_fields}\n\n"
-            "Please fill these in when you can. Thank you! ⬇️\n"
-            "{form_url}"
+            "Please fill these in when you can:\n"
+            "{form_url}\n\n"
+            "Thanks!"
         )
     try:
         return template.format(
@@ -174,10 +182,13 @@ def build_chase_message(
     except (KeyError, ValueError):
         return (
             f"Hi {project_name or 'your project'} team — friendly reminder to "
-            f"complete the onboarding form. We are still missing:\n"
+            f"finish this form. We use it for website showcase / future gas "
+            f"rebates / potential grant support.\n\n"
+            f"Still missing:\n"
             f"{missing_block}\n\n"
-            f"Please fill these in when you can. Thank you! ⬇️\n"
-            f"{config.workflow_google_form_url}"
+            f"Please fill these in when you can:\n"
+            f"{config.workflow_google_form_url}\n\n"
+            f"Thanks!"
         )
 
 
@@ -326,7 +337,7 @@ async def run_form_chase_once(
 
     after_hours = max(float(getattr(config, "workflow_form_chase_after_hours", 24) or 24), 1.0)
     min_filled = max(int(getattr(config, "workflow_form_chase_min_filled", 4) or 4), 1)
-    max_reminders = max(int(getattr(config, "workflow_form_chase_max_reminders", 1) or 1), 0)
+    max_reminders = max(int(getattr(config, "workflow_form_chase_max_reminders", 10) or 10), 0)
     fields_needed = _chase_fields(config)
     if max_reminders <= 0:
         return 0

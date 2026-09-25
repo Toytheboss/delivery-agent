@@ -437,22 +437,65 @@ def find_project_chat_matches(
     return [(chat_id, title, score, reason) for score, chat_id, title, reason in top]
 
 
+_DEFAULT_FORM_TEMPLATE = (
+    "🎉 Congratulations! {project_name} is now live on BOT Chain Mainnet.\n\n"
+    "Please submit your project info in this form. We will use it for "
+    "website showcase / future gas rebates / potential grant support:\n"
+    "{form_url}\n\n"
+    "---\n"
+    "Could you also coordinate a PR announcement on Twitter, mention that "
+    "your project is live on BOT Chain. We will help to amplify.\n\n"
+    "---\n"
+    "You can also have your project displayed on DeFiLlama under the "
+    "BOT Chain section if you want. Here's how:\n"
+    "https://docs.google.com/document/d/1BXDfXq5KwpCi-A4eEO7ngE-a40uz3OM1/"
+    "edit?usp=sharing&ouid=116519297133280129218&rtpof=true&sd=true\n\n"
+    "Thanks for your support ❤️"
+)
+
+
 def build_form_message(config: AppConfig, project_name: str) -> str:
-    template = config.workflow_message_template.strip() or (
-        "Congrats! {project_name} is live on Delivery Agent Mainnet. "
-        "We can now go ahead and push the PR announcement. "
-        "It'll be great if you can tweet about this integration — "
-        "we'll mention it on our official social media channels and "
-        "also share an announcement in our community channels.\n\n"
-        "At the same time, could you please fill in this form for "
-        "follow-up onboarding? We are collecting the project's address "
-        "for future gas return and potential grant provision. Thank you. ⬇️\n"
-        "{form_url}"
-    )
+    template = config.workflow_message_template.strip() or _DEFAULT_FORM_TEMPLATE
     return template.format(
         form_url=config.workflow_google_form_url,
         project_name=project_name or "your project",
     )
+
+
+def build_form_messages(config: AppConfig, project_name: str) -> list[str]:
+    """Split the live form template on --- into Telegram bubbles."""
+    from bot.rag import split_reply_bubbles
+
+    text = build_form_message(config, project_name)
+    bubbles = split_reply_bubbles(text)
+    return bubbles or [text]
+
+
+async def send_form_messages(
+    client: TelegramClient,
+    config: AppConfig,
+    chat_id: int,
+    project_name: str,
+) -> int:
+    """Send live-form bubbles with a pause between them (default 10s)."""
+    bubbles = build_form_messages(config, project_name)
+    gap = max(
+        0, int(getattr(config, "workflow_form_message_gap_seconds", 10) or 0)
+    )
+    sent = 0
+    for i, bubble in enumerate(bubbles):
+        if i > 0 and gap > 0:
+            await asyncio.sleep(gap)
+        await client.send_message(chat_id, bubble)
+        sent += 1
+    logger.info(
+        "form bubbles sent chat_id=%s project=%r count=%d gap=%ss",
+        chat_id,
+        project_name,
+        sent,
+        gap,
+    )
+    return sent
 
 
 def _chat_ids_already_sent_form(config: Any) -> set[int]:
@@ -764,9 +807,8 @@ async def run_form_dispatch_once(
             )
             continue
 
-        text = build_form_message(config, project_name)
         try:
-            await client.send_message(chat_id, text)
+            await send_form_messages(client, config, chat_id, project_name)
         except Exception as exc:
             logger.exception(
                 "Failed to send Google Form to chat_id=%s project=%r",
@@ -829,8 +871,7 @@ async def send_form_manual(
         return "Google form URL is not configured (workflow.google_form_url)."
 
     project_guess = chat_title or "your project"
-    text = build_form_message(config, project_guess)
-    await client.send_message(chat_id, text)
+    await send_form_messages(client, config, chat_id, project_guess)
     try:
         from bot.metrics import record_form_outcome
 
