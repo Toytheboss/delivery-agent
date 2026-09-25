@@ -14,6 +14,7 @@ from bot.lark_im import send_text_to_chat
 from bot.project_logo import link_str
 from bot.workflow_form_dispatch import (
     _field_text,
+    _normalize_name,
     _parse_chat_id,
     is_manual_form_command,
     match_project_to_chat,
@@ -31,6 +32,29 @@ logger = logging.getLogger(__name__)
 _URL_RE = re.compile(r"https?://[^\s<>\]\)\"']+", re.IGNORECASE)
 _TWEET_HOSTS = frozenset(
     {"twitter.com", "x.com", "vxtwitter.com", "fxtwitter.com", "nitter.net"}
+)
+_RESERVED_HANDLES = frozenset(
+    {
+        "i",
+        "intent",
+        "home",
+        "search",
+        "share",
+        "explore",
+        "settings",
+        "compose",
+        "messages",
+        "notifications",
+        "hashtag",
+        "hashtags",
+    }
+)
+_DEFAULT_TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
+_TWITTER_FIELD_ALIASES = (
+    "Link of Project X ( Formerly Twitter) Profile Page",
+    "Project X ( Formerly Twitter) Profile Page",
+    "Project X ( Formly Twitter) Profile Page",
+    "Project X ( Formely Twitter) Profile Page",
 )
 _DEFAULT_COMMANDS = ["pr support"]
 _PR_CMD_RE = re.compile(
@@ -73,6 +97,116 @@ def is_tweet_url(url: str) -> bool:
     except ValueError:
         return False
     return _host_of(url) in _TWEET_HOSTS and "/status" in path
+
+
+def profile_url_from_pr_url(url: str) -> str:
+    """https://x.com/handle/status/123 → https://x.com/handle. Empty if not a tweet."""
+    if not is_tweet_url(url):
+        return ""
+    parsed = urlparse(_normalize_url(url))
+    parts = [p for p in (parsed.path or "").split("/") if p]
+    if len(parts) < 3 or parts[1].lower() != "status":
+        return ""
+    handle = parts[0].lstrip("@")
+    if not handle or handle.lower() in _RESERVED_HANDLES:
+        return ""
+    if not re.fullmatch(r"[A-Za-z0-9_]{1,15}", handle):
+        return ""
+    return f"https://x.com/{handle}"
+
+
+def _twitter_field_name(fields: dict[str, Any]) -> str:
+    for key in _TWITTER_FIELD_ALIASES:
+        if key in fields:
+            return key
+    return _DEFAULT_TWITTER_FIELD
+
+
+def _twitter_already_filled(fields: dict[str, Any]) -> bool:
+    from bot.workflow_form_chase import field_is_filled
+
+    return field_is_filled(fields, _DEFAULT_TWITTER_FIELD)
+
+
+def fill_wallet_twitter_if_empty(
+    token: str,
+    config: AppConfig,
+    *,
+    project_name: str,
+    profile_url: str,
+) -> str:
+    """Write profile URL into the wallet Twitter cell only when that cell is empty.
+
+    Returns filled / skipped / unmatched / ambiguous / error / no_url.
+    """
+    if not profile_url:
+        return "no_url"
+    app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()
+    wallet_table = str(getattr(config, "workflow_wallet_table_id", "") or "").strip()
+    name_field = str(
+        getattr(config, "workflow_wallet_name_field", "") or "Project name"
+    ).strip()
+    if not app_token or not wallet_table:
+        return "error"
+    try:
+        rows = list_records(token, app_token, wallet_table)
+    except Exception:  # noqa: BLE001
+        logger.exception("pr_capture: failed to read wallet table project=%r", project_name)
+        return "error"
+    key = _normalize_name(project_name)
+    matches: list[tuple[str, dict[str, Any]]] = []
+    for row in rows:
+        rid = str(row.get("record_id") or "")
+        fields = row.get("fields") or {}
+        if not rid:
+            continue
+        if _normalize_name(_field_text(fields, name_field)) != key:
+            continue
+        matches.append((rid, fields))
+    if not matches:
+        logger.info("pr_capture: no wallet row for project=%r", project_name)
+        return "unmatched"
+    if len(matches) > 1:
+        logger.info(
+            "pr_capture: ambiguous wallet rows project=%r n=%d — skip Twitter fill",
+            project_name,
+            len(matches),
+        )
+        return "ambiguous"
+    rid, fields = matches[0]
+    if _twitter_already_filled(fields):
+        logger.info("pr_capture: wallet Twitter already filled project=%r", project_name)
+        return "skipped"
+    column = _twitter_field_name(fields)
+    try:
+        update_record(token, app_token, wallet_table, rid, {column: profile_url})
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "pr_capture: failed to fill wallet Twitter project=%r record=%s",
+            project_name,
+            rid,
+        )
+        return "error"
+    logger.info(
+        "pr_capture: filled empty wallet Twitter project=%r record=%s url=%s",
+        project_name,
+        rid,
+        profile_url[:80],
+    )
+    try:
+        from bot.workflow_events import append_event
+
+        append_event(
+            "wallet_twitter_filled",
+            "pr support",
+            project_name=project_name,
+            text=f"钱包表推特主页为空，已从 PR 链接写入 {profile_url}",
+            record_id=rid,
+            url=profile_url,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("pr_capture: filled Twitter but failed to log event")
+    return "filled"
 
 
 def pick_pr_url(urls: list[str]) -> str:
@@ -301,6 +435,23 @@ async def capture_pr_tweet(
         f"Project: {project_name}",
         url,
     ]
+    profile_url = profile_url_from_pr_url(url)
+    if profile_url:
+        try:
+            twitter_result = await loop.run_in_executor(
+                None,
+                lambda: fill_wallet_twitter_if_empty(
+                    token,
+                    config,
+                    project_name=project_name,
+                    profile_url=profile_url,
+                ),
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("pr_capture: wallet Twitter fill crashed project=%r", project_name)
+            twitter_result = "error"
+        if twitter_result == "filled":
+            lines.append("Filled empty wallet Twitter profile.")
     notify_on = bool(getattr(config, "pr_capture_notify_enabled", True))
     lark_chat = _notify_chat_id(config) if notify_on else ""
     if notify_on and lark_chat:

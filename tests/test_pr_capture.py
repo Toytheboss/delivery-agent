@@ -8,6 +8,7 @@ from bot.workflow_pr_capture import (
     is_pr_capture_command,
     is_tweet_url,
     pick_pr_url,
+    profile_url_from_pr_url,
     tg_message_link,
 )
 
@@ -39,6 +40,22 @@ def test_twitter_and_x_are_tweets():
     assert is_tweet_url("https://mobile.twitter.com/proj/status/99")
     assert not is_tweet_url("https://x.com/proj")
     assert not is_tweet_url("https://botchain.ai")
+
+
+def test_profile_url_from_tweet_status():
+    assert (
+        profile_url_from_pr_url(
+            "https://x.com/_neonarcade/status/2102733713209479526?s=46"
+        )
+        == "https://x.com/_neonarcade"
+    )
+    assert (
+        profile_url_from_pr_url("https://twitter.com/OpenLCdev/status/1")
+        == "https://x.com/OpenLCdev"
+    )
+    assert profile_url_from_pr_url("https://mirror.xyz/post/1") == ""
+    assert profile_url_from_pr_url("https://x.com/proj") == ""
+    assert profile_url_from_pr_url("https://x.com/i/status/1") == ""
 
 
 def test_fallback_to_first_http_url():
