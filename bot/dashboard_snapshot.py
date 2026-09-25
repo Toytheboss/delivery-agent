@@ -1042,6 +1042,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         from bot.lark_bitable import get_tenant_access_token, list_fields, list_records
         from bot.workflow_form_dispatch import (
             _field_text,
+            _is_internal_folder_title,
             _meaningful_match_tokens,
             _normalize_name,
             find_project_chat_matches,
@@ -1494,6 +1495,8 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             project_core = core_key(project_name)
             for cid, title in title_cache.items():
                 if cid in seen:
+                    continue
+                if _is_internal_folder_title(str(title or "")):
                     continue
                 tnorm = _normalize_name(title)
                 if primary_norm and tnorm == primary_norm:

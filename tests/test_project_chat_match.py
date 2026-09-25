@@ -225,3 +225,17 @@ def test_agentvault_same_project_two_titles():
 def test_bot_chain_pulse_stays_unmatched():
     cid, _reason = match_project_to_chat("BOT Chain Pulse", _amb())
     assert cid is None
+
+
+def test_botchain_slash_label_is_not_a_project_group():
+    titles = {
+        201: "BOTCHAIN/mettelia",
+        202: "mettelia <> Bot Chain",
+        203: "botchain/vdecoty",
+    }
+    cid, reason = match_project_to_chat("mettelia", titles)
+    assert cid == 202, reason
+    cid, _reason = match_project_to_chat("mettelia", {201: "BOTCHAIN/mettelia"})
+    assert cid is None
+    cid, _reason = match_project_to_chat("vdecoty", {203: "botchain/vdecoty"})
+    assert cid is None
