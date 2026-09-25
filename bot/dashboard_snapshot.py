@@ -161,6 +161,50 @@ def _load_peer_json_dicts(filename: str) -> list[dict]:
     return payloads
 
 
+def _parse_folder_titles(raw: dict[str, Any]) -> dict[int, str]:
+    titles: dict[int, str] = {}
+    payload = raw.get("titles") if isinstance(raw.get("titles"), dict) else raw
+    if not isinstance(payload, dict):
+        return titles
+    for key, value in payload.items():
+        try:
+            chat_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        title = value.get("title") if isinstance(value, dict) else value
+        title = str(title or "").strip()
+        if title:
+            titles[chat_id] = title
+    return titles
+
+
+def _load_folder_title_caches() -> tuple[dict[int, str], set[int], set[int]]:
+    """Union of Roy号 and 交付号 group titles. Either bot in the group is enough."""
+    titles: dict[int, str] = {}
+    roy_ids: set[int] = set()
+    josh_ids: set[int] = set()
+    for path in _peer_data_files("folder_title_cache.json"):
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError, TypeError):
+            continue
+        if not isinstance(raw, dict):
+            continue
+        parsed = _parse_folder_titles(raw)
+        path_s = str(path).lower()
+        is_roy = "botchain-qa" in path_s
+        is_josh = "delivery-agent" in path_s or "josh-dashboard" in path_s
+        for chat_id, title in parsed.items():
+            titles[chat_id] = title
+            if is_roy:
+                roy_ids.add(chat_id)
+            if is_josh:
+                josh_ids.add(chat_id)
+            if not is_roy and not is_josh:
+                josh_ids.add(chat_id)
+    return titles, roy_ids, josh_ids
+
+
 def _outbound_items_from_log_row(
     row: dict[str, Any], titles: dict[int, str] | None = None
 ) -> list[dict[str, Any]]:
@@ -1042,7 +1086,6 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         from bot.lark_bitable import get_tenant_access_token, list_fields, list_records
         from bot.workflow_form_dispatch import (
             _field_text,
-            _is_internal_folder_title,
             _meaningful_match_tokens,
             _normalize_name,
             find_project_chat_matches,
@@ -1429,18 +1472,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 except OSError:
                     logger.exception("dashboard: failed reading project QA evidence %s", message_path)
 
-        title_cache: dict[int, str] = {}
-        cache_path = ROOT / "data" / "folder_title_cache.json"
-        if cache_path.is_file():
-            raw = json.loads(cache_path.read_text(encoding="utf-8"))
-            for key, value in (raw.get("titles") or {}).items():
-                try:
-                    chat_id = int(key)
-                except (TypeError, ValueError):
-                    continue
-                title = value.get("title") if isinstance(value, dict) else value
-                if str(title or "").strip():
-                    title_cache[chat_id] = str(title).strip()
+        title_cache, roy_chat_ids, josh_chat_ids = _load_folder_title_caches()
 
         status_field = status_field_name
         name_field = str(
@@ -1496,8 +1528,6 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             for cid, title in title_cache.items():
                 if cid in seen:
                     continue
-                if _is_internal_folder_title(str(title or "")):
-                    continue
                 tnorm = _normalize_name(title)
                 if primary_norm and tnorm == primary_norm:
                     add(cid)
@@ -1525,6 +1555,17 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             match_reason = chat_matches[0][3] if chat_matches else "no fuzzy title match"
             if len(chat_matches) > 1:
                 match_reason = f"ambiguous fuzzy title matches: {[item[0] for item in chat_matches]}"
+            tg_bots: list[str] = []
+            if chat_id:
+                if int(chat_id) in roy_chat_ids:
+                    tg_bots.append("roy")
+                if int(chat_id) in josh_chat_ids:
+                    tg_bots.append("josh")
+                for sibling_id in sibling_chat_ids:
+                    if sibling_id in roy_chat_ids and "roy" not in tg_bots:
+                        tg_bots.append("roy")
+                    if sibling_id in josh_chat_ids and "josh" not in tg_bots:
+                        tg_bots.append("josh")
             bd = _field_text(fields, bd_field)
             delivery = _field_text(fields, delivery_field)
             updated = fields.get(update_field)
@@ -1768,6 +1809,9 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             unique_events.sort(key=lambda item: str(item.get("ts") or ""), reverse=True)
             delivery_steps: list[dict[str, Any]] = []
             if chat_matches:
+                bot_label = "、".join(
+                    "Roy号" if item == "roy" else "交付号" for item in tg_bots
+                ) or "Bot"
                 delivery_steps.append(
                     step(
                         "group_bound",
@@ -1776,7 +1820,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                         (
                             f"找到 {len(chat_matches)} 个 TG 候选群，需管理员确认"
                             if len(chat_matches) > 1
-                            else f"Telegram 群已绑定：{chat_title}"
+                            else f"Telegram 群已绑定：{chat_title}（{bot_label}在群）"
                         ),
                         ts=(bound_event or {}).get("ts"),
                         source="Telegram / Lark",
@@ -1980,6 +2024,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                     "chat_id": chat_id,
                     "chat_title": chat_title[:160],
                     "tg_bound": bool(chat_matches),
+                    "tg_bots": tg_bots,
                     "tg_ambiguous": len(chat_matches) > 1,
                     "tg_match_count": len(chat_matches),
                     "tg_match_candidates": [

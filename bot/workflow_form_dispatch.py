@@ -121,15 +121,6 @@ _MATCH_NOISE = {
 _CAMEL_SPLIT = re.compile(
     r"[A-Z]+(?=[A-Z][a-z])|[A-Z][a-z]+|[a-z]+|[A-Z]+|[0-9]+"
 )
-_INTERNAL_FOLDER_TITLE = re.compile(
-    r"^\s*bot\s*[-_ ]*chain\s*/\s*\S",
-    flags=re.IGNORECASE,
-)
-
-
-def _is_internal_folder_title(title: str) -> bool:
-    """Skip BD-side labels like ``BOTCHAIN/mettelia``; those are not project groups."""
-    return bool(_INTERNAL_FOLDER_TITLE.match(str(title or "")))
 _MATCH_GENERIC_PROJECTS = {
     "test",
     "safe",
@@ -312,7 +303,7 @@ def find_project_chat_matches(
     candidates: list[tuple[int, int, str, str]] = []
     for chat_id, title in title_by_chat.items():
         title_text = str(title or "").strip()
-        if not title_text or _is_internal_folder_title(title_text):
+        if not title_text:
             continue
         title_text = re.sub(r"\([^)]*\)", " ", title_text)
         title_norm = _normalize_name(title_text)
