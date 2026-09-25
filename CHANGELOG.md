@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-25 · 上线推群改成分项 Markdown，突出项目和待办
+
+### 优化
+- Project verification push 的上线提醒改为 Markdown post：第一行 @ BD，下面分项写出项目、状态、TG 群、进群情况和表单
+- 待办单独列出；Botex 已发的那条不撤回，之后新上线按新格式发
+
+---
+
 ## 2026-09-25 · 主网上线后检查进群、发表单并推 Project verification push
 
 ### 新增

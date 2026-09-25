@@ -96,3 +96,26 @@ def send_text_to_chat(token: str, chat_id: str, text: str) -> None:
         timeout=30,
     )
     _parse(resp, "send message")
+
+
+def send_markdown_post_to_chat(token: str, chat_id: str, markdown: str) -> None:
+    """Send a Feishu Markdown post so bold / lists / <at> render in the group."""
+    content = json.dumps(
+        {"zh_cn": {"content": [[{"tag": "md", "text": markdown}]]}},
+        ensure_ascii=False,
+    )
+    resp = requests.post(
+        f"{LARK_API_BASE}/im/v1/messages",
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        params={"receive_id_type": "chat_id"},
+        json={
+            "receive_id": chat_id,
+            "msg_type": "post",
+            "content": content,
+        },
+        timeout=30,
+    )
+    _parse(resp, "send markdown post")

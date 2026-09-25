@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Iterator
 
 from bot.lark_bitable import get_tenant_access_token
-from bot.lark_im import send_text_to_chat
+from bot.lark_im import send_markdown_post_to_chat
 from bot.workflow_form_dispatch import (
     _chat_ids_already_sent_form,
     _field_text,
@@ -76,46 +76,45 @@ def build_onboard_message(
         if bd_open_id
         else f"@{bd_name or 'BD'}"
     )
-    group_label = (group or project).strip() or project
+    project_label = (project or "Unknown project").strip() or "Unknown project"
+    group_label = (group or project).strip() or "not matched"
+    form_please = (
+        "Help the project submit Twitter and the contract address to the form"
+    )
+    pr_please = (
+        "Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
+    )
     if case == 1:
-        body = (
-            f"**{project}** is live on mainnet. Delivery (Roy and Josh) have joined "
-            f"the TG group. The Onboarding Google Form has been sent to "
-            f"**{group_label}**. Please:\n\n"
-            "1. Help the project submit the required info (Twitter, contract address, "
-            "etc.) to the Onboarding Google Form as soon as possible\n"
-            "2. Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
-        )
+        delivery = "Roy and Josh have joined"
+        form = "Onboarding Google Form has been sent"
+        please = [form_please, pr_please]
     elif case == 2:
-        body = (
-            f"**{project}** is live on mainnet. Delivery: Roy has joined the TG group; "
-            f"Josh has not been added yet. The Onboarding Google Form has been sent to "
-            f"**{group_label}**. Please:\n\n"
-            "1. Add Josh to the TG group\n"
-            "2. Help the project submit the required info (Twitter, contract address, "
-            "etc.) to the Onboarding Google Form as soon as possible\n"
-            "3. Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
-        )
+        delivery = "Roy has joined; Josh has not been added"
+        form = "Onboarding Google Form has been sent"
+        please = ["Add Josh to the TG group", form_please, pr_please]
     elif case == 3:
-        body = (
-            f"**{project}** is live on mainnet. Delivery: Josh has joined the TG group; "
-            f"Roy has not been added yet. The Onboarding Google Form has been sent to "
-            f"**{group_label}**. Please:\n\n"
-            "1. Add Roy to the TG group\n"
-            "2. Help the project submit the required info (Twitter, contract address, "
-            "etc.) to the Onboarding Google Form as soon as possible\n"
-            "3. Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
-        )
+        delivery = "Josh has joined; Roy has not been added"
+        form = "Onboarding Google Form has been sent"
+        please = ["Add Roy to the TG group", form_please, pr_please]
     else:
-        body = (
-            f"**{project}** is live on mainnet. Roy / Josh were not detected in a TG "
-            "group. The Onboarding Google Form was not sent. Please:\n\n"
-            "1. Create the project TG group, add Roy and Josh, then trigger the form send\n"
-            "2. Help the project submit the required info (Twitter, contract address, "
-            "etc.) to the Onboarding Google Form as soon as possible\n"
-            "3. Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
-        )
-    return f"{at}\n\n{body}"
+        delivery = "Roy / Josh were not detected in a TG group"
+        form = "Onboarding Google Form was not sent"
+        please = [
+            "Create the project TG group, add Roy and Josh, then trigger the form send",
+            form_please,
+            pr_please,
+        ]
+    numbered = "\n".join(f"{i}. {item}" for i, item in enumerate(please, start=1))
+    return (
+        f"{at}\n\n"
+        f"**Project:** `{project_label}`\n"
+        f"**Status:** Live on mainnet\n"
+        f"**TG group:** `{group_label}`\n"
+        f"**Delivery:** {delivery}\n"
+        f"**Form:** {form}\n\n"
+        f"**Please:**\n"
+        f"{numbered}"
+    )
 
 
 def account_key(config: Any) -> str:
@@ -355,7 +354,7 @@ async def _notify_lark(config: Any, entry: dict[str, Any], fields: dict[str, Any
     if not app_id or not app_secret:
         return "skipped_no_lark_creds"
     token = get_tenant_access_token(app_id, app_secret)
-    send_text_to_chat(token, chat_id, text)
+    send_markdown_post_to_chat(token, chat_id, text)
     logger.info(
         "live-onboard notified case=%s project=%r bd=%s",
         case,
