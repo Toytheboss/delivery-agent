@@ -451,7 +451,7 @@ async def capture_pr_tweet(
             logger.exception("pr_capture: wallet Twitter fill crashed project=%r", project_name)
             twitter_result = "error"
         if twitter_result == "filled":
-            lines.append("Filled empty wallet Twitter profile.")
+            lines.append("Twitter profile Filled")
     notify_on = bool(getattr(config, "pr_capture_notify_enabled", True))
     lark_chat = _notify_chat_id(config) if notify_on else ""
     if notify_on and lark_chat:

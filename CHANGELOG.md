@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-09-25 · pr support 写回推特后群内文案改为 Twitter profile Filled
+
+### 优化
+- 钱包表推特栏真正写入后，群里只多一句 `Twitter profile Filled`
+
+---
+
 ## 2026-09-25 · pr support 空着才回写钱包表推特主页
 
 ### 新增
