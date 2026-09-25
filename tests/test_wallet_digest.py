@@ -1,4 +1,4 @@
-from bot.workflow_lark_wallet_group import _build_digest_text
+from bot.workflow_lark_wallet_group import _build_digest_text, midnight_digest_sent_ts
 
 
 def test_digest_keeps_original_body_and_ats_angela():
@@ -20,3 +20,9 @@ def test_digest_without_open_id_has_no_at():
     assert "<at " not in text
     assert text.startswith("【项目方地址日报】2026-09-22")
     assert "今日暂无新的项目方地址写入。" in text
+
+
+def test_midnight_digest_sent_ts_is_next_day_000002():
+    assert midnight_digest_sent_ts("2026-09-24") == "2026-09-25T00:00:02+08:00"
+    assert midnight_digest_sent_ts("2026-09-18") == "2026-09-19T00:00:02+08:00"
+

@@ -77,6 +77,12 @@ def _report_date_str(hour: int, now: datetime | None = None) -> str:
     return now.strftime("%Y-%m-%d")
 
 
+def midnight_digest_sent_ts(digest_date: str) -> str:
+    """ISO time for the hour=0 send that covers digest_date (next day 00:00:02)."""
+    day = datetime.strptime(str(digest_date)[:10], "%Y-%m-%d") + timedelta(days=1)
+    return f"{day.strftime('%Y-%m-%d')}T00:00:02+08:00"
+
+
 def _count_addresses(fields: dict[str, Any]) -> int:
     return sum(1 for name in ADDRESS_FIELDS if _field_text(fields, name))
 
@@ -312,6 +318,19 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
         inc("wallet_digest_sent")
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from bot.workflow_events import append_event
+
+        append_event(
+            "wallet_digest_sent",
+            "lark_wallet_digest",
+            text=f"钱包日报已发送（{date_str}，{len(projects)} 个项目）",
+            digest_date=date_str,
+            project_count=len(projects),
+            chat_id=chat_id,
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("wallet digest: failed to log workflow event")
     logger.info(
         "Lark digest sent to %s date=%s projects=%d",
         chat_id,
