@@ -34,7 +34,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
-_SKIP_NOTIFY_SOURCES = frozenset({"startup_catchup"})
+_SKIP_NOTIFY_SOURCES = frozenset({"startup_catchup", "join_catchup"})
+_RETRY_NOTIFY = frozenset({"need_roy", "scheduled", "sending"})
 
 
 def parse_bd_person(fields: dict[str, Any], field_name: str) -> tuple[str, str]:
@@ -519,15 +520,14 @@ async def _finalize_notify(
             if entry.get("notify") != "sent":
                 entry["notify"] = "need_roy"
         return
-    wait_s = max(int(getattr(config, "workflow_live_onboard_peer_wait_seconds", 90) or 0), 0)
-    if wait_s:
-        await asyncio.sleep(wait_s)
     if source in _SKIP_NOTIFY_SOURCES:
         return
     path = _state_path(config)
     with _locked_state(path) as data:
         entry = _project_entry(data, rid)
         if entry.get("notify") == "sent":
+            return
+        if entry.get("notify") == "sending":
             return
         roy_in = bool(entry.get("roy_in"))
         josh_in = bool(entry.get("josh_in"))
@@ -570,7 +570,7 @@ async def run_live_onboard(
     preferred_chat_id: int | None = None,
     preferred_chat_title: str | None = None,
 ) -> dict[str, Any]:
-    """Check membership, send form if this account is in the group, schedule Lark ping."""
+    """Check membership, send form if this account is in the group, ping Lark now."""
     out: dict[str, Any] = {"form": "skipped", "case": None, "chat_id": None, "chat_title": ""}
     if not getattr(config, "workflow_live_onboard_enabled", False):
         return out
@@ -639,14 +639,10 @@ async def run_live_onboard(
         if not _form_ok(str(entry.get("form") or "")):
             case = 4
         entry["case"] = case
-        if (
-            source not in _SKIP_NOTIFY_SOURCES
-            and entry.get("notify") not in {"sent", "scheduled"}
-        ):
+        if source not in _SKIP_NOTIFY_SOURCES and entry.get("notify") != "sent":
             if sends_lark_notify(config):
-                entry["notify"] = "scheduled"
                 should_notify = True
-            else:
+            elif str(entry.get("notify") or "") not in _RETRY_NOTIFY:
                 entry["notify"] = "need_roy"
         out["case"] = case
         out["form"] = str(entry.get("form") or form_status)
@@ -662,7 +658,7 @@ async def run_live_onboard(
 
 
 async def drain_pending_roy_notifies(config: Any) -> int:
-    """Roy号 picks up Lark pings that Josh queued after a live/join check."""
+    """Roy号补发 Josh 留下的通知，以及重启后停在 scheduled/sending 的条目。"""
     if not sends_lark_notify(config):
         return 0
     if not getattr(config, "workflow_live_onboard_enabled", False):
@@ -672,7 +668,8 @@ async def drain_pending_roy_notifies(config: Any) -> int:
         pending = [
             rid
             for rid, entry in (data.get("projects") or {}).items()
-            if isinstance(entry, dict) and str(entry.get("notify") or "") == "need_roy"
+            if isinstance(entry, dict)
+            and str(entry.get("notify") or "") in _RETRY_NOTIFY
         ]
     if not pending:
         return 0
@@ -692,9 +689,8 @@ async def drain_pending_roy_notifies(config: Any) -> int:
         fields = rec.get("fields") or {}
         with _locked_state(path) as data:
             entry = _project_entry(data, rid)
-            if str(entry.get("notify") or "") != "need_roy":
+            if str(entry.get("notify") or "") not in _RETRY_NOTIFY:
                 continue
-            entry["notify"] = "scheduled"
         asyncio.create_task(
             _finalize_notify(
                 config, rid=rid, fields=fields, source="roy_drain"
@@ -813,15 +809,9 @@ async def maybe_onboard_on_join(
         with _locked_state(path) as data:
             entry = _project_entry(data, rid)
             form_status = str(entry.get("form") or "")
-            notify_status = str(entry.get("notify") or "")
-            prev_case = int(entry.get("case") or 0)
-            already_ok = _form_ok(form_status) and notify_status == "sent" and prev_case != 4
+            already_ok = _form_ok(form_status)
         if already_ok:
             continue
-        if notify_status == "sent" and prev_case == 4:
-            with _locked_state(path) as data:
-                entry = _project_entry(data, rid)
-                entry["notify"] = ""
         logger.info(
             "live-onboard join catch-up project=%r chat_id=%s title=%r",
             project,

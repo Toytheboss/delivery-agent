@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from bot.workflow_live_onboard import (
+    _RETRY_NOTIFY,
+    _SKIP_NOTIFY_SOURCES,
     build_onboard_message,
     classify_case,
     parse_bd_person,
@@ -91,3 +93,15 @@ def test_only_roy_sends_lark_notify():
     assert sends_lark_notify(Cfg("josh")) is False
     assert sends_lark_notify(Cfg("", replies=True)) is True
     assert sends_lark_notify(Cfg("", replies=False)) is False
+
+
+def test_join_catchup_does_not_send_live_notify():
+    assert "join_catchup" in _SKIP_NOTIFY_SOURCES
+    assert "startup_catchup" in _SKIP_NOTIFY_SOURCES
+
+
+def test_retry_covers_stuck_scheduled():
+    assert "scheduled" in _RETRY_NOTIFY
+    assert "need_roy" in _RETRY_NOTIFY
+    assert "sending" in _RETRY_NOTIFY
+    assert "sent" not in _RETRY_NOTIFY

@@ -11,6 +11,15 @@
 
 ---
 
+## 2026-09-26 · 上线飞书通知立刻发，进群不再重发
+
+### 修复
+- 主网上线当时直接推 Project verification push，不再等 90 秒
+- 进群只补表单，不再发「Live on mainnet」
+- 停在 `scheduled` 的会补发（含 BotDAO）
+
+---
+
 ## 2026-09-26 · KPI 判定只在 project diag，扫表不再补 2 / 4 / 5 / 7
 
 ### 修复
