@@ -258,17 +258,23 @@ def count_originals(handle: str, *, since: datetime) -> tuple[int | None, str]:
 
 def build_kpi1_copy(*, handle: str, count: int | None, reason: str) -> str:
     if reason == "no_account":
-        return "Twitter运营验证，没有检测到官方账号，推特运营验证不通过"
-    if reason == "unread" or count is None:
-        who = f" @{handle}" if handle else ""
         return (
-            f"Twitter运营验证，官方账号{who}无法读取近30天推文，推特运营验证不通过"
+            "Twitter operations verification: no official account submitted; "
+            "Twitter operations verification failed"
         )
     who = f" @{handle}" if handle else ""
-    suffix = "推特运营验证通过" if (count or 0) >= _THRESHOLD else "推特运营验证不通过"
+    if reason == "unread" or count is None:
+        return (
+            f"Twitter operations verification: official account{who} could not be "
+            "read for original posts in the last 30 days; "
+            "Twitter operations verification failed"
+        )
+    n = int(count)
+    suffix = "passed" if n >= _THRESHOLD else "failed"
     return (
-        f"Twitter运营验证，官方账号{who}近30天原发{int(count)}条"
-        f"（门槛≥{_THRESHOLD}），{suffix}"
+        f"Twitter operations verification: official account{who} posted {n} "
+        f"original posts in the last 30 days (threshold ≥{_THRESHOLD}); "
+        f"Twitter operations verification {suffix}"
     )
 
 

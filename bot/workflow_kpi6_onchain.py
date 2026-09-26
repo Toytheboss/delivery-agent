@@ -136,15 +136,20 @@ def build_kpi6_copy(
     tx_count: int,
 ) -> str:
     if reason == "no_contract":
-        return "用户和交互验证，没有检测到合约，用户和交互验证不通过"
+        return (
+            "User and interaction verification: no contract detected; "
+            "user and interaction verification failed"
+        )
     n = len(wallets)
     shown = wallets[:5]
-    listed = "、".join(shown) if shown else "无"
-    suffix = "用户和交互验证通过" if passed else "用户和交互验证不通过"
-    extra = "（此处最多只展示5个独立钱包）" if shown else ""
+    listed = ", ".join(shown) if shown else "none"
+    suffix = "passed" if passed else "failed"
+    extra = " (at most 5 unique wallets shown here)" if shown else ""
     return (
-        f"用户和交互验证，独立钱包{n}个、成功核心交易{tx_count}笔"
-        f"（门槛≥3钱包且交互≥5笔），独立钱包：{listed}{extra}，{suffix}"
+        f"User and interaction verification: {n} unique wallets, "
+        f"{tx_count} successful core txs (threshold ≥3 wallets and ≥5 txs); "
+        f"unique wallets: {listed}{extra}; "
+        f"user and interaction verification {suffix}"
     )
 
 

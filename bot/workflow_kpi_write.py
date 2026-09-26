@@ -20,6 +20,8 @@ except Exception:  # noqa: BLE001
 _PASS = "通过"
 _FAIL = "不通过"
 _LIVE_TIME_FIELD = "主网上线时间"
+_STATUS_FIELD = "项目状态"
+_MIN_LIVE_DATE = datetime(2026, 9, 1, tzinfo=SH).date()
 _ADDR_RE = re.compile(r"0x[a-fA-F0-9]{40}")
 
 
@@ -33,7 +35,7 @@ def merge_kpi_copy(existing: str, new_copy: str, when: datetime | None = None) -
     if not old:
         return fresh
     stamp = (when or now_shanghai()).astimezone(SH).strftime("%Y-%m-%d %H:%M")
-    return f"{old}\n复审 {stamp}：{fresh}"
+    return f"{old}\nRecheck {stamp}: {fresh}"
 
 
 def merge_kpi_result(existing: str, *, passed: bool) -> str:
@@ -79,6 +81,33 @@ def parse_live_start(
         dt = dt.replace(tzinfo=SH)
     local = dt.astimezone(SH)
     return local.replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+def is_mainnet_live(
+    fields: dict[str, Any], status_field: str = _STATUS_FIELD
+) -> bool:
+    s = (
+        field_result(fields, status_field)
+        or _field_text(fields, status_field)
+        or ""
+    ).strip()
+    if s.startswith("BOT主网上线") or s.startswith("主网上线"):
+        return True
+    return "mainnet live" in s.lower()
+
+
+def diag_not_eligible_reason(
+    fields: dict[str, Any], status_field: str = _STATUS_FIELD
+) -> str | None:
+    if not is_mainnet_live(fields, status_field):
+        return "This project is not marked mainnet-live yet."
+    live = parse_live_start(fields)
+    if live is None or live.date() < _MIN_LIVE_DATE:
+        return (
+            "This command only runs for projects that went live on mainnet "
+            "on or after 2026-09-01."
+        )
+    return None
 
 
 def extract_contract(value: Any) -> str:

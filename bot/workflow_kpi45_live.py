@@ -25,10 +25,12 @@ _DEFAULT_KPI5_COPY_FIELD = "KPI 5 - 项目独立性验证"
 _DEFAULT_KPI5_RESULT_FIELD = "独立性验证结果"
 _PASS = "通过"
 _KPI4_COPY = (
-    "产品可用验证，主网mvp上线，能连接钱包，交互合约并消耗 gas，产品可用验证通过"
+    "Product availability verification: mainnet MVP is live; wallet can connect, "
+    "interact with the contract and consume gas; product availability verification passed"
 )
 _KPI5_COPY = (
-    "项目独立性验证，已经人工验证主网上线并交互产品，独立性验证通过"
+    "Independence verification: mainnet go-live and product interaction have been "
+    "manually verified; independence verification passed"
 )
 
 

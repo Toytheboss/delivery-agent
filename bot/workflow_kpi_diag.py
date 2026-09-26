@@ -14,7 +14,14 @@ from typing import TYPE_CHECKING, Any
 
 from bot.lark_bitable import get_tenant_access_token, list_records, update_record
 from bot.workflow_form_chase import field_is_filled
-from bot.workflow_kpi_write import field_result
+from bot.workflow_form_dispatch import _field_text
+from bot.workflow_kpi45_live import _KPI4_COPY, _KPI5_COPY, fill_kpi45_for_fields
+from bot.workflow_kpi_write import (
+    diag_not_eligible_reason,
+    field_result,
+    merge_kpi_copy,
+    now_shanghai,
+)
 from bot.workflow_pr_capture import _collect_matches
 
 if TYPE_CHECKING:
@@ -36,10 +43,35 @@ _KIND_LABEL = {
 }
 _PASS = "通过"
 _COORD_FIELD = "KPI 统筹"
+_JUDGE_FIELD = "KPI 判定时间"
+_KPI1_RESULT = "推特验证结果"
 _KPI2_LINK = "KPI 2 - PR 新闻链接验证"
 _KPI2_RESULT = "新闻验证结果"
+_KPI3_RESULT = "官网验证结果"
 _KPI4_RESULT = "产品可用验证结果"
 _KPI5_RESULT = "独立性验证结果"
+_KPI6_RESULT = "交互验证结果"
+_KPI7_RESULT = "持续运营要求验证结果"
+_KPI7_COPY_FIELD = "KPI 7 - 持续运营要求验证"
+_KPI2_PASS = (
+    "News/PR verification: a news URL was submitted; news/PR verification passed"
+)
+_KPI2_FAIL = (
+    "News/PR verification: no news URL submitted; news/PR verification failed"
+)
+_KPI7_COPY = (
+    "Ongoing operations verification: website and product were reachable on the "
+    "check day; Twitter, community and product all have ongoing updates; "
+    "ongoing operations verification passed"
+)
+_KPI7_OPEN = (
+    "Ongoing operations verification: not passed (KPI 1–6 still have open items)"
+)
+_SKIPPED_COPY = {
+    "twitter": "Twitter operations verification: already passed",
+    "website": "Website display verification: already passed",
+    "onchain": "User and interaction verification: already passed",
+}
 
 
 def parse_kpi_diag_command(text: str) -> str | None:
@@ -57,43 +89,116 @@ def _cell_passed(fields: dict[str, Any], result_field: str) -> bool:
     return field_result(fields, result_field) == _PASS
 
 
+def already_passed(fields: dict[str, Any], result_field: str) -> bool:
+    return _cell_passed(fields, result_field)
+
+
+def skipped_pass(project_name: str, kind: str) -> dict[str, Any]:
+    return {
+        "passed": True,
+        "result": _PASS,
+        "reason": "already",
+        "skipped": True,
+        "copy": _SKIPPED_COPY.get(kind, "already passed"),
+        "project": project_name,
+    }
+
+
+def project_diag_audits_to_run(fields: dict[str, Any]) -> list[str]:
+    """Expensive checks still needed. Same skip rule as a later first/second official audit."""
+    kinds: list[str] = []
+    if not already_passed(fields, _KPI1_RESULT):
+        kinds.append("twitter")
+    if not already_passed(fields, _KPI3_RESULT):
+        kinds.append("website")
+    if not already_passed(fields, _KPI6_RESULT):
+        kinds.append("onchain")
+    return kinds
+
+
+def latest_copy(copy: str) -> str:
+    text = (copy or "").strip()
+    marker = "\nRecheck "
+    if marker in text:
+        tail = text.rsplit(marker, 1)[-1]
+        if ": " in tail:
+            return tail.split(": ", 1)[1].strip() or text
+    return text
+
+
 def twitter_fail_note(outcome: dict[str, Any]) -> str:
+    copy = latest_copy(str(outcome.get("copy") or ""))
+    if copy:
+        return copy
     reason = str(outcome.get("reason") or "")
     if reason == "no_account":
-        return "no official account"
+        return (
+            "Twitter operations verification: no official account submitted; "
+            "Twitter operations verification failed"
+        )
     if reason == "unread":
-        return "unread"
+        return (
+            "Twitter operations verification: official account could not be "
+            "read for original posts in the last 30 days; "
+            "Twitter operations verification failed"
+        )
     count = outcome.get("count")
     if reason == "below_threshold" or (isinstance(count, int) and count < 5):
         n = 0 if count is None else int(count)
-        return f"{n} original posts in 30 days, need ≥5"
-    return reason or "failed"
+        return (
+            f"Twitter operations verification: official account posted {n} "
+            "original posts in the last 30 days (threshold ≥5); "
+            "Twitter operations verification failed"
+        )
+    return reason or "Twitter operations verification failed"
 
 
 def onchain_fail_note(outcome: dict[str, Any]) -> str:
+    copy = latest_copy(str(outcome.get("copy") or ""))
+    if copy:
+        return copy
     reason = str(outcome.get("reason") or "")
     if reason == "no_contract":
-        return "no contract"
+        return (
+            "User and interaction verification: no contract detected; "
+            "user and interaction verification failed"
+        )
     wallets = int(outcome.get("wallets") or 0)
     txs = int(outcome.get("txs") or 0)
-    return f"{wallets} wallets / {txs} txs, need ≥3 wallets and ≥5 txs"
+    return (
+        f"User and interaction verification: {wallets} unique wallets, "
+        f"{txs} successful core txs (threshold ≥3 wallets and ≥5 txs); "
+        "user and interaction verification failed"
+    )
 
 
 def website_fail_note(outcome: dict[str, Any]) -> str:
+    copy = latest_copy(str(outcome.get("copy") or ""))
+    if copy:
+        return copy
     reason = str(outcome.get("reason") or "")
     if reason == "no_url":
-        return "no site URL"
+        return (
+            "Website display verification: no official website URL submitted; "
+            "website display verification failed"
+        )
     if reason == "unreachable":
-        return "unreachable"
+        return (
+            "Website display verification: website could not be opened; "
+            "website display verification failed"
+        )
     if reason in {"missing_official_link", "no_name_or_logo"}:
-        return "missing official links"
-    return reason or "failed"
+        return (
+            "Website display verification: website opened, missing official links; "
+            "website display verification failed"
+        )
+    return reason or "Website display verification failed"
 
 
 def pr_status(fields: dict[str, Any]) -> tuple[bool, str]:
     if _cell_passed(fields, _KPI2_RESULT) or field_is_filled(fields, _KPI2_LINK):
-        return True, ""
-    return False, "no news URL"
+        return True, _KPI2_PASS
+    return False, _KPI2_FAIL
 
 
 def format_project_diag_reply(
@@ -101,30 +206,41 @@ def format_project_diag_reply(
     project: str,
     rows: list[tuple[str, bool, str]],
     coord_written: bool,
+    skipped: bool = False,
 ) -> str:
-    failed_names = [name for name, passed, _note in rows if not passed]
-    overall = "passed" if not failed_names else "failed"
-    lines = [f"Project diag for {project}: {overall}"]
-    if failed_names:
-        lines.append("Failed: " + ", ".join(failed_names))
-    for name, passed, note in rows:
-        if passed:
-            lines.append(f"{name}: passed")
-        elif note:
-            lines.append(f"{name}: failed ({note})")
-        else:
-            lines.append(f"{name}: failed")
+    if skipped:
+        return (
+            f"Project diag for {project}: skipped\n"
+            "Final evaluation already passed."
+        )
+    failed = [(name, note) for name, passed, note in rows if not passed]
+    passed = [(name, note) for name, passed, note in rows if passed]
+    overall = "passed" if not failed else "failed"
+    lines = [f"Project diag for {project}: {overall}", ""]
+    if failed:
+        lines.append("Failed")
+        for name, note in failed:
+            lines.append(f"{name}: {note}" if note else f"{name}: failed")
+        lines.append("")
+    if passed:
+        lines.append("Passed")
+        for name, note in passed:
+            lines.append(f"{name}: {note}" if note else f"{name}: passed")
+        lines.append("")
     lines.append(
-        "Coordination: passed" if coord_written else "Coordination: not written"
+        "Final evaluation: passed" if coord_written else "Final evaluation: not written"
     )
-    return "\n".join(lines)
+    return "\n".join(lines).rstrip()
 
 
 def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
     project = outcome.get("project") or "this project"
     result = outcome.get("result") or "不通过"
-    reason = outcome.get("reason") or ""
     label = _KIND_LABEL.get(kind, kind)
+    copy = str(outcome.get("copy") or "").strip()
+    if copy:
+        return f"{label} written for {project!r}: {result}\n{copy}"
+    reason = outcome.get("reason") or ""
     extra = ""
     if kind == "onchain":
         extra = f" wallets={outcome.get('wallets', 0)} txs={outcome.get('txs', 0)}"
@@ -142,17 +258,37 @@ def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
     return f"{label} written for {project!r}: {result}{extra}"
 
 
-def _write_coordination(token: str, config: AppConfig, record_id: str) -> None:
-    payload = {_COORD_FIELD: _PASS}
-    try:
-        update_record(
-            token,
-            config.workflow_base_app_token,
-            config.workflow_progress_table_id,
-            record_id,
-            payload,
-        )
-    except Exception:
+def _write_kpi7_pass(
+    token: str, config: AppConfig, record_id: str, existing_copy: str = ""
+) -> None:
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        record_id,
+        {
+            _KPI7_COPY_FIELD: merge_kpi_copy(existing_copy, _KPI7_COPY),
+            _KPI7_RESULT: _PASS,
+        },
+    )
+
+
+def _write_final_evaluation(token: str, config: AppConfig, record_id: str) -> None:
+    stamp = now_shanghai().strftime("%Y-%m-%d %H:%M")
+    last_error: Exception | None = None
+    for coord in (_PASS, "有效 KPI"):
+        try:
+            update_record(
+                token,
+                config.workflow_base_app_token,
+                config.workflow_progress_table_id,
+                record_id,
+                {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+    if last_error:
         update_record(
             token,
             config.workflow_base_app_token,
@@ -215,48 +351,156 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
-    twitter = await _run_one(
-        loop, "twitter", token, config, record_id, fields, project_name
-    )
-    website = await _run_one(
-        loop, "website", token, config, record_id, fields, project_name
-    )
-    onchain = await _run_one(
-        loop, "onchain", token, config, record_id, fields, project_name
-    )
-    kpi2_ok, kpi2_note = pr_status(fields)
+    if already_passed(fields, _COORD_FIELD):
+        return format_project_diag_reply(
+            project=project_name, rows=[], coord_written=True, skipped=True
+        )
+
     kpi4_ok = _cell_passed(fields, _KPI4_RESULT)
     kpi5_ok = _cell_passed(fields, _KPI5_RESULT)
+    if not kpi4_ok or not kpi5_ok:
+        try:
+            await loop.run_in_executor(
+                None,
+                lambda: fill_kpi45_for_fields(
+                    token, config, record_id, fields, project_name=project_name
+                ),
+            )
+        except Exception:
+            logger.exception("kpi_diag: KPI 4/5 backfill failed record=%s", record_id)
+        kpi4_ok = True
+        kpi5_ok = True
+
+    to_run = set(project_diag_audits_to_run(fields))
+    if "twitter" in to_run:
+        twitter = await _run_one(
+            loop, "twitter", token, config, record_id, fields, project_name
+        )
+    else:
+        logger.info("kpi_diag: skip twitter already passed project=%s", project_name)
+        twitter = skipped_pass(project_name, "twitter")
+    if "website" in to_run:
+        website = await _run_one(
+            loop, "website", token, config, record_id, fields, project_name
+        )
+    else:
+        logger.info("kpi_diag: skip website already passed project=%s", project_name)
+        website = skipped_pass(project_name, "website")
+    if "onchain" in to_run:
+        onchain = await _run_one(
+            loop, "onchain", token, config, record_id, fields, project_name
+        )
+    else:
+        logger.info("kpi_diag: skip onchain already passed project=%s", project_name)
+        onchain = skipped_pass(project_name, "onchain")
+    kpi2_ok, kpi2_note = pr_status(fields)
     kpi1_ok = bool(twitter.get("passed") or twitter.get("result") == _PASS)
     kpi3_ok = bool(website.get("passed") or website.get("result") == _PASS)
     kpi6_ok = bool(onchain.get("passed") or onchain.get("result") == _PASS)
-    rows = [
-        ("KPI 1 Twitter", kpi1_ok, "" if kpi1_ok else twitter_fail_note(twitter)),
-        ("KPI 2 PR", kpi2_ok, kpi2_note),
-        ("KPI 3 Website", kpi3_ok, "" if kpi3_ok else website_fail_note(website)),
-        ("KPI 4 Product", kpi4_ok, "" if kpi4_ok else "not passed"),
-        ("KPI 5 Independence", kpi5_ok, "" if kpi5_ok else "not passed"),
-        ("KPI 6 On-chain", kpi6_ok, "" if kpi6_ok else onchain_fail_note(onchain)),
-    ]
-    all_ok = all(passed for _n, passed, _note in rows)
-    coord_written = False
-    if all_ok:
+    kpi7_ok = already_passed(fields, _KPI7_RESULT)
+    first_six_ok = kpi1_ok and kpi2_ok and kpi3_ok and kpi4_ok and kpi5_ok and kpi6_ok
+    if first_six_ok and not kpi7_ok:
         try:
             await loop.run_in_executor(
-                None, lambda: _write_coordination(token, config, record_id)
+                None,
+                lambda: _write_kpi7_pass(
+                    token,
+                    config,
+                    record_id,
+                    _field_text(fields, _KPI7_COPY_FIELD),
+                ),
             )
-            coord_written = True
+            kpi7_ok = True
         except Exception as exc:  # noqa: BLE001
-            logger.exception("kpi_diag: coordination write failed record=%s", record_id)
+            logger.exception("kpi_diag: KPI 7 write failed record=%s", record_id)
+            rows = _project_diag_rows(
+                kpi1_ok,
+                twitter,
+                kpi2_ok,
+                kpi2_note,
+                kpi3_ok,
+                website,
+                kpi4_ok,
+                kpi5_ok,
+                kpi6_ok,
+                onchain,
+                False,
+            )
             return (
                 format_project_diag_reply(
                     project=project_name, rows=rows, coord_written=False
                 )
-                + f"\nCoordination write failed: {exc}"
+                + f"\nKPI 7 write failed: {exc}"
+            )
+    rows = _project_diag_rows(
+        kpi1_ok,
+        twitter,
+        kpi2_ok,
+        kpi2_note,
+        kpi3_ok,
+        website,
+        kpi4_ok,
+        kpi5_ok,
+        kpi6_ok,
+        onchain,
+        kpi7_ok,
+    )
+    all_ok = first_six_ok and kpi7_ok
+    coord_written = False
+    if all_ok:
+        try:
+            await loop.run_in_executor(
+                None, lambda: _write_final_evaluation(token, config, record_id)
+            )
+            coord_written = True
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("kpi_diag: final evaluation write failed record=%s", record_id)
+            return (
+                format_project_diag_reply(
+                    project=project_name, rows=rows, coord_written=False
+                )
+                + f"\nFinal evaluation write failed: {exc}"
             )
     return format_project_diag_reply(
         project=project_name, rows=rows, coord_written=coord_written
     )
+
+
+def _project_diag_rows(
+    kpi1_ok: bool,
+    twitter: dict[str, Any],
+    kpi2_ok: bool,
+    kpi2_note: str,
+    kpi3_ok: bool,
+    website: dict[str, Any],
+    kpi4_ok: bool,
+    kpi5_ok: bool,
+    kpi6_ok: bool,
+    onchain: dict[str, Any],
+    kpi7_ok: bool,
+) -> list[tuple[str, bool, str]]:
+    if kpi1_ok:
+        kpi1_note = latest_copy(str(twitter.get("copy") or "")) or _SKIPPED_COPY["twitter"]
+    else:
+        kpi1_note = twitter_fail_note(twitter)
+    if kpi3_ok:
+        kpi3_note = latest_copy(str(website.get("copy") or "")) or _SKIPPED_COPY["website"]
+    else:
+        kpi3_note = website_fail_note(website)
+    if kpi6_ok:
+        kpi6_note = latest_copy(str(onchain.get("copy") or "")) or _SKIPPED_COPY["onchain"]
+    else:
+        kpi6_note = onchain_fail_note(onchain)
+    kpi7_note = _KPI7_COPY if kpi7_ok else _KPI7_OPEN
+    return [
+        ("KPI 1 Twitter", kpi1_ok, kpi1_note),
+        ("KPI 2 PR", kpi2_ok, kpi2_note),
+        ("KPI 3 Website", kpi3_ok, kpi3_note),
+        ("KPI 4 Product", kpi4_ok, _KPI4_COPY),
+        ("KPI 5 Independence", kpi5_ok, _KPI5_COPY),
+        ("KPI 6 On-chain", kpi6_ok, kpi6_note),
+        ("KPI 7 Ongoing", kpi7_ok, kpi7_note),
+    ]
 
 
 async def run_kpi_diag(
@@ -308,6 +552,10 @@ async def run_kpi_diag(
         )
 
     record_id, project_name, fields = matches[0]
+    status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
+    blocked = diag_not_eligible_reason(fields, status_field)
+    if blocked:
+        return blocked
     try:
         if kind == "project":
             return await _run_project_diag(

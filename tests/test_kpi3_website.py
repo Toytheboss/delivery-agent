@@ -56,8 +56,8 @@ def test_project_name_preferred_over_logo():
     verdict = evaluate_kpi3(project_name="SubscribeOne", probe=probe, url=probe.url)
     assert verdict.passed
     assert verdict.has_name
-    assert "可见项目名称 SubscribeOne" in verdict.copy
-    assert verdict.copy.endswith("官网展示验证通过")
+    assert "project name SubscribeOne is visible" in verdict.copy
+    assert verdict.copy.endswith("website display verification passed")
 
 
 def test_logo_fallback_when_name_missing():
@@ -72,7 +72,7 @@ def test_logo_fallback_when_name_missing():
     assert verdict.passed
     assert not verdict.has_name
     assert verdict.has_logo
-    assert "未见项目名称但可见 Logo" in verdict.copy
+    assert "project name not found, but logo is visible" in verdict.copy
 
 
 def test_missing_one_official_link_fails():
@@ -86,31 +86,40 @@ def test_missing_one_official_link_fails():
     verdict = evaluate_kpi3(project_name="FIRMAMENT AI", probe=probe, url=probe.url)
     assert not verdict.passed
     assert verdict.has_name
-    assert "没有可点击的 https://botchain.ai" in verdict.copy
+    assert "no clickable https://botchain.ai" in verdict.copy
 
 
 def test_no_website_url_fails():
     verdict = evaluate_kpi3(project_name="Testing", probe=None, url="")
     assert not verdict.passed
     assert verdict.reason == "no_url"
-    assert verdict.copy == "官网展示验证，未提交官网链接，官网展示验证不通过"
+    assert verdict.copy == (
+        "Website display verification: no official website URL submitted; "
+        "website display verification failed"
+    )
 
 
 def test_unreachable_site_fails():
     probe = WebsiteProbe(url="https://down.example", opened=False, hrefs=(), text="", has_logo=False, error="timeout")
     verdict = evaluate_kpi3(project_name="Testing", probe=probe, url=probe.url)
     assert not verdict.passed
-    assert "官网无法访问" in verdict.copy
+    assert "website could not be opened" in verdict.copy
 
 
 def test_kpi3_result_fields_use_string_not_array():
     assert kpi3_result_fields(
         copy_field="KPI 3 - 官网展示验证",
         result_field="官网验证结果",
-        copy="官网展示验证，未提交官网链接，官网展示验证不通过",
+        copy=(
+            "Website display verification: no official website URL submitted; "
+            "website display verification failed"
+        ),
         result="不通过",
     ) == {
-        "KPI 3 - 官网展示验证": "官网展示验证，未提交官网链接，官网展示验证不通过",
+        "KPI 3 - 官网展示验证": (
+            "Website display verification: no official website URL submitted; "
+            "website display verification failed"
+        ),
         "官网验证结果": "不通过",
     }
 
@@ -122,4 +131,4 @@ def test_html_helpers():
     assert build_kpi3_copy(
         evaluate_kpi3(project_name="X", probe=None, url=""),
         "X",
-    ).endswith("不通过")
+    ).endswith("failed")

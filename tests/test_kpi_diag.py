@@ -16,14 +16,21 @@ from bot.workflow_kpi6_onchain import (
     unique_wallets,
 )
 from bot.workflow_kpi_diag import (
+    already_passed,
     format_project_diag_reply,
     is_kpi_diag_command,
     onchain_fail_note,
     parse_kpi_diag_command,
+    project_diag_audits_to_run,
     twitter_fail_note,
     website_fail_note,
 )
-from bot.workflow_kpi_write import merge_kpi_copy, merge_kpi_result, parse_live_start
+from bot.workflow_kpi_write import (
+    diag_not_eligible_reason,
+    merge_kpi_copy,
+    merge_kpi_result,
+    parse_live_start,
+)
 
 
 def test_diag_commands_match_plain_text_not_quote():
@@ -43,7 +50,7 @@ def test_diag_commands_match_plain_text_not_quote():
 def test_kpi6_no_contract_copy():
     verdict = evaluate_kpi6(contract="", txs=[], window_start=None)
     assert verdict["passed"] is False
-    assert verdict["copy"] == "用户和交互验证，没有检测到合约，用户和交互验证不通过"
+    assert "no contract detected" in verdict["copy"]
 
 
 def test_kpi6_counts_successful_to_contract_skips_create():
@@ -109,11 +116,15 @@ def test_kpi6_counts_successful_to_contract_skips_create():
 
 
 def test_recheck_appends_and_only_upgrades_pass():
-    first = "用户和交互验证，没有检测到合约，用户和交互验证不通过"
+    first = "User and interaction verification: no contract detected; user and interaction verification failed"
     when = datetime(2026, 9, 26, 9, 30, tzinfo=timezone(timedelta(hours=8)))
-    merged = merge_kpi_copy(first, "用户和交互验证，独立钱包3个、成功核心交易5笔（门槛≥3钱包且交互≥5笔），独立钱包：0xa、0xb、0xc（此处最多只展示5个独立钱包），用户和交互验证通过", when)
+    merged = merge_kpi_copy(
+        first,
+        "User and interaction verification: 3 unique wallets, 5 successful core txs (threshold ≥3 wallets and ≥5 txs); unique wallets: 0xa, 0xb, 0xc (at most 5 unique wallets shown here); user and interaction verification passed",
+        when,
+    )
     assert merged.startswith(first)
-    assert "复审 2026-09-26 09:30：" in merged
+    assert "Recheck 2026-09-26 09:30:" in merged
     assert merge_kpi_result("不通过", passed=True) == "通过"
     assert merge_kpi_result("通过", passed=False) == "通过"
     assert merge_kpi_result("", passed=False) == "不通过"
@@ -126,9 +137,10 @@ def test_twitter_handle_and_no_account_copy():
     assert is_retweet("RT @foo hello")
     assert not is_retweet("mainnet is live")
     assert evaluate_kpi1(handle="", count=None, unread=False)["copy"] == (
-        "Twitter运营验证，没有检测到官方账号，推特运营验证不通过"
+        "Twitter operations verification: no official account submitted; "
+        "Twitter operations verification failed"
     )
-    assert "原发5条" in build_kpi1_copy(handle="Foo", count=5, reason="ok")
+    assert "posted 5 original posts" in build_kpi1_copy(handle="Foo", count=5, reason="ok")
 
 
 def test_live_start_is_shanghai_midnight():
@@ -140,39 +152,106 @@ def test_live_start_is_shanghai_midnight():
 
 def test_project_diag_english_pass_and_fail_copy():
     passed_rows = [
-        ("KPI 1 Twitter", True, ""),
-        ("KPI 2 PR", True, ""),
-        ("KPI 3 Website", True, ""),
-        ("KPI 4 Product", True, ""),
-        ("KPI 5 Independence", True, ""),
-        ("KPI 6 On-chain", True, ""),
+        ("KPI 1 Twitter", True, "Twitter operations verification: already passed"),
+        ("KPI 2 PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
+        ("KPI 3 Website", True, "Website display verification: already passed"),
+        ("KPI 4 Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
+        ("KPI 5 Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
+        ("KPI 6 On-chain", True, "User and interaction verification: already passed"),
+        ("KPI 7 Ongoing", True, "Ongoing operations verification: website and product were reachable on the check day; Twitter, community and product all have ongoing updates; ongoing operations verification passed"),
     ]
     text = format_project_diag_reply(
         project="Testing", rows=passed_rows, coord_written=True
     )
     assert text.startswith("Project diag for Testing: passed")
-    assert "Failed:" not in text
-    assert "Coordination: passed" in text
+    assert "Failed" not in text.split("Passed")[0]
+    assert "Final evaluation: passed" in text
     assert twitter_fail_note({"reason": "below_threshold", "count": 3}) == (
-        "3 original posts in 30 days, need ≥5"
+        "Twitter operations verification: official account posted 3 "
+        "original posts in the last 30 days (threshold ≥5); "
+        "Twitter operations verification failed"
     )
-    assert onchain_fail_note({"reason": "below_threshold", "wallets": 2, "txs": 4}) == (
-        "2 wallets / 4 txs, need ≥3 wallets and ≥5 txs"
+    assert "2 unique wallets" in onchain_fail_note(
+        {"reason": "below_threshold", "wallets": 2, "txs": 4}
     )
-    assert website_fail_note({"reason": "no_url"}) == "no site URL"
+    assert "no official website URL submitted" in website_fail_note({"reason": "no_url"})
     failed = format_project_diag_reply(
         project="Testing",
         rows=[
-            ("KPI 1 Twitter", False, "3 original posts in 30 days, need ≥5"),
-            ("KPI 2 PR", True, ""),
-            ("KPI 3 Website", True, ""),
-            ("KPI 4 Product", True, ""),
-            ("KPI 5 Independence", True, ""),
-            ("KPI 6 On-chain", False, "2 wallets / 4 txs, need ≥3 wallets and ≥5 txs"),
+            (
+                "KPI 1 Twitter",
+                False,
+                "Twitter operations verification: official account could not be "
+                "read for original posts in the last 30 days; "
+                "Twitter operations verification failed",
+            ),
+            ("KPI 2 PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
+            (
+                "KPI 3 Website",
+                False,
+                "Website display verification: no official website URL submitted; "
+                "website display verification failed",
+            ),
+            ("KPI 4 Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
+            ("KPI 5 Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
+            ("KPI 6 On-chain", True, "User and interaction verification: already passed"),
+            (
+                "KPI 7 Ongoing",
+                False,
+                "Ongoing operations verification: not passed (KPI 1–6 still have open items)",
+            ),
         ],
         coord_written=False,
     )
     assert "Project diag for Testing: failed" in failed
-    assert "Failed: KPI 1 Twitter, KPI 6 On-chain" in failed
-    assert "KPI 1 Twitter: failed (3 original posts in 30 days, need ≥5)" in failed
-    assert "Coordination: not written" in failed
+    assert failed.index("Failed") < failed.index("Passed")
+    assert "KPI 1 Twitter:" in failed
+    assert "Final evaluation: not written" in failed
+    skipped = format_project_diag_reply(
+        project="Testing", rows=[], coord_written=True, skipped=True
+    )
+    assert "skipped" in skipped
+    assert "Final evaluation already passed" in skipped
+
+
+def test_project_diag_skips_already_passed_audits():
+    assert already_passed({"推特验证结果": "通过"}, "推特验证结果")
+    assert not already_passed({"推特验证结果": "不通过"}, "推特验证结果")
+    assert not already_passed({}, "推特验证结果")
+    fields = {
+        "推特验证结果": "通过",
+        "官网验证结果": "通过",
+        "交互验证结果": "不通过",
+    }
+    assert project_diag_audits_to_run(fields) == ["onchain"]
+    all_pass = {
+        "推特验证结果": "通过",
+        "官网验证结果": "通过",
+        "交互验证结果": "通过",
+    }
+    assert project_diag_audits_to_run(all_pass) == []
+    assert project_diag_audits_to_run({}) == ["twitter", "website", "onchain"]
+
+
+def test_diag_requires_live_on_or_after_sept_2026():
+    assert diag_not_eligible_reason({"项目状态": "对接中"}) == (
+        "This project is not marked mainnet-live yet."
+    )
+    assert diag_not_eligible_reason(
+        {
+            "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+            "主网上线时间": "2026-08-31T12:00:00+08:00",
+        }
+    ) == (
+        "This command only runs for projects that went live on mainnet "
+        "on or after 2026-09-01."
+    )
+    assert (
+        diag_not_eligible_reason(
+            {
+                "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                "主网上线时间": "2026-09-01T00:10:00+08:00",
+            }
+        )
+        is None
+    )

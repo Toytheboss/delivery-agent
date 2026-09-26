@@ -149,33 +149,41 @@ def page_has_project_name(project_name: str, text: str) -> bool:
 
 
 def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
-    name = (project_name or "").strip() or "该项目"
+    name = (project_name or "").strip() or "this project"
     if verdict.reason == "no_url":
-        return "官网展示验证，未提交官网链接，官网展示验证不通过"
+        return (
+            "Website display verification: no official website URL submitted; "
+            "website display verification failed"
+        )
     if not verdict.opened:
-        return "官网展示验证，官网无法访问，官网展示验证不通过"
+        return (
+            "Website display verification: website could not be opened; "
+            "website display verification failed"
+        )
 
-    identity = ""
     if verdict.has_name:
-        identity = f"可见项目名称 {name}"
+        identity = f"project name {name} is visible"
     elif verdict.has_logo:
-        identity = "未见项目名称但可见 Logo"
+        identity = "project name not found, but logo is visible"
     else:
-        identity = "未见项目名称或 Logo"
+        identity = "project name or logo not found"
 
     bot = "https://botchain.ai"
     scan = "https://scan.botchain.ai"
     if verdict.has_botchain and verdict.has_scan:
-        links = f"页面有可点击的 {bot} 和 {scan}"
+        links = f"page has clickable {bot} and {scan}"
     elif verdict.has_scan and not verdict.has_botchain:
-        links = f"有可点击的 {scan}，但没有可点击的 {bot}"
+        links = f"has clickable {scan}, but no clickable {bot}"
     elif verdict.has_botchain and not verdict.has_scan:
-        links = f"有可点击的 {bot}，但没有可点击的 {scan}"
+        links = f"has clickable {bot}, but no clickable {scan}"
     else:
-        links = f"没有可点击的 {bot} 和 {scan}"
+        links = f"no clickable {bot} or {scan}"
 
-    suffix = "官网展示验证通过" if verdict.passed else "官网展示验证不通过"
-    return f"官网展示验证，官网可访问，{identity}，{links}，{suffix}"
+    suffix = "passed" if verdict.passed else "failed"
+    return (
+        f"Website display verification: website opened, {identity}, {links}; "
+        f"website display verification {suffix}"
+    )
 
 
 def evaluate_kpi3(
@@ -455,6 +463,7 @@ def audit_kpi3_for_fields(
         "result": result,
         "passed": result == _PASS,
         "reason": verdict.reason,
+        "copy": copy,
         "project": name,
     }
 

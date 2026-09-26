@@ -20,12 +20,12 @@ def test_kpi45_pass_fields_use_string_not_array():
     }
 
 
-def test_kpi45_copy_is_the_locked_chinese():
-    assert "主网mvp上线" in _KPI4_COPY
-    assert "能连接钱包" in _KPI4_COPY
-    assert _KPI4_COPY.endswith("产品可用验证通过")
-    assert "已经人工验证主网上线并交互产品" in _KPI5_COPY
-    assert _KPI5_COPY.endswith("独立性验证通过")
+def test_kpi45_copy_is_the_locked_english():
+    assert "mainnet MVP is live" in _KPI4_COPY
+    assert "wallet can connect" in _KPI4_COPY
+    assert _KPI4_COPY.endswith("product availability verification passed")
+    assert "manually verified" in _KPI5_COPY
+    assert _KPI5_COPY.endswith("independence verification passed")
 
 
 class _Cfg:
