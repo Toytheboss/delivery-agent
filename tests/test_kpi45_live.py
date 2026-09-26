@@ -84,3 +84,27 @@ def test_writes_only_empty_kpi(tmp_path: Path):
         "KPI 5 - 项目独立性验证": _KPI5_COPY,
         "独立性验证结果": "通过",
     }
+
+
+def test_writes_empty_cells_even_if_state_already_has_record(tmp_path: Path):
+    captured: dict[str, object] = {}
+
+    def fake_update(_token, _app, _table, rid, payload):
+        captured["rid"] = rid
+        captured["payload"] = payload
+
+    state = tmp_path / "data"
+    state.mkdir()
+    (tmp_path / "data/kpi45_live_state.json").write_text(
+        '{"results": {"rec3": "通过"}}', encoding="utf-8"
+    )
+    with patch("bot.workflow_kpi45_live.ROOT", tmp_path), patch(
+        "bot.workflow_kpi45_live.update_record", fake_update
+    ):
+        assert (
+            fill_kpi45_for_fields("tok", _Cfg(), "rec3", {}, project_name="SubscribeOne")
+            == "通过"
+        )
+    assert captured["rid"] == "rec3"
+    assert captured["payload"]["产品可用验证结果"] == "通过"
+    assert captured["payload"]["独立性验证结果"] == "通过"

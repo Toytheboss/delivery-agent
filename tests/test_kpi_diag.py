@@ -289,6 +289,19 @@ def test_pass_chain_plan_six_pass_then_seven_coord_time():
     assert plan["write_time"] is False
 
 
+def test_pass_chain_fills_empty_kpi45_on_live_project():
+    from bot.workflow_kpi_pass_chain import pass_chain_plan
+
+    fields = {
+        "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+        "主网上线时间": "2026-09-01T00:10:00+08:00",
+        "KPI 统筹": "有效 KPI",
+    }
+    plan = pass_chain_plan(fields)
+    assert plan["write_kpi45"] is True
+    assert plan["write_time"] is True
+
+
 def test_pass_chain_stamps_time_when_coord_already_passed():
     from bot.workflow_kpi_pass_chain import pass_chain_plan
 

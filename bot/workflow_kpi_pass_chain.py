@@ -58,31 +58,51 @@ def kpi2_passed(fields: dict[str, Any]) -> bool:
     return kpi_cell_passed(fields, _KPI2_RESULT) or field_is_filled(fields, _KPI2_LINK)
 
 
-def first_six_passed(fields: dict[str, Any]) -> bool:
+def kpi45_needed(fields: dict[str, Any]) -> bool:
+    return not kpi_cell_passed(fields, _KPI4_RESULT) or not kpi_cell_passed(
+        fields, _KPI5_RESULT
+    )
+
+
+def first_six_passed(fields: dict[str, Any], *, treat_kpi45_as_pass: bool = False) -> bool:
+    four_five = treat_kpi45_as_pass or (
+        kpi_cell_passed(fields, _KPI4_RESULT)
+        and kpi_cell_passed(fields, _KPI5_RESULT)
+    )
     return (
         kpi_cell_passed(fields, _KPI1_RESULT)
         and kpi2_passed(fields)
         and kpi_cell_passed(fields, _KPI3_RESULT)
-        and kpi_cell_passed(fields, _KPI4_RESULT)
-        and kpi_cell_passed(fields, _KPI5_RESULT)
+        and four_five
         and kpi_cell_passed(fields, _KPI6_RESULT)
     )
 
 
 def pass_chain_plan(fields: dict[str, Any], status_field: str = "项目状态") -> dict[str, Any]:
     """What this row still needs. Does not talk to Lark."""
+    eligible = diag_not_eligible_reason(fields, status_field) is None
     plan = {
+        "write_kpi45": False,
         "write_kpi7": False,
         "write_coord": False,
         "write_time": False,
-        "eligible": diag_not_eligible_reason(fields, status_field) is None,
+        "eligible": eligible,
     }
+    if eligible and kpi45_needed(fields):
+        plan["write_kpi45"] = True
     if coord_is_pass(fields) and not judge_time_filled(fields):
         plan["write_time"] = True
+    if coord_is_pass(fields):
+        if (
+            eligible
+            and not kpi_cell_passed(fields, _KPI7_RESULT)
+            and first_six_passed(fields, treat_kpi45_as_pass=plan["write_kpi45"])
+        ):
+            plan["write_kpi7"] = True
         return plan
-    if not plan["eligible"]:
+    if not eligible:
         return plan
-    if not first_six_passed(fields):
+    if not first_six_passed(fields, treat_kpi45_as_pass=plan["write_kpi45"]):
         return plan
     if not kpi_cell_passed(fields, _KPI7_RESULT):
         plan["write_kpi7"] = True
@@ -162,6 +182,12 @@ def apply_pass_chain(
     status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
     plan = pass_chain_plan(fields, status_field)
     done: list[str] = []
+    if plan["write_kpi45"]:
+        from bot.workflow_kpi45_live import fill_kpi45_for_fields
+
+        fill_kpi45_for_fields(token, config, record_id, fields)
+        done.append("kpi45")
+        fields = {**fields, _KPI4_RESULT: _PASS, _KPI5_RESULT: _PASS}
     if plan["write_kpi7"]:
         write_kpi7_pass(token, config, record_id, _field_text(fields, _KPI7_COPY_FIELD))
         done.append("kpi7")
@@ -191,7 +217,12 @@ def apply_pass_chain_records(
         plan = pass_chain_plan(
             fields, str(getattr(config, "workflow_status_field", "") or "项目状态")
         )
-        if not (plan["write_kpi7"] or plan["write_coord"] or plan["write_time"]):
+        if not (
+            plan["write_kpi45"]
+            or plan["write_kpi7"]
+            or plan["write_coord"]
+            or plan["write_time"]
+        ):
             continue
         try:
             done = apply_pass_chain(token, config, rid, fields)

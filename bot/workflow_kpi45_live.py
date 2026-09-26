@@ -112,8 +112,6 @@ def fill_kpi45_for_fields(
         return "no_record"
     path = _state_path(config)
     state = _load_state(path)
-    if rid in state:
-        return f"already:{state[rid]}"
 
     copy4, result4, copy5, result5 = _field_names(config)
     write_kpi4 = not (

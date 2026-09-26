@@ -19,7 +19,6 @@ from bot.workflow_kpi_pass_chain import (
     KPI7_PASS_COPY,
     apply_pass_chain,
     coord_is_pass,
-    judge_time_filled,
 )
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
@@ -307,23 +306,12 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
-    if coord_is_pass(fields):
-        if not judge_time_filled(fields):
-            try:
-                await loop.run_in_executor(
-                    None, lambda: apply_pass_chain(token, config, record_id, fields)
-                )
-            except Exception:
-                logger.exception("kpi_diag: judge time stamp failed record=%s", record_id)
-        return format_project_diag_reply(
-            project=project_name, rows=[], coord_written=True, skipped=True
-        )
-
     kpi4_ok = _cell_passed(fields, _KPI4_RESULT)
     kpi5_ok = _cell_passed(fields, _KPI5_RESULT)
     if not kpi4_ok or not kpi5_ok:
+        filled = "write_failed"
         try:
-            await loop.run_in_executor(
+            filled = await loop.run_in_executor(
                 None,
                 lambda: fill_kpi45_for_fields(
                     token, config, record_id, fields, project_name=project_name
@@ -331,8 +319,25 @@ async def _run_project_diag(
             )
         except Exception:
             logger.exception("kpi_diag: KPI 4/5 backfill failed record=%s", record_id)
-        kpi4_ok = True
-        kpi5_ok = True
+        if filled in {_PASS, "already_filled"}:
+            kpi4_ok = True
+            kpi5_ok = True
+            fields = {
+                **fields,
+                _KPI4_RESULT: _PASS,
+                _KPI5_RESULT: _PASS,
+            }
+
+    if coord_is_pass(fields):
+        try:
+            await loop.run_in_executor(
+                None, lambda: apply_pass_chain(token, config, record_id, fields)
+            )
+        except Exception:
+            logger.exception("kpi_diag: pass-chain after KPI 4/5 failed record=%s", record_id)
+        return format_project_diag_reply(
+            project=project_name, rows=[], coord_written=True, skipped=True
+        )
 
     to_run = set(project_diag_audits_to_run(fields))
     if "twitter" in to_run:
