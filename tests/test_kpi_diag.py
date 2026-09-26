@@ -337,6 +337,16 @@ def test_project_diag_kpi2_fail_when_no_pr_link():
     )
 
 
+def test_judge_time_is_epoch_milliseconds():
+    from datetime import datetime, timedelta, timezone
+
+    from bot.workflow_kpi_pass_chain import judge_time_ms
+
+    when = datetime(2026, 9, 26, 12, 41, tzinfo=timezone(timedelta(hours=8)))
+    assert judge_time_ms(when) == int(when.timestamp() * 1000)
+    assert isinstance(judge_time_ms(when), int)
+
+
 def test_pass_chain_stamps_time_when_coord_already_passed():
     from bot.workflow_kpi_pass_chain import pass_chain_plan
 

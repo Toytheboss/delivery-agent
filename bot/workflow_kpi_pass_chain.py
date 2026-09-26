@@ -135,8 +135,10 @@ def pass_chain_plan(fields: dict[str, Any], status_field: str = "项目状态") 
     return plan
 
 
-def _stamp() -> str:
-    return now_shanghai().strftime("%Y-%m-%d %H:%M")
+def judge_time_ms(when: Any = None) -> int:
+    """Lark datetime cells take epoch milliseconds, not a formatted string."""
+    moment = when or now_shanghai()
+    return int(moment.timestamp() * 1000)
 
 
 def write_kpi2_result(token: str, config: Any, record_id: str, result: str) -> None:
@@ -169,18 +171,17 @@ def write_kpi7_pass(
 
 
 def write_judge_time(token: str, config: Any, record_id: str) -> None:
-    stamp = _stamp()
     update_record(
         token,
         config.workflow_base_app_token,
         config.workflow_progress_table_id,
         record_id,
-        {_JUDGE_FIELD: stamp},
+        {_JUDGE_FIELD: judge_time_ms()},
     )
 
 
 def write_coord_and_time(token: str, config: Any, record_id: str) -> None:
-    stamp = _stamp()
+    stamp = judge_time_ms()
     last_error: Exception | None = None
     for coord in (_PASS, "有效 KPI"):
         try:
