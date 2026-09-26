@@ -11,6 +11,15 @@
 
 ---
 
+## 2026-09-26 · twitter diag 从官号推文回填主网 PR
+
+### 新增
+- `twitter diag` / `project diag` 用已经拉到的时间线找主网 PR：正文要有项目名，还要有 Botchain / BOT Chain 和 live / launched / mainnet
+- 命中最近一条就写入 `KPI 2 - PR 新闻链接验证` 并记新闻验证通过；格子里已有链接不覆盖
+- 上线钩子仍只做官网和 KPI 4 / 5，不额外打 X API
+
+---
+
 ## 2026-09-26 · 关掉表单收到推群
 
 ### 优化

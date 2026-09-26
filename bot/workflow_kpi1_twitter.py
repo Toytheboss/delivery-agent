@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import requests
 
 from bot.lark_bitable import update_record
-from bot.project_logo import link_str
+from bot.project_logo import link_str, pick_site_url
 from bot.workflow_form_chase import field_is_filled
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_write import (
@@ -39,6 +39,12 @@ _FAIL = "不通过"
 _THRESHOLD = 5
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
+_KPI2_LINK = "KPI 2 - PR 新闻链接验证"
+_CHAIN_RE = re.compile(r"bot\s*chain|botchain", re.I)
+_LIVE_RE = re.compile(
+    r"\blive\b|\blaunched\b|\blaunch(?:ing|ed)?\b|\bmainnet\b|\bgo[\s-]?live\b",
+    re.I,
+)
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
@@ -168,6 +174,147 @@ def original_status_links(
         if limit is not None and len(links) >= limit:
             break
     return links
+
+
+def _compact_latin(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+
+
+def tweet_has_project_name(text: str, project_name: str) -> bool:
+    raw = (project_name or "").strip()
+    if len(raw) < 2:
+        return False
+    blob = text or ""
+    if re.search(r"[\u4e00-\u9fff]", raw):
+        return raw.lower() in blob.lower()
+    compact = _compact_latin(raw)
+    if len(compact) < 3:
+        return False
+    return compact in _compact_latin(blob)
+
+
+def is_mainnet_pr_tweet(
+    text: str,
+    extra: dict[str, Any] | None = None,
+    *,
+    project_name: str,
+) -> bool:
+    body = text or ""
+    if is_retweet(body, extra):
+        return False
+    if not _CHAIN_RE.search(body) or not _LIVE_RE.search(body):
+        return False
+    return tweet_has_project_name(body, project_name)
+
+
+def find_mainnet_pr_url(
+    handle: str,
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    *,
+    since: datetime,
+    project_name: str,
+) -> str:
+    who = (handle or "").strip().lstrip("@")
+    if not who:
+        return ""
+    ranked: list[tuple[datetime, str]] = []
+    for dt, text, extra in rows:
+        if dt < since:
+            continue
+        if not is_mainnet_pr_tweet(text, extra, project_name=project_name):
+            continue
+        tweet_id = _tweet_id(extra if isinstance(extra, dict) else None)
+        if not tweet_id:
+            continue
+        ranked.append((dt, f"https://x.com/{who}/status/{tweet_id}"))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    return ranked[0][1] if ranked else ""
+
+
+def maybe_write_kpi2_from_tweets(
+    token: str,
+    config: AppConfig,
+    record_id: str,
+    fields: dict[str, Any],
+    *,
+    project_name: str,
+    handle: str,
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    since: datetime,
+) -> str:
+    """Fill empty KPI 2 from a mainnet-PR tweet. Never overwrites a filled cell."""
+    link_field = str(
+        getattr(config, "pr_capture_link_field", "") or _KPI2_LINK
+    )
+    if field_is_filled(fields, link_field):
+        return ""
+    url = find_mainnet_pr_url(
+        handle, rows, since=since, project_name=project_name
+    )
+    if not url:
+        return ""
+    from bot.workflow_pr_capture import kpi2_pass_fields
+    from bot.workflow_pr_weekly import log_capture_event
+
+    rid = (record_id or "").strip()
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        rid,
+        kpi2_pass_fields(link_field=link_field, url=url),
+    )
+    try:
+        site = pick_site_url(
+            fields,
+            str(getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"),
+            str(getattr(config, "workflow_project_link_field", "") or "项目链接"),
+        )
+        log_capture_event(
+            config, record_id=rid, project=project_name, url=url, site=site or ""
+        )
+    except Exception:
+        logger.exception("kpi1: PR event log failed project=%r", project_name)
+    logger.info("kpi1: filled KPI 2 from tweet project=%r url=%s", project_name, url)
+    return url
+
+
+def fill_kpi2_pr_from_twitter(
+    token: str,
+    config: AppConfig,
+    record_id: str,
+    fields: dict[str, Any],
+    *,
+    project_name: str = "",
+) -> str:
+    """When Twitter already passed, still hunt PR from the official timeline."""
+    link_field = str(
+        getattr(config, "pr_capture_link_field", "") or _KPI2_LINK
+    )
+    if field_is_filled(fields, link_field):
+        return ""
+    name = (project_name or "").strip() or _field_text(
+        fields, config.workflow_project_name_field
+    )
+    wallet = find_wallet_row(token, config, name)
+    url = wallet_twitter_url(wallet[1]) if wallet else ""
+    handle = twitter_handle_from_url(url)
+    if not handle:
+        return ""
+    since = now_shanghai() - timedelta(days=30)
+    _source, rows = fetch_timeline(handle, since=since)
+    if not rows:
+        return ""
+    return maybe_write_kpi2_from_tweets(
+        token,
+        config,
+        record_id,
+        fields,
+        project_name=name,
+        handle=handle,
+        rows=rows,
+        since=since,
+    )
 
 
 def _parse_created(value: Any) -> datetime | None:
@@ -424,25 +571,33 @@ def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, 
     return out
 
 
+def fetch_timeline(
+    handle: str, *, since: datetime
+) -> tuple[str, list[tuple[datetime, str, dict[str, Any]]] | None]:
+    """Return (source, rows). ``None`` rows means the official read failed."""
+    if x_api_configured():
+        api = _x_api(handle, since)
+        if api is None:
+            return "unread", None
+        return "x_api", api
+    syn = _syndication(handle)
+    if syn:
+        return "syndication", syn
+    rss = _nitter_rss(handle)
+    if rss:
+        return "nitter", [(dt, text, {}) for dt, text in rss]
+    return "unread", None
+
+
 def collect_originals(
     handle: str, *, since: datetime
 ) -> tuple[int | None, str, list[str]]:
     """Count originals in ``since``..now and keep recent status URLs."""
-    if x_api_configured():
-        api = _x_api(handle, since)
-        if api is None:
-            return None, "unread", []
-        n = sum(1 for dt, text, extra in api if dt >= since and not is_retweet(text, extra))
-        return n, "x_api", original_status_links(handle, api, since=since)
-    syn = _syndication(handle)
-    if syn:
-        n = sum(1 for dt, text, extra in syn if dt >= since and not is_retweet(text, extra))
-        return n, "syndication", original_status_links(handle, syn, since=since)
-    rss = _nitter_rss(handle)
-    if rss:
-        n = sum(1 for dt, text in rss if dt >= since and not is_retweet(text))
-        return n, "nitter", []
-    return None, "unread", []
+    source, rows = fetch_timeline(handle, since=since)
+    if rows is None:
+        return None, "unread", []
+    n = sum(1 for dt, text, extra in rows if dt >= since and not is_retweet(text, extra))
+    return n, source, original_status_links(handle, rows, since=since)
 
 
 def count_originals(handle: str, *, since: datetime) -> tuple[int | None, str]:
@@ -546,15 +701,38 @@ def audit_kpi1_for_fields(
     count: int | None = None
     unread = False
     links: list[str] = []
+    rows: list[tuple[datetime, str, dict[str, Any]]] = []
     if handle:
-        count, source, links = collect_originals(handle, since=since)
-        unread = source == "unread"
-        logger.info(
-            "kpi1: handle=%s source=%s count=%s links=%s",
-            handle,
-            source,
-            count,
-            len(links),
+        source, fetched = fetch_timeline(handle, since=since)
+        if fetched is None:
+            unread = True
+            logger.info("kpi1: handle=%s source=unread", handle)
+        else:
+            rows = fetched
+            count = sum(
+                1
+                for dt, text, extra in rows
+                if dt >= since and not is_retweet(text, extra)
+            )
+            links = original_status_links(handle, rows, since=since)
+            logger.info(
+                "kpi1: handle=%s source=%s count=%s links=%s",
+                handle,
+                source,
+                count,
+                len(links),
+            )
+    pr_url = ""
+    if handle and rows:
+        pr_url = maybe_write_kpi2_from_tweets(
+            token,
+            config,
+            rid,
+            fields,
+            project_name=name,
+            handle=handle,
+            rows=rows,
+            since=since,
         )
     verdict = evaluate_kpi1(handle=handle, count=count, unread=unread, links=links)
     existing_copy = _field_text(fields, copy_field)
@@ -576,4 +754,5 @@ def audit_kpi1_for_fields(
         "handle": handle,
         "count": verdict["count"],
         "project": name,
+        "pr_url": pr_url,
     }

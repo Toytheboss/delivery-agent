@@ -314,16 +314,6 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
-    kpi2_write = planned_kpi2_result(fields)
-    if kpi2_write:
-        try:
-            await loop.run_in_executor(
-                None, lambda: write_kpi2_result(token, config, record_id, kpi2_write)
-            )
-            fields = {**fields, _KPI2_RESULT: kpi2_write}
-        except Exception:
-            logger.exception("kpi_diag: KPI 2 write failed record=%s", record_id)
-
     kpi4_ok = _cell_passed(fields, _KPI4_RESULT)
     kpi5_ok = _cell_passed(fields, _KPI5_RESULT)
     if not kpi4_ok or not kpi5_ok:
@@ -362,9 +352,37 @@ async def _run_project_diag(
         twitter = await _run_one(
             loop, "twitter", token, config, record_id, fields, project_name
         )
+        pr_url = str(twitter.get("pr_url") or "").strip()
+        if pr_url:
+            fields = {**fields, _KPI2_LINK: pr_url, _KPI2_RESULT: _PASS}
     else:
         logger.info("kpi_diag: skip twitter already passed project=%s", project_name)
         twitter = skipped_pass(project_name, "twitter")
+        from bot.workflow_kpi1_twitter import fill_kpi2_pr_from_twitter
+
+        try:
+            pr_url = await loop.run_in_executor(
+                None,
+                lambda: fill_kpi2_pr_from_twitter(
+                    token, config, record_id, fields, project_name=project_name
+                ),
+            )
+        except Exception:
+            logger.exception("kpi_diag: PR tweet fill failed record=%s", record_id)
+            pr_url = ""
+        if pr_url:
+            fields = {**fields, _KPI2_LINK: pr_url, _KPI2_RESULT: _PASS}
+
+    kpi2_write = planned_kpi2_result(fields)
+    if kpi2_write:
+        try:
+            await loop.run_in_executor(
+                None, lambda: write_kpi2_result(token, config, record_id, kpi2_write)
+            )
+            fields = {**fields, _KPI2_RESULT: kpi2_write}
+        except Exception:
+            logger.exception("kpi_diag: KPI 2 write failed record=%s", record_id)
+
     if "website" in to_run:
         website = await _run_one(
             loop, "website", token, config, record_id, fields, project_name
