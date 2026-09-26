@@ -160,6 +160,7 @@ def test_original_status_links_newest_five_skip_retweets():
         "https://x.com/Demo/status/23",
         "https://x.com/Demo/status/22",
         "https://x.com/Demo/status/21",
+        "https://x.com/Demo/status/10",
     ]
 
 

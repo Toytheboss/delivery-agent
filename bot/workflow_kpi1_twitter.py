@@ -38,6 +38,7 @@ _PASS = "通过"
 _FAIL = "不通过"
 _THRESHOLD = 5
 _LINK_LIMIT = 5
+_MEETS_AUDIT = "满足审核要求"
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
@@ -141,10 +142,12 @@ def original_status_links(
     rows: list[tuple[datetime, str, dict[str, Any]]],
     *,
     since: datetime,
-    limit: int = _LINK_LIMIT,
+    limit: int | None = None,
 ) -> list[str]:
     who = (handle or "").strip().lstrip("@")
-    if not who or limit <= 0:
+    if not who:
+        return []
+    if limit is not None and limit <= 0:
         return []
     ranked: list[tuple[datetime, str]] = []
     for dt, text, extra in rows:
@@ -162,7 +165,7 @@ def original_status_links(
             continue
         seen.add(url)
         links.append(url)
-        if len(links) >= limit:
+        if limit is not None and len(links) >= limit:
             break
     return links
 
@@ -468,13 +471,17 @@ def build_kpi1_copy(
             "Twitter operations verification failed"
         )
     n = int(count)
-    suffix = "passed" if n >= _THRESHOLD else "failed"
+    passed = n >= _THRESHOLD
+    suffix = "passed" if passed else "failed"
     text = (
         f"Twitter operations verification: official account{who} posted {n} "
         f"original posts in the last 30 days (threshold ≥{_THRESHOLD}); "
         f"Twitter operations verification {suffix}"
     )
-    urls = [str(url).strip() for url in (links or []) if str(url).strip()][:_LINK_LIMIT]
+    urls = [str(url).strip() for url in (links or []) if str(url).strip()]
+    if passed:
+        urls = urls[:_LINK_LIMIT]
+        text = text + "\n" + _MEETS_AUDIT
     if urls:
         text = text + "\n" + "\n".join(urls)
     return text
@@ -504,13 +511,13 @@ def evaluate_kpi1(
             "links": [],
         }
     passed = count >= _THRESHOLD
-    urls = list(links or [])[:_LINK_LIMIT]
+    urls = list(links or [])
     return {
         "passed": passed,
         "reason": "pass" if passed else "below_threshold",
         "copy": build_kpi1_copy(handle=handle, count=count, reason="ok", links=urls),
         "count": count,
-        "links": urls,
+        "links": urls[:_LINK_LIMIT] if passed else urls,
     }
 
 

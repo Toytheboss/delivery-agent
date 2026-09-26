@@ -113,6 +113,44 @@ def test_kpi6_counts_successful_to_contract_skips_create():
     assert verdict["tx_count"] == 3
     assert verdict["passed"] is False
     assert "上线日至核查日" not in verdict["copy"]
+    assert "满足审核要求" not in verdict["copy"]
+    assert "Tx hashes:" in verdict["copy"]
+    assert "ok1" in verdict["copy"]
+    assert "ok2" in verdict["copy"]
+    assert "old" in verdict["copy"]
+
+
+def test_kpi6_pass_lists_three_wallets_and_five_hashes():
+    start = datetime(2026, 9, 26, tzinfo=timezone(timedelta(hours=8)))
+    ca = "0xabc0000000000000000000000000000000000001"
+    txs = []
+    senders = [
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "0xcccccccccccccccccccccccccccccccccccccccc",
+        "0xdddddddddddddddddddddddddddddddddddddddd",
+    ]
+    for i in range(7):
+        txs.append(
+            {
+                "hash": f"h{i}",
+                "from": senders[i % 4],
+                "to": ca,
+                "contractAddress": "",
+                "isError": "0",
+                "timeStamp": str(int(start.timestamp()) + i + 1),
+            }
+        )
+    verdict = evaluate_kpi6(contract=ca, txs=txs, window_start=start)
+    assert verdict["passed"] is True
+    assert verdict["tx_count"] == 7
+    assert "满足审核要求" in verdict["copy"]
+    assert verdict["copy"].count("0x") >= 3
+    listed_hashes = [line for line in verdict["copy"].splitlines() if line.startswith("h")]
+    assert listed_hashes == ["h6", "h5", "h4", "h3", "h2"]
+    wallet_block = verdict["copy"].split("Wallets:")[1].split("Tx hashes:")[0]
+    wallet_lines = [ln for ln in wallet_block.splitlines() if ln.startswith("0x")]
+    assert len(wallet_lines) == 3
 
 
 def test_recheck_appends_and_only_upgrades_pass():
@@ -141,18 +179,29 @@ def test_twitter_handle_and_no_account_copy():
         "Twitter operations verification failed"
     )
     assert "posted 5 original posts" in build_kpi1_copy(handle="Foo", count=5, reason="ok")
-    copy = build_kpi1_copy(
+    below = build_kpi1_copy(
         handle="Foo",
-        count=5,
+        count=3,
         reason="ok",
         links=[
             "https://x.com/Foo/status/1",
             "https://x.com/Foo/status/2",
+            "https://x.com/Foo/status/3",
         ],
     )
-    assert copy.endswith(
-        "https://x.com/Foo/status/1\nhttps://x.com/Foo/status/2"
+    assert "满足审核要求" not in below
+    assert below.endswith(
+        "https://x.com/Foo/status/1\nhttps://x.com/Foo/status/2\nhttps://x.com/Foo/status/3"
     )
+    copy = build_kpi1_copy(
+        handle="Foo",
+        count=7,
+        reason="ok",
+        links=[f"https://x.com/Foo/status/{i}" for i in range(1, 8)],
+    )
+    assert "满足审核要求" in copy
+    assert "https://x.com/Foo/status/5" in copy
+    assert "https://x.com/Foo/status/6" not in copy
 
 
 def test_live_start_is_shanghai_midnight():

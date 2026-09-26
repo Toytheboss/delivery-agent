@@ -31,6 +31,9 @@ _DEFAULT_RESULT_FIELD = "交互验证结果"
 _PASS = "通过"
 _FAIL = "不通过"
 _SCAN_API = "https://scan.botchain.ai/api"
+_WALLET_SHOW = 3
+_TX_SHOW = 5
+_MEETS_AUDIT = "满足审核要求"
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -128,12 +131,33 @@ def unique_wallets(txs: list[dict[str, Any]], contract: str) -> list[str]:
     return sorted(counts, key=lambda addr: (-counts[addr], addr))
 
 
+def core_tx_hashes(txs: list[dict[str, Any]]) -> list[str]:
+    ranked = sorted(
+        txs,
+        key=lambda tx: int(tx.get("timeStamp") or 0),
+        reverse=True,
+    )
+    out: list[str] = []
+    seen: set[str] = set()
+    for tx in ranked:
+        raw = str(tx.get("hash") or tx.get("transactionHash") or "").strip()
+        if not raw:
+            continue
+        key = raw.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(raw)
+    return out
+
+
 def build_kpi6_copy(
     *,
     passed: bool,
     reason: str,
     wallets: list[str],
     tx_count: int,
+    hashes: list[str] | None = None,
 ) -> str:
     if reason == "no_contract":
         return (
@@ -141,16 +165,25 @@ def build_kpi6_copy(
             "user and interaction verification failed"
         )
     n = len(wallets)
-    shown = wallets[:5]
-    listed = ", ".join(shown) if shown else "none"
     suffix = "passed" if passed else "failed"
-    extra = " (at most 5 unique wallets shown here)" if shown else ""
-    return (
-        f"User and interaction verification: {n} unique wallets, "
-        f"{tx_count} successful core txs (threshold ≥3 wallets and ≥5 txs); "
-        f"unique wallets: {listed}{extra}; "
-        f"user and interaction verification {suffix}"
-    )
+    lines = [
+        (
+            f"User and interaction verification: {n} unique wallets, "
+            f"{tx_count} successful core txs (threshold ≥3 wallets and ≥5 txs); "
+            f"user and interaction verification {suffix}"
+        )
+    ]
+    show_wallets = list(wallets[:_WALLET_SHOW] if passed else wallets)
+    show_hashes = list((hashes or [])[:_TX_SHOW] if passed else (hashes or []))
+    if passed:
+        lines.append(_MEETS_AUDIT)
+    if show_wallets:
+        lines.append("Wallets:")
+        lines.extend(show_wallets)
+    if show_hashes:
+        lines.append("Tx hashes:")
+        lines.extend(show_hashes)
+    return "\n".join(lines)
 
 
 def evaluate_kpi6(
@@ -169,11 +202,13 @@ def evaluate_kpi6(
             "copy": build_kpi6_copy(
                 passed=False, reason="no_contract", wallets=[], tx_count=0
             ),
+            "hashes": [],
         }
     core, _skipped = classify_core_txs(
         txs or [], contract=contract, window_start=None
     )
     wallets = unique_wallets(core, contract)
+    hashes = core_tx_hashes(core)
     tx_count = len(core)
     passed = len(wallets) >= 3 and tx_count >= 5
     return {
@@ -182,8 +217,13 @@ def evaluate_kpi6(
         "reason": "pass" if passed else "below_threshold",
         "wallets": wallets,
         "tx_count": tx_count,
+        "hashes": hashes,
         "copy": build_kpi6_copy(
-            passed=passed, reason="ok", wallets=wallets, tx_count=tx_count
+            passed=passed,
+            reason="ok",
+            wallets=wallets,
+            tx_count=tx_count,
+            hashes=hashes,
         ),
     }
 
