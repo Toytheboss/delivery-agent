@@ -1,6 +1,6 @@
 """KPI 3 website check: run once when a project goes mainnet-live.
 
-Pass when the site opens, shows the project name (fallback: a logo), and has
+Pass when the site opens, shows the BOT Chain / Botchain name, and has
 clickable https://botchain.ai and https://scan.botchain.ai links. A missing
 website URL is an automatic fail. Does not write KPI coordination or push groups.
 """
@@ -41,6 +41,7 @@ _A_HREF_RE = re.compile(
     r"""<a\b[^>]*?\bhref\s*=\s*(?:["']([^"']+)["']|([^\s>]+))""",
     flags=re.I,
 )
+_BOTCHAIN_NAME_RE = re.compile(r"bot\s*chain", flags=re.I)
 _IMG_RE = re.compile(r"<img\b[^>]*>", flags=re.I)
 _SCRIPT_STYLE_RE = re.compile(r"(?is)<(script|style)\b[^>]*>.*?</\1>")
 _TAG_RE = re.compile(r"(?is)<[^>]+>")
@@ -137,19 +138,17 @@ def html_has_logo(html: str) -> bool:
     )
 
 
-def page_has_project_name(project_name: str, text: str) -> bool:
-    name = (project_name or "").strip()
-    if not name or not (text or "").strip():
-        return False
-    needle = _normalize_name(name)
+def page_has_botchain_name(text: str) -> bool:
+    """True when visible copy names BOT Chain / Botchain, not the project brand."""
     haystack = text or ""
-    if len(needle) < 3:
-        return bool(re.search(rf"\b{re.escape(name)}\b", haystack, flags=re.I))
-    return needle in _normalize_name(haystack)
+    if not haystack.strip():
+        return False
+    if _BOTCHAIN_NAME_RE.search(haystack):
+        return True
+    return "botchain" in _normalize_name(haystack)
 
 
 def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
-    name = (project_name or "").strip() or "this project"
     if verdict.reason == "no_url":
         return (
             "Website display verification: no official website URL submitted; "
@@ -162,11 +161,9 @@ def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
         )
 
     if verdict.has_name:
-        identity = f"project name {name} is visible"
-    elif verdict.has_logo:
-        identity = "project name not found, but logo is visible"
+        identity = "BOT Chain name is visible"
     else:
-        identity = "project name or logo not found"
+        identity = "BOT Chain name not found"
 
     bot = "https://botchain.ai"
     scan = "https://scan.botchain.ai"
@@ -224,12 +221,12 @@ def evaluate_kpi3(
     hrefs = probe.hrefs
     has_botchain = any(is_botchain_href(h) for h in hrefs)
     has_scan = any(is_scan_href(h) for h in hrefs)
-    has_name = page_has_project_name(project_name, probe.text)
+    has_name = page_has_botchain_name(probe.text)
     has_logo = bool(probe.has_logo)
-    identity_ok = has_name or has_logo
+    identity_ok = has_name
     passed = identity_ok and has_botchain and has_scan
     if not identity_ok:
-        reason = "no_name_or_logo"
+        reason = "no_botchain_name"
     elif not has_botchain or not has_scan:
         reason = "missing_official_link"
     else:

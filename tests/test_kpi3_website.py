@@ -9,7 +9,7 @@ from bot.workflow_kpi3_website import (
     is_botchain_href,
     is_scan_href,
     kpi3_result_fields,
-    page_has_project_name,
+    page_has_botchain_name,
     visible_text,
 )
 
@@ -45,34 +45,38 @@ def test_www_and_relative_botchain_hrefs_count():
     assert any(is_botchain_href(h) for h in hrefs)
 
 
-def test_project_name_preferred_over_logo():
+def test_botchain_name_passes_even_if_lark_name_is_a_url():
     probe = WebsiteProbe(
-        url="https://subscribeone.example",
+        url="https://www.tokendropper.site/",
         opened=True,
         hrefs=("https://botchain.ai", "https://scan.botchain.ai"),
-        text="SubscribeOne is live on BOT Chain",
-        has_logo=True,
+        text="Token Dropper Running on BOT Chain Mainnet botchain.ai scan.botchain.ai",
+        has_logo=False,
     )
-    verdict = evaluate_kpi3(project_name="SubscribeOne", probe=probe, url=probe.url)
+    verdict = evaluate_kpi3(
+        project_name="https://www.tokendropper.site/",
+        probe=probe,
+        url=probe.url,
+    )
     assert verdict.passed
     assert verdict.has_name
-    assert "project name SubscribeOne is visible" in verdict.copy
+    assert "BOT Chain name is visible" in verdict.copy
     assert verdict.copy.endswith("website display verification passed")
 
 
-def test_logo_fallback_when_name_missing():
+def test_project_name_alone_does_not_pass():
     probe = WebsiteProbe(
-        url="https://example.com",
+        url="https://novamint.example",
         opened=True,
         hrefs=("https://botchain.ai/", "https://scan.botchain.ai/"),
-        text="Welcome to our protocol",
+        text="Welcome to NovaMint",
         has_logo=True,
     )
     verdict = evaluate_kpi3(project_name="NovaMint", probe=probe, url=probe.url)
-    assert verdict.passed
+    assert not verdict.passed
     assert not verdict.has_name
-    assert verdict.has_logo
-    assert "project name not found, but logo is visible" in verdict.copy
+    assert verdict.reason == "no_botchain_name"
+    assert "BOT Chain name not found" in verdict.copy
 
 
 def test_missing_one_official_link_fails():
@@ -80,7 +84,7 @@ def test_missing_one_official_link_fails():
         url="https://firmament.site",
         opened=True,
         hrefs=("https://scan.botchain.ai",),
-        text="FIRMAMENT AI",
+        text="FIRMAMENT AI is live on BOT Chain",
         has_logo=False,
     )
     verdict = evaluate_kpi3(project_name="FIRMAMENT AI", probe=probe, url=probe.url)
@@ -125,9 +129,11 @@ def test_kpi3_result_fields_use_string_not_array():
 
 
 def test_html_helpers():
-    html = '<header><img class="brand-logo" src="/logo.png"></header><p>Hello NovaMint</p>'
+    html = '<header><img class="brand-logo" src="/logo.png"></header><p>Hello NovaMint on BOT Chain</p>'
     assert html_has_logo(html)
-    assert page_has_project_name("NovaMint", visible_text(html))
+    assert page_has_botchain_name(visible_text(html))
+    assert not page_has_botchain_name("Hello NovaMint")
+    assert page_has_botchain_name("Powered by Botchain")
     assert build_kpi3_copy(
         evaluate_kpi3(project_name="X", probe=None, url=""),
         "X",

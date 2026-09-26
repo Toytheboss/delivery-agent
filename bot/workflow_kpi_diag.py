@@ -184,6 +184,11 @@ def website_fail_note(outcome: dict[str, Any]) -> str:
             "Website display verification: website could not be opened; "
             "website display verification failed"
         )
+    if reason == "no_botchain_name":
+        return (
+            "Website display verification: website opened, BOT Chain name not found; "
+            "website display verification failed"
+        )
     if reason in {"missing_official_link", "no_name_or_logo"}:
         return (
             "Website display verification: website opened, missing official links; "

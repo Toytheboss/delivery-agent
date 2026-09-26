@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-26 · KPI 3 认 BOT Chain 名字
+
+### 优化
+- 官网检查看页面有没有 Botchain / BOT Chain，不再对进度表里的项目名
+- 项目 logo 不能顶替这条；官链 botchain.ai 和 scan.botchain.ai 仍要可点
+
+---
+
 ## 2026-09-26 · 群名粘着 X 也能匹配项目
 
 ### 修复
