@@ -230,3 +230,19 @@ def test_bot_chain_pulse_stays_unmatched():
 def test_botchain_slash_group_counts_when_bot_is_in_it():
     cid, reason = match_project_to_chat("mettelia", {201: "BOTCHAIN/mettelia"})
     assert cid == 201, reason
+
+
+def test_glued_x_separator_matches_project():
+    cid, reason = match_project_to_chat(
+        "traveltochian",
+        {536: "traveltochianX botchain"},
+    )
+    assert cid == 536, reason
+
+
+def test_short_name_glued_x_stays_distinct():
+    titles = {1: "SpaceX <> Bot Chain", 2: "ArcadeX <> Botchain (Live)"}
+    cid, _reason = match_project_to_chat("Space", titles)
+    assert cid is None
+    cid, reason = match_project_to_chat("ArcadeX", titles)
+    assert cid == 2, reason

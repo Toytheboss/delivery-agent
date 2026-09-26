@@ -147,7 +147,14 @@ def _match_tokens(text: str) -> list[str]:
         if not parts:
             out.append(chunk.lower())
         elif len(parts) >= 2 and any(len(part) < 3 or part in _MATCH_NOISE for part in parts):
-            out.append(chunk.lower())
+            glued = chunk.lower()
+            # "traveltochianX botchain" — glued X is a separator, not part of the name.
+            # Keep TaskOn/SpaceX/ArcadeX intact (short stem or not a trailing x).
+            stem = glued[:-1]
+            if parts[-1] == "x" and glued.endswith("x") and len(stem) >= 8:
+                out.append(stem)
+            else:
+                out.append(glued)
         else:
             out.extend(parts)
     return out
