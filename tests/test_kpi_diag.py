@@ -303,7 +303,7 @@ def test_pass_chain_fills_empty_kpi45_on_live_project():
 
 
 def test_pass_chain_writes_kpi2_when_pr_link_exists():
-    from bot.workflow_kpi_pass_chain import pass_chain_plan
+    from bot.workflow_kpi_pass_chain import pass_chain_plan, planned_kpi2_result
 
     live = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
@@ -312,11 +312,29 @@ def test_pass_chain_writes_kpi2_when_pr_link_exists():
     }
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is True
+    assert planned_kpi2_result(live) == "通过"
     live["新闻验证结果"] = "通过"
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is False
     plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR 新闻链接验证": "https://x.com/x/status/1"})
     assert plan["write_kpi2"] is False
+
+
+def test_project_diag_kpi2_fail_when_no_pr_link():
+    from bot.workflow_kpi_pass_chain import planned_kpi2_result
+
+    assert planned_kpi2_result({}) == "不通过"
+    assert planned_kpi2_result({"新闻验证结果": "不通过"}) is None
+    assert planned_kpi2_result({"新闻验证结果": "通过"}) is None
+    assert (
+        planned_kpi2_result(
+            {
+                "KPI 2 - PR 新闻链接验证": "https://x.com/x/status/1",
+                "新闻验证结果": "不通过",
+            }
+        )
+        == "通过"
+    )
 
 
 def test_pass_chain_stamps_time_when_coord_already_passed():

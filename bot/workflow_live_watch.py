@@ -86,7 +86,7 @@ async def run_live_status_watch_once(
     first_run = not path.exists()
 
     try:
-        _token, records = await _load_progress_records(config)
+        _, records = await _load_progress_records(config)
     except Exception:
         logger.exception("live-status-watch: failed to load Lark records")
         return 0
@@ -99,16 +99,6 @@ async def run_live_status_watch_once(
             process_deploy_status_records(config, records)
         except Exception:
             logger.exception("live-status-watch: deploy-status piggyback failed")
-
-    if getattr(config, "workflow_kpi_diag_enabled", False):
-        try:
-            from bot.workflow_kpi_pass_chain import apply_pass_chain_records
-
-            n = apply_pass_chain_records(_token, config, records)
-            if n:
-                logger.info("live-status-watch: kpi pass-chain wrote %s row(s)", n)
-        except Exception:
-            logger.exception("live-status-watch: kpi pass-chain piggyback failed")
 
     live_now: list[tuple[str, str]] = []
     for record in records:

@@ -19,7 +19,8 @@ from bot.workflow_kpi_pass_chain import (
     KPI7_PASS_COPY,
     apply_pass_chain,
     coord_is_pass,
-    write_kpi2_pass,
+    planned_kpi2_result,
+    write_kpi2_result,
 )
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
@@ -57,7 +58,7 @@ _KPI2_PASS = (
     "News/PR verification: a news URL was submitted; news/PR verification passed"
 )
 _KPI2_FAIL = (
-    "News/PR verification: no news URL submitted; news/PR verification failed"
+    "News/PR verification: missing PR news link; news/PR verification failed"
 )
 _KPI7_COPY = KPI7_PASS_COPY
 _KPI7_OPEN = (
@@ -307,14 +308,15 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
-    if field_is_filled(fields, _KPI2_LINK) and not _cell_passed(fields, _KPI2_RESULT):
+    kpi2_write = planned_kpi2_result(fields)
+    if kpi2_write:
         try:
             await loop.run_in_executor(
-                None, lambda: write_kpi2_pass(token, config, record_id)
+                None, lambda: write_kpi2_result(token, config, record_id, kpi2_write)
             )
-            fields = {**fields, _KPI2_RESULT: _PASS}
+            fields = {**fields, _KPI2_RESULT: kpi2_write}
         except Exception:
-            logger.exception("kpi_diag: KPI 2 pass write failed record=%s", record_id)
+            logger.exception("kpi_diag: KPI 2 write failed record=%s", record_id)
 
     kpi4_ok = _cell_passed(fields, _KPI4_RESULT)
     kpi5_ok = _cell_passed(fields, _KPI5_RESULT)

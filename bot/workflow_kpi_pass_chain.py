@@ -1,6 +1,6 @@
 """When KPI 1–6 are passed, auto-write KPI 7, coordination, and judgment time.
 
-Used by project diag and the live-status-watch table scan (Roy号 only).
+Used by project diag only (Roy号). Not on the live-status table scan.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from bot.workflow_kpi_write import (
 logger = logging.getLogger(__name__)
 
 _PASS = "通过"
+_FAIL = "不通过"
 _COORD_PASS_VALUES = frozenset({_PASS, "有效 KPI"})
 _COORD_FIELD = "KPI 统筹"
 _JUDGE_FIELD = "KPI 判定时间"
@@ -60,9 +61,19 @@ def kpi2_passed(fields: dict[str, Any]) -> bool:
 
 def kpi2_needed(fields: dict[str, Any]) -> bool:
     """Link is in the tracker, but 新闻验证结果 is still empty."""
-    return field_is_filled(fields, _KPI2_LINK) and not kpi_cell_passed(
-        fields, _KPI2_RESULT
-    )
+    return planned_kpi2_result(fields) == _PASS
+
+
+def planned_kpi2_result(fields: dict[str, Any]) -> str | None:
+    """Link → 通过. No link → 不通过. Never downgrade an existing 通过."""
+    if field_is_filled(fields, _KPI2_LINK):
+        if kpi_cell_passed(fields, _KPI2_RESULT):
+            return None
+        return _PASS
+    current = field_result(fields, _KPI2_RESULT)
+    if current in {_PASS, _FAIL}:
+        return None
+    return _FAIL
 
 
 def kpi45_needed(fields: dict[str, Any]) -> bool:
@@ -128,14 +139,18 @@ def _stamp() -> str:
     return now_shanghai().strftime("%Y-%m-%d %H:%M")
 
 
-def write_kpi2_pass(token: str, config: Any, record_id: str) -> None:
+def write_kpi2_result(token: str, config: Any, record_id: str, result: str) -> None:
     update_record(
         token,
         config.workflow_base_app_token,
         config.workflow_progress_table_id,
         record_id,
-        {_KPI2_RESULT: _PASS},
+        {_KPI2_RESULT: result},
     )
+
+
+def write_kpi2_pass(token: str, config: Any, record_id: str) -> None:
+    write_kpi2_result(token, config, record_id, _PASS)
 
 
 def write_kpi7_pass(
