@@ -428,7 +428,10 @@ def audit_kpi3_for_fields(
         logger.exception("kpi3: failed to write result project=%r record=%s", name, rid)
         return "write_failed"
     state[rid] = result
-    _save_state(path, state)
+    try:
+        _save_state(path, state)
+    except OSError:
+        logger.exception("kpi3: state save failed path=%s", path)
     logger.info(
         "kpi3: %s project=%r record=%s url=%s reason=%s",
         result,

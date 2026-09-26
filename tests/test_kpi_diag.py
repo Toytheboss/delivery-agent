@@ -81,25 +81,27 @@ def test_kpi6_counts_successful_to_contract_skips_create():
             "timeStamp": str(int(start.timestamp()) - 100),
         },
     ]
-    core, skipped = classify_core_txs(txs, contract=ca, window_start=start)
+    core, skipped = classify_core_txs(txs, contract=ca, window_start=None)
     assert skipped["create"] == 1
     assert skipped["failed"] == 1
-    assert skipped["out_window"] == 1
-    assert len(core) == 2
+    assert skipped["out_window"] == 0
+    assert len(core) == 3
     assert unique_wallets(core, ca) == [
         "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "0xcccccccccccccccccccccccccccccccccccccccc",
     ]
     assert is_create_tx(txs[0])
-    assert "没有检测到合约" not in build_kpi6_copy(
-        passed=False, reason="ok", wallets=["0xaa"], tx_count=1
-    )
+    verdict = evaluate_kpi6(contract=ca, txs=txs, window_start=start)
+    assert verdict["tx_count"] == 3
+    assert verdict["passed"] is False
+    assert "上线日至核查日" not in verdict["copy"]
 
 
 def test_recheck_appends_and_only_upgrades_pass():
     first = "用户和交互验证，没有检测到合约，用户和交互验证不通过"
     when = datetime(2026, 9, 26, 9, 30, tzinfo=timezone(timedelta(hours=8)))
-    merged = merge_kpi_copy(first, "用户和交互验证，上线日至核查日独立钱包3个、成功核心交易5笔（门槛≥3钱包且交互≥5笔），独立钱包：0xa、0xb、0xc（此处最多只展示5个独立钱包），用户和交互验证通过", when)
+    merged = merge_kpi_copy(first, "用户和交互验证，独立钱包3个、成功核心交易5笔（门槛≥3钱包且交互≥5笔），独立钱包：0xa、0xb、0xc（此处最多只展示5个独立钱包），用户和交互验证通过", when)
     assert merged.startswith(first)
     assert "复审 2026-09-26 09:30：" in merged
     assert merge_kpi_result("不通过", passed=True) == "通过"

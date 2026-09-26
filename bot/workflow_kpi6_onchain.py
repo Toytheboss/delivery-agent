@@ -11,14 +11,12 @@ import requests
 from bot.lark_bitable import update_record
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_write import (
-    SH,
     extract_contract,
     field_result,
     find_wallet_row,
     merge_kpi_copy,
     merge_kpi_result,
     now_shanghai,
-    parse_live_start,
     wallet_contract,
 )
 
@@ -144,7 +142,7 @@ def build_kpi6_copy(
     suffix = "用户和交互验证通过" if passed else "用户和交互验证不通过"
     extra = "（此处最多只展示5个独立钱包）" if shown else ""
     return (
-        f"用户和交互验证，上线日至核查日独立钱包{n}个、成功核心交易{tx_count}笔"
+        f"用户和交互验证，独立钱包{n}个、成功核心交易{tx_count}笔"
         f"（门槛≥3钱包且交互≥5笔），独立钱包：{listed}{extra}，{suffix}"
     )
 
@@ -153,7 +151,7 @@ def evaluate_kpi6(
     *,
     contract: str,
     txs: list[dict[str, Any]] | None,
-    window_start: datetime | None,
+    window_start: datetime | None = None,
 ) -> dict[str, Any]:
     if not contract:
         return {
@@ -167,7 +165,7 @@ def evaluate_kpi6(
             ),
         }
     core, _skipped = classify_core_txs(
-        txs or [], contract=contract, window_start=window_start
+        txs or [], contract=contract, window_start=None
     )
     wallets = unique_wallets(core, contract)
     tx_count = len(core)
@@ -209,11 +207,10 @@ def audit_kpi6_for_fields(
             _field_text(fields, "主网合约")
             or _field_text(fields, "Contract Addresss/主网合约")
         )
-    window_start = parse_live_start(fields)
     txs: list[dict[str, Any]] = []
     if contract:
         txs = fetch_txlist(contract)
-    verdict = evaluate_kpi6(contract=contract, txs=txs, window_start=window_start)
+    verdict = evaluate_kpi6(contract=contract, txs=txs)
     existing_copy = _field_text(fields, copy_field)
     existing_result = field_result(fields, result_field)
     copy = merge_kpi_copy(existing_copy, str(verdict["copy"]))
