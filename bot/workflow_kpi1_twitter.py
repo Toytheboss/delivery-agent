@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+import base64
 import logging
 import os
 import re
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
@@ -36,6 +37,9 @@ _DEFAULT_RESULT_FIELD = "推特验证结果"
 _PASS = "通过"
 _FAIL = "不通过"
 _THRESHOLD = 5
+_X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
+_MAX_TWEET_PAGES = 5
+_BEARER_CACHE = ""
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -193,56 +197,192 @@ def _syndication(handle: str) -> list[tuple[datetime, str, dict[str, Any]]]:
     return out
 
 
-def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, Any]]] | None:
-    bearer = (
+def x_api_configured() -> bool:
+    if _env_bearer():
+        return True
+    return bool(_env_api_key() and _env_api_secret())
+
+
+def _env_bearer() -> str:
+    return (
         os.getenv("X_BEARER_TOKEN")
         or os.getenv("TWITTER_BEARER_TOKEN")
         or os.getenv("TWITTER_BEARER")
         or ""
     ).strip()
+
+
+def _env_api_key() -> str:
+    return (os.getenv("X_API_KEY") or os.getenv("TWITTER_API_KEY") or "").strip()
+
+
+def _env_api_secret() -> str:
+    return (
+        os.getenv("X_API_SECRET")
+        or os.getenv("TWITTER_API_SECRET")
+        or os.getenv("TWITTER_API_KEY_SECRET")
+        or ""
+    ).strip()
+
+
+def _utc_stamp(when: datetime) -> str:
+    return when.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def _fetch_app_bearer(key: str, secret: str) -> str:
+    basic = base64.b64encode(f"{key}:{secret}".encode("utf-8")).decode("ascii")
+    headers = {
+        "Authorization": f"Basic {basic}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    for host in _X_API_HOSTS:
+        try:
+            resp = requests.post(
+                f"{host}/oauth2/token",
+                headers=headers,
+                data={"grant_type": "client_credentials"},
+                timeout=20,
+            )
+        except (OSError, requests.RequestException):
+            logger.exception("kpi1: X OAuth2 token request failed host=%s", host)
+            continue
+        if resp.status_code != 200:
+            logger.warning(
+                "kpi1: X OAuth2 token HTTP %s host=%s", resp.status_code, host
+            )
+            continue
+        try:
+            token = str((resp.json() or {}).get("access_token") or "").strip()
+        except ValueError:
+            token = ""
+        if token:
+            return token
+    return ""
+
+
+def _x_bearer() -> str:
+    global _BEARER_CACHE
+    direct = _env_bearer()
+    if direct:
+        return direct
+    if _BEARER_CACHE:
+        return _BEARER_CACHE
+    key, secret = _env_api_key(), _env_api_secret()
+    if not key or not secret:
+        return ""
+    token = _fetch_app_bearer(key, secret)
+    if token:
+        _BEARER_CACHE = token
+    return token
+
+
+def _x_get(
+    path: str,
+    bearer: str,
+    params: dict[str, Any] | None = None,
+) -> requests.Response | None:
+    headers = {"Authorization": f"Bearer {bearer}", "User-Agent": _UA}
+    last: requests.Response | None = None
+    for host in _X_API_HOSTS:
+        try:
+            resp = requests.get(
+                f"{host}{path}", headers=headers, params=params, timeout=20
+            )
+        except (OSError, requests.RequestException):
+            logger.exception("kpi1: X GET failed %s%s", host, path)
+            continue
+        remaining = resp.headers.get("x-rate-limit-remaining")
+        if remaining is not None:
+            logger.info(
+                "kpi1: X %s HTTP %s remaining=%s", path, resp.status_code, remaining
+            )
+        if resp.status_code != 404:
+            return resp
+        last = resp
+    return last
+
+
+def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, Any]]] | None:
+    """Official X timeline. None = call failed. [] = user/tweets empty."""
+    bearer = _x_bearer()
     if not bearer:
         return None
-    headers = {"Authorization": f"Bearer {bearer}"}
-    try:
-        user_resp = requests.get(
-            f"https://api.twitter.com/2/users/by/username/{handle}",
-            headers=headers,
-            timeout=20,
-        )
-        user_resp.raise_for_status()
-        user_id = ((user_resp.json().get("data") or {}).get("id") or "").strip()
-        if not user_id:
-            return []
-        tweet_resp = requests.get(
-            f"https://api.twitter.com/2/users/{user_id}/tweets",
-            headers=headers,
-            params={
-                "max_results": 100,
-                "exclude": "retweets,replies",
-                "tweet.fields": "created_at,text",
-                "start_time": since.astimezone(SH).strftime("%Y-%m-%dT%H:%M:%SZ"),
-            },
-            timeout=20,
-        )
-        tweet_resp.raise_for_status()
-        rows = tweet_resp.json().get("data") or []
-    except (OSError, requests.RequestException, ValueError):
-        logger.exception("kpi1: X API fetch failed handle=%s", handle)
+    user_resp = _x_get(f"/2/users/by/username/{handle}", bearer)
+    if user_resp is None:
         return None
+    if user_resp.status_code == 404:
+        return []
+    if user_resp.status_code >= 400:
+        logger.warning(
+            "kpi1: X user lookup HTTP %s handle=%s", user_resp.status_code, handle
+        )
+        return None
+    try:
+        user_id = str(((user_resp.json().get("data") or {}).get("id") or "")).strip()
+    except ValueError:
+        return None
+    if not user_id:
+        return []
+
+    start = _utc_stamp(since)
+    params: dict[str, Any] = {
+        "max_results": 100,
+        "exclude": "retweets,replies",
+        "tweet.fields": "created_at,text",
+        "start_time": start,
+    }
     out: list[tuple[datetime, str, dict[str, Any]]] = []
-    for item in rows:
-        if not isinstance(item, dict):
+    page = 0
+    drop_start = False
+    while page < _MAX_TWEET_PAGES:
+        page += 1
+        if drop_start:
+            params.pop("start_time", None)
+        tweet_resp = _x_get(f"/2/users/{user_id}/tweets", bearer, params)
+        if tweet_resp is None:
+            return None if not out else out
+        if tweet_resp.status_code == 400 and not drop_start and "start_time" in params:
+            logger.info("kpi1: X start_time rejected handle=%s; retry without it", handle)
+            drop_start = True
+            page -= 1
             continue
-        dt = _parse_created(item.get("created_at"))
-        if dt is None:
-            continue
-        out.append((dt, str(item.get("text") or ""), item))
+        if tweet_resp.status_code >= 400:
+            logger.warning(
+                "kpi1: X tweets HTTP %s handle=%s", tweet_resp.status_code, handle
+            )
+            return None if not out else out
+        try:
+            payload = tweet_resp.json()
+        except ValueError:
+            return None if not out else out
+        rows = payload.get("data") or []
+        oldest_on_page: datetime | None = None
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            dt = _parse_created(item.get("created_at"))
+            if dt is None:
+                continue
+            if oldest_on_page is None or dt < oldest_on_page:
+                oldest_on_page = dt
+            if dt >= since:
+                out.append((dt, str(item.get("text") or ""), item))
+        meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
+        next_token = str((meta or {}).get("next_token") or "").strip()
+        if not next_token:
+            break
+        if oldest_on_page is not None and oldest_on_page < since:
+            break
+        params["pagination_token"] = next_token
     return out
 
 
 def count_originals(handle: str, *, since: datetime) -> tuple[int | None, str]:
-    api = _x_api(handle, since)
-    if api is not None:
+    """Count originals in ``since``..now. Prefer X API once credentials exist."""
+    if x_api_configured():
+        api = _x_api(handle, since)
+        if api is None:
+            return None, "unread"
         n = sum(1 for dt, text, extra in api if dt >= since and not is_retweet(text, extra))
         return n, "x_api"
     syn = _syndication(handle)

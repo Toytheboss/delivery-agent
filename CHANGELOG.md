@@ -11,6 +11,17 @@
 
 ---
 
+## 2026-09-26 · KPI 1 用官方 X API 数近 30 天原发
+
+### 新增
+- `twitter diag` / `project diag` 在配了 `X_BEARER_TOKEN`（或 API Key + Secret）后走官方时间线，阈值仍是 30 天 ≥5 条原发
+- 有 Key 时不再回退 Nitter / syndication；接口失败记未读，不拿第三方数凑通过
+
+### 修复
+- `start_time` 改成真正的 UTC。原先把上海时间标成 `Z`，窗口会偏 8 小时
+
+---
+
 ## 2026-09-26 · 品宣/前端周报表每天刷新，周日夜里发群
 
 ### 优化
