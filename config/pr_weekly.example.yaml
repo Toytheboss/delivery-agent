@@ -1,12 +1,12 @@
-# Add under workflow: in config/config.yaml (local only; not committed)
-# Sunday 00:00 Asia/Shanghai → fill 项目方PR链接推送 → ping 运营&品宣＆BD对接群
+# Daily 00:00 Asia/Shanghai → refresh 项目方PR链接推送
+# Monday 00:00 (周日夜里凌晨) → ping 运营&品宣＆BD对接群
 pr_weekly:
   enabled: true
   chat_id: "oc_4613e10ffde1fde8dc14c1899b4520dd"  # 运营&品宣＆BD对接群
   table_id: "tbllA25Mz66e8wpv"
   view_id: "vew1kZdFkc"
   table_url: "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e?table=tbllA25Mz66e8wpv&view=vew1kZdFkc"
-  weekday: 6   # Monday=0, Sunday=6
+  weekday: 0   # ping day: Monday=0. Table still refreshes every day at hour.
   hour: 0
   state_file: "data/pr_weekly_state.json"
   events_file: "/opt/botchain-shared/pr_capture_events.jsonl"

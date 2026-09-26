@@ -1,5 +1,5 @@
-# Add under workflow: in config/config.yaml (local only; not committed)
-# Sunday 00:00 Asia/Shanghai → fill 官网项目收集-每周更新 → ping Blake
+# Daily 00:00 Asia/Shanghai → refresh 项目推送至前端-每周更新
+# Monday 00:00 (周日夜里凌晨) → ping Blake
 blake_weekly:
   enabled: true
   chat_id: "oc_xxxxxxxx"  # 项目方信息整理&推送（钱包/ logo/官网）
@@ -7,6 +7,6 @@ blake_weekly:
   at_name: "Blake-APP-Android (布莱克)"
   table_id: "tblsPBJW1HUmkM6X"
   view_id: "vewVJL9hzD"
-  weekday: 6   # Monday=0, Sunday=6
+  weekday: 0   # ping day: Monday=0. Table still refreshes every day at hour.
   hour: 0
   state_file: "data/blake_weekly_state.json"

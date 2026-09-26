@@ -2,13 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from bot.workflow_pr_weekly import (
     TZ,
     build_pr_weekly_ping,
     collect_week_prs,
+    in_daily_window,
+    in_ping_window,
     period_label,
     period_short,
+    report_window,
     week_window,
 )
 
@@ -27,6 +31,30 @@ def test_week_window_at_sunday_midnight():
     start, end = week_window(now)
     assert start == datetime(2026, 9, 20, tzinfo=TZ)
     assert end == datetime(2026, 9, 27, tzinfo=TZ)
+
+
+def test_monday_ping_collects_sunday_daytime_same_period():
+    now = datetime(2026, 9, 28, 0, 0, tzinfo=TZ)
+    start, collect_end, label_end = report_window(now, ping=True)
+    assert start == datetime(2026, 9, 20, tzinfo=TZ)
+    assert collect_end == now
+    assert label_end == datetime(2026, 9, 27, tzinfo=TZ)
+    assert period_label(start, label_end) == "2026-09-20 ~ 2026-09-27"
+
+
+def test_wednesday_report_window_is_in_progress_week():
+    now = datetime(2026, 9, 23, 0, 0, tzinfo=TZ)
+    start, collect_end, label_end = report_window(now, ping=False)
+    assert start == datetime(2026, 9, 20, tzinfo=TZ)
+    assert collect_end == datetime(2026, 9, 27, tzinfo=TZ)
+    assert label_end == collect_end
+
+
+def test_ping_window_is_monday_midnight_by_default():
+    cfg = SimpleNamespace(pr_weekly_weekday=0, pr_weekly_hour=0)
+    assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 10, tzinfo=TZ)) is True
+    assert in_ping_window(cfg, datetime(2026, 9, 27, 0, 10, tzinfo=TZ)) is False
+    assert in_daily_window(cfg, datetime(2026, 9, 24, 0, 10, tzinfo=TZ)) is True
 
 
 def test_ping_mentions_lighter_jasper_and_copy():
@@ -147,3 +175,54 @@ def test_disabled_skips():
     result = run_pr_weekly_once(cfg)
     assert result["skipped"] is True
     assert result["reason"] == "disabled"
+
+
+def test_run_once_daily_updates_without_ping(tmp_path):
+    from bot.workflow_pr_weekly import run_pr_weekly_once
+
+    cfg = SimpleNamespace(
+        pr_weekly_enabled=True,
+        pr_weekly_weekday=0,
+        pr_weekly_hour=0,
+        pr_weekly_state_file=str(tmp_path / "state.json"),
+        pr_weekly_chat_id="oc_chat",
+        pr_weekly_table_url="https://example.com/pr",
+        pr_weekly_assignees=[],
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+        workflow_live_link_field="已上线链接🔗",
+        pr_capture_link_field="KPI 2 - PR 新闻链接验证",
+        pr_capture_events_file=str(tmp_path / "events.jsonl"),
+    )
+    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    progress = [
+        {
+            "record_id": "rec1",
+            "last_modified_time": in_ms,
+            "fields": {
+                "项目名称 Project Name": "PromptMint",
+                "已上线链接🔗": "https://prompt.example/",
+                "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
+            },
+        }
+    ]
+    with (
+        patch.dict("os.environ", {"LARK_APP_ID": "id", "LARK_APP_SECRET": "secret"}),
+        patch("bot.workflow_pr_weekly.get_tenant_access_token", return_value="tok"),
+        patch("bot.workflow_pr_weekly.list_records", return_value=progress),
+        patch("bot.workflow_pr_weekly.upsert_week_rows") as upsert,
+        patch("bot.workflow_pr_weekly.send_text_to_chat") as send,
+    ):
+        wed = datetime(2026, 9, 23, 0, 10, tzinfo=TZ)
+        result = run_pr_weekly_once(cfg, now=wed)
+        assert result["updated"] is True
+        assert result["sent"] is False
+        assert result["reason"] == "daily_update"
+        upsert.assert_called_once()
+        send.assert_not_called()
+
+        mon = datetime(2026, 9, 28, 0, 10, tzinfo=TZ)
+        ping = run_pr_weekly_once(cfg, now=mon)
+        assert ping["sent"] is True
+        send.assert_called_once()

@@ -1,4 +1,4 @@
-"""Sunday 00:00: collect this week's mainnet-live projects for Blake."""
+"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 00:00."""
 
 from __future__ import annotations
 
@@ -48,6 +48,32 @@ def week_monday(now: datetime | None = None) -> datetime:
     now = now.astimezone(TZ)
     monday = now.date() - timedelta(days=now.weekday())
     return datetime(monday.year, monday.month, monday.day, tzinfo=TZ)
+
+
+def _ping_weekday(config: Any) -> int:
+    return int(getattr(config, "workflow_blake_weekly_weekday", 0) or 0)
+
+
+def _ping_hour(config: Any) -> int:
+    return int(getattr(config, "workflow_blake_weekly_hour", 0) or 0)
+
+
+def in_ping_window(config: Any, now: datetime | None = None) -> bool:
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    return now.weekday() == _ping_weekday(config) and now.hour == _ping_hour(config)
+
+
+def in_daily_window(config: Any, now: datetime | None = None) -> bool:
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    return now.hour == _ping_hour(config)
+
+
+def report_monday(now: datetime, *, ping: bool = False) -> datetime:
+    """ISO Monday of the week being written. Ping slot uses yesterday so Sunday is included."""
+    now = now.astimezone(TZ)
+    if ping:
+        now = now - timedelta(days=1)
+    return week_monday(now)
 
 
 def week_sunday(monday: datetime) -> datetime:
@@ -383,9 +409,10 @@ def upsert_week_rows(
 def run_blake_weekly_once(
     config: Any, *, now: datetime | None = None, force: bool = False
 ) -> dict[str, Any]:
-    """Collect this week's live projects, upsert Blake table, ping the group."""
+    """Refresh this week's live projects daily; ping the group on Monday 00:00."""
     result: dict[str, Any] = {
         "sent": False,
+        "updated": False,
         "skipped": False,
         "reason": "",
         "count": 0,
@@ -396,15 +423,18 @@ def run_blake_weekly_once(
         result["reason"] = "disabled"
         return result
 
-    now = now or datetime.now(TZ)
-    monday = week_monday(now)
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    ping_slot = in_ping_window(config, now)
+    should_ping = force or ping_slot
+    monday = report_monday(now, ping=ping_slot)
     period = period_label(monday)
     result["period"] = period
     state_path = _state_path(config)
     state = _load_state(state_path)
-    if not force and state.get("last_period") == period:
+    today = now.date().isoformat()
+    if not force and state.get("last_upsert_date") == today:
         result["skipped"] = True
-        result["reason"] = "already_sent"
+        result["reason"] = "already_updated"
         return result
 
     app_id = os.getenv("LARK_APP_ID", "").strip()
@@ -445,20 +475,35 @@ def run_blake_weekly_once(
     )
     result["count"] = len(projects)
     upsert_week_rows(token, config, projects, monday=monday)
+    result["updated"] = True
+    state["last_upsert_date"] = today
+    state["last_period"] = period
+    state["last_count"] = len(projects)
 
     chat_id = str(getattr(config, "workflow_blake_weekly_chat_id", "") or "").strip()
+    if not should_ping:
+        _save_state(state_path, state)
+        result["reason"] = "daily_update"
+        logger.info(
+            "blake weekly table updated period=%s count=%d", period, len(projects)
+        )
+        return result
     if not projects:
-        state["last_period"] = period
-        state["last_count"] = 0
         _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "no_projects"
         logger.info("blake weekly: no live projects for %s", period)
         return result
     if not chat_id:
+        _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "missing_chat_id"
         logger.warning("blake weekly: table filled but chat_id missing")
+        return result
+    if not force and state.get("last_ping_period") == period:
+        _save_state(state_path, state)
+        result["skipped"] = True
+        result["reason"] = "already_sent"
         return result
 
     text = build_blake_ping(
@@ -471,8 +516,7 @@ def run_blake_weekly_once(
         table_url_value=table_url(config),
     )
     send_text_to_chat(token, chat_id, text)
-    state["last_period"] = period
-    state["last_count"] = len(projects)
+    state["last_ping_period"] = period
     state["last_sent_at"] = datetime.now(TZ).isoformat(timespec="seconds")
     _save_state(state_path, state)
     result["sent"] = True
@@ -482,41 +526,32 @@ def run_blake_weekly_once(
     return result
 
 
-def _seconds_until_window(weekday: int, hour: int) -> float:
+def _seconds_until_daily(hour: int) -> float:
     now = datetime.now(TZ)
     target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    days = (weekday - now.weekday()) % 7
-    target = target + timedelta(days=days)
     if now >= target:
-        target += timedelta(days=7)
+        target += timedelta(days=1)
     return max((target - now).total_seconds(), 1.0)
 
 
-def _in_send_window(config: Any, now: datetime | None = None) -> bool:
-    now = now or datetime.now(TZ)
-    weekday = int(getattr(config, "workflow_blake_weekly_weekday", 6) or 6)
-    hour = int(getattr(config, "workflow_blake_weekly_hour", 0) or 0)
-    return now.weekday() == weekday and now.hour == hour
-
-
 async def blake_weekly_loop(config: Any) -> None:
-    weekday = int(getattr(config, "workflow_blake_weekly_weekday", 6) or 6)
-    hour = int(getattr(config, "workflow_blake_weekly_hour", 0) or 0)
+    weekday = _ping_weekday(config)
+    hour = _ping_hour(config)
     logger.info(
-        "blake weekly scheduled weekday=%d hour=%02d:00 Asia/Shanghai",
-        weekday,
+        "blake weekly daily hour=%02d:00 ping weekday=%d Asia/Shanghai",
         hour,
+        weekday,
     )
     loop = asyncio.get_running_loop()
     while True:
         try:
-            if _in_send_window(config):
+            if in_daily_window(config):
                 await loop.run_in_executor(None, run_blake_weekly_once, config)
                 await asyncio.sleep(90)
                 continue
             sleep_for = min(
                 300.0,
-                await loop.run_in_executor(None, _seconds_until_window, weekday, hour),
+                await loop.run_in_executor(None, _seconds_until_daily, hour),
             )
             await asyncio.sleep(sleep_for)
         except Exception:

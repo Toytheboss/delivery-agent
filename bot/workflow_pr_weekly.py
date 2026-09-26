@@ -1,4 +1,4 @@
-"""Sunday 00:00: copy this week's pr-support links into the PR push table."""
+"""Daily 00:00: refresh this week's PR rows; ping 品宣 Monday 00:00."""
 
 from __future__ import annotations
 
@@ -56,6 +56,41 @@ def week_window(now: datetime | None = None) -> tuple[datetime, datetime]:
         start = this_sunday
         end = this_sunday + timedelta(days=7)
     return start, end
+
+
+def _ping_weekday(config: Any) -> int:
+    return int(getattr(config, "pr_weekly_weekday", 0) or 0)
+
+
+def _ping_hour(config: Any) -> int:
+    return int(getattr(config, "pr_weekly_hour", 0) or 0)
+
+
+def in_ping_window(config: Any, now: datetime | None = None) -> bool:
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    return now.weekday() == _ping_weekday(config) and now.hour == _ping_hour(config)
+
+
+def in_daily_window(config: Any, now: datetime | None = None) -> bool:
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    return now.hour == _ping_hour(config)
+
+
+def report_window(
+    now: datetime, *, ping: bool = False
+) -> tuple[datetime, datetime, datetime]:
+    """Return (collect_start, collect_end, label_end).
+
+    Daily runs use the in-progress Sun–Sun week. The Monday 00:00 ping uses
+    yesterday's closed week and extends collect_end to *now* so Sunday
+    daytime links are included, while the 统计周期 label stays Sun–Sun.
+    """
+    now = now.astimezone(TZ)
+    if ping:
+        start, label_end = week_window(now - timedelta(days=1))
+        return start, now, label_end
+    start, end = week_window(now)
+    return start, end, end
 
 
 def period_label(start: datetime, end: datetime) -> str:
@@ -354,6 +389,7 @@ def run_pr_weekly_once(
 ) -> dict[str, Any]:
     result: dict[str, Any] = {
         "sent": False,
+        "updated": False,
         "skipped": False,
         "reason": "",
         "count": 0,
@@ -364,15 +400,18 @@ def run_pr_weekly_once(
         result["reason"] = "disabled"
         return result
 
-    now = now or datetime.now(TZ)
-    start, end = week_window(now)
-    period = period_label(start, end)
+    now = (now or datetime.now(TZ)).astimezone(TZ)
+    ping_slot = in_ping_window(config, now)
+    should_ping = force or ping_slot
+    start, collect_end, label_end = report_window(now, ping=ping_slot)
+    period = period_label(start, label_end)
     result["period"] = period
     state_path = _state_path(config)
     state = _load_state(state_path)
-    if not force and state.get("last_period") == period:
+    today = now.date().isoformat()
+    if not force and state.get("last_upsert_date") == today:
         result["skipped"] = True
-        result["reason"] = "already_sent"
+        result["reason"] = "already_updated"
         return result
 
     app_id = os.getenv("LARK_APP_ID", "").strip()
@@ -395,7 +434,7 @@ def run_pr_weekly_once(
         progress,
         events,
         start=start,
-        end=end,
+        end=collect_end,
         name_field=str(
             getattr(config, "workflow_project_name_field", "")
             or "项目名称 Project Name"
@@ -409,34 +448,46 @@ def run_pr_weekly_once(
     )
     result["count"] = len(projects)
     upsert_week_rows(token, config, projects, period=period)
+    result["updated"] = True
+    state["last_upsert_date"] = today
+    state["last_period"] = period
+    state["last_count"] = len(projects)
 
     chat_id = str(
         getattr(config, "pr_weekly_chat_id", "") or _DEFAULT_CHAT_ID
     ).strip()
+    if not should_ping:
+        _save_state(state_path, state)
+        result["reason"] = "daily_update"
+        logger.info("pr weekly table updated period=%s count=%d", period, len(projects))
+        return result
     if not projects:
-        state["last_period"] = period
-        state["last_count"] = 0
         _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "no_projects"
         logger.info("pr weekly: no PR links for %s", period)
         return result
     if not chat_id:
+        _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "missing_chat_id"
         logger.warning("pr weekly: table filled but chat_id missing")
         return result
+    if not force and state.get("last_ping_period") == period:
+        _save_state(state_path, state)
+        result["skipped"] = True
+        result["reason"] = "already_sent"
+        return result
 
     text = build_pr_weekly_ping(
         start=start,
-        end=end,
+        end=label_end,
         count=len(projects),
         assignees=_assignees(config),
         table_url_value=table_url(config),
     )
     send_text_to_chat(token, chat_id, text)
-    state["last_period"] = period
-    state["last_count"] = len(projects)
+    state["last_ping_period"] = period
     state["last_sent_at"] = datetime.now(TZ).isoformat(timespec="seconds")
     _save_state(state_path, state)
     result["sent"] = True
@@ -446,41 +497,32 @@ def run_pr_weekly_once(
     return result
 
 
-def _seconds_until_window(weekday: int, hour: int) -> float:
+def _seconds_until_daily(hour: int) -> float:
     now = datetime.now(TZ)
     target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    days = (weekday - now.weekday()) % 7
-    target = target + timedelta(days=days)
     if now >= target:
-        target += timedelta(days=7)
+        target += timedelta(days=1)
     return max((target - now).total_seconds(), 1.0)
 
 
-def _in_send_window(config: Any, now: datetime | None = None) -> bool:
-    now = now or datetime.now(TZ)
-    weekday = int(getattr(config, "pr_weekly_weekday", 6) or 6)
-    hour = int(getattr(config, "pr_weekly_hour", 0) or 0)
-    return now.weekday() == weekday and now.hour == hour
-
-
 async def pr_weekly_loop(config: Any) -> None:
-    weekday = int(getattr(config, "pr_weekly_weekday", 6) or 6)
-    hour = int(getattr(config, "pr_weekly_hour", 0) or 0)
+    weekday = _ping_weekday(config)
+    hour = _ping_hour(config)
     logger.info(
-        "pr weekly scheduled weekday=%d hour=%02d:00 Asia/Shanghai",
-        weekday,
+        "pr weekly daily hour=%02d:00 ping weekday=%d Asia/Shanghai",
         hour,
+        weekday,
     )
     loop = asyncio.get_running_loop()
     while True:
         try:
-            if _in_send_window(config):
+            if in_daily_window(config):
                 await loop.run_in_executor(None, run_pr_weekly_once, config)
                 await asyncio.sleep(90)
                 continue
             sleep_for = min(
                 300.0,
-                await loop.run_in_executor(None, _seconds_until_window, weekday, hour),
+                await loop.run_in_executor(None, _seconds_until_daily, hour),
             )
             await asyncio.sleep(sleep_for)
         except Exception:
