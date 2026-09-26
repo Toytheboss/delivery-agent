@@ -208,6 +208,9 @@ workflow:
   live_onboard_bd_field: "BD"
   live_onboard_peer_wait_seconds: 90
   live_onboard_state_file: "/opt/botchain-shared/live_onboard_state.json"
+  # Google form received → Project verification push (Roy号 only)
+  form_received_notify_enabled: true
+  form_received_notify_state_file: "/opt/botchain-shared/form_received_notify_state.json"
   notify_chat_ids: []
   notify_group_titles: []
   lark_digest_enabled: true

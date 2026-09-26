@@ -191,6 +191,8 @@ class AppConfig:
     workflow_live_onboard_bd_field: str
     workflow_live_onboard_peer_wait_seconds: int
     workflow_live_onboard_state_file: str
+    workflow_form_received_notify_enabled: bool
+    workflow_form_received_notify_state_file: str
     workflow_notify_chat_ids: list[int]
     workflow_notify_group_titles: list[str]
     workflow_lark_digest_enabled: bool
@@ -883,6 +885,15 @@ def load_config() -> AppConfig:
             workflow.get(
                 "live_onboard_state_file",
                 "/opt/botchain-shared/live_onboard_state.json",
+            )
+        ),
+        workflow_form_received_notify_enabled=bool(
+            workflow.get("form_received_notify_enabled", True)
+        ),
+        workflow_form_received_notify_state_file=str(
+            workflow.get(
+                "form_received_notify_state_file",
+                "/opt/botchain-shared/form_received_notify_state.json",
             )
         ),
         workflow_wallet_required_fields=[

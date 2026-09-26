@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-26 · 谷歌表单回收后推 Project verification push
+
+### 新增
+- 主网上线项目的 Twitter、合约、logo、简介进钱包表后，Roy号在 Project verification push @ BD
+- 文案按定稿：Google Onboarding form received；已齐的项目先打基线，不刷历史
+
+---
+
 ## 2026-09-26 · 主网上线自动通过 KPI 4 / 5
 
 ### 新增

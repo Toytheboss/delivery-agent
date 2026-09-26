@@ -25,6 +25,21 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 
+async def _post_watch_hooks(config: AppConfig) -> None:
+    try:
+        from bot.workflow_live_onboard import drain_pending_roy_notifies
+
+        await drain_pending_roy_notifies(config)
+    except Exception:
+        logger.exception("live-status-watch: onboard drain failed")
+    try:
+        from bot.workflow_form_received_notify import run_form_received_notify_once
+
+        await run_form_received_notify_once(config)
+    except Exception:
+        logger.exception("live-status-watch: form-received notify failed")
+
+
 def _state_path(config: AppConfig) -> Path:
     raw = getattr(config, "workflow_live_watch_state_file", "") or (
         "data/live_status_watch_state.json"
@@ -105,23 +120,13 @@ async def run_live_status_watch_once(
             "live-status-watch baseline: marked %d currently-live row(s) (no send)",
             len(live_ids),
         )
-        try:
-            from bot.workflow_live_onboard import drain_pending_roy_notifies
-
-            await drain_pending_roy_notifies(config)
-        except Exception:
-            logger.exception("live-status-watch: onboard drain failed")
+        await _post_watch_hooks(config)
         return 0
 
     newcomers = [(rid, name) for rid, name in live_now if rid not in seen]
     if not newcomers:
         # Drop rows that left live (optional); keep seen growing is fine.
-        try:
-            from bot.workflow_live_onboard import drain_pending_roy_notifies
-
-            await drain_pending_roy_notifies(config)
-        except Exception:
-            logger.exception("live-status-watch: onboard drain failed")
+        await _post_watch_hooks(config)
         return 0
 
     triggered = 0
@@ -156,12 +161,7 @@ async def run_live_status_watch_once(
     # Also remember any live we already knew + newcomers
     seen |= live_ids
     _save_seen(path, seen)
-    try:
-        from bot.workflow_live_onboard import drain_pending_roy_notifies
-
-        await drain_pending_roy_notifies(config)
-    except Exception:
-        logger.exception("live-status-watch: onboard drain failed")
+    await _post_watch_hooks(config)
     return triggered
 
 
