@@ -8,6 +8,7 @@ resend a reminder (up to 10 days).
 from __future__ import annotations
 
 import asyncio
+import fcntl
 import json
 import logging
 import os
@@ -192,6 +193,99 @@ def build_chase_message(
         )
 
 
+def _shared_chase_inbox() -> Path | None:
+    parent = Path("/opt/botchain-shared")
+    if not parent.is_dir():
+        return None
+    return parent / "form_chase_inbox.json"
+
+
+def enqueue_shared_chase(
+    inbox: Path,
+    *,
+    record_id: str,
+    project_name: str,
+    chat_id: int,
+    source: str = "",
+    now: float | None = None,
+) -> None:
+    """Let the chasing bot pick up a form send that this account does not track."""
+    rid = str(record_id or "").strip()
+    if not rid:
+        return
+    now = time.time() if now is None else now
+    inbox.parent.mkdir(parents=True, exist_ok=True)
+    with inbox.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        raw = handle.read()
+        try:
+            data = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            data = {}
+        if not isinstance(data, dict):
+            data = {}
+        projects = data.get("projects")
+        if not isinstance(projects, dict):
+            projects = {}
+            data["projects"] = projects
+        existing = projects.get(rid)
+        if not (isinstance(existing, dict) and existing.get("first_sent_at")):
+            projects[rid] = {
+                "project_name": project_name or "",
+                "chat_id": int(chat_id),
+                "first_sent_at": now,
+                "last_sent_at": now,
+                "reminders_sent": 0,
+                "done": False,
+                "source": source or "",
+            }
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
+        handle.flush()
+
+
+def absorb_shared_chase_inbox(config: AppConfig, *, inbox: Path | None = None) -> int:
+    """Copy form sends the other bot queued into this bot's chase file."""
+    if not getattr(config, "workflow_form_chase_enabled", False):
+        return 0
+    inbox = _shared_chase_inbox() if inbox is None else inbox
+    if inbox is None or not inbox.exists():
+        return 0
+    with inbox.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.seek(0)
+        raw = handle.read()
+        try:
+            incoming = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError:
+            incoming = {}
+        projects_in = incoming.get("projects") if isinstance(incoming, dict) else None
+        if not isinstance(projects_in, dict) or not projects_in:
+            return 0
+        path = _state_path(config)
+        state = _load_state(path)
+        local = state.setdefault("projects", {})
+        merged = 0
+        for rid, meta in projects_in.items():
+            if not isinstance(meta, dict):
+                continue
+            existing = local.get(rid)
+            if isinstance(existing, dict) and existing.get("first_sent_at"):
+                continue
+            local[rid] = meta
+            merged += 1
+        if merged:
+            _save_state(path, state)
+            logger.info("form-chase absorbed %d shared send(s)", merged)
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps({"projects": {}}, ensure_ascii=False, indent=2) + "\n")
+        handle.flush()
+        return merged
+
+
 def note_form_sent(
     config: AppConfig,
     *,
@@ -202,6 +296,15 @@ def note_form_sent(
 ) -> None:
     """Register / refresh chase tracking when a Google Form is first sent."""
     if not getattr(config, "workflow_form_chase_enabled", False):
+        inbox = _shared_chase_inbox()
+        if inbox is not None:
+            enqueue_shared_chase(
+                inbox,
+                record_id=record_id,
+                project_name=project_name,
+                chat_id=chat_id,
+                source=source,
+            )
         return
     rid = str(record_id or "").strip()
     if not rid or chat_id is None:
@@ -342,6 +445,7 @@ async def run_form_chase_once(
     if max_reminders <= 0:
         return 0
 
+    absorb_shared_chase_inbox(config)
     path = _state_path(config)
     state = _load_state(path)
     projects: dict[str, Any] = state.get("projects") or {}

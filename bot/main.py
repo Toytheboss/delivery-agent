@@ -365,6 +365,23 @@ async def main() -> None:
             config.workflow_mark_live_also_send_form,
             config.workflow_logo_fill_enabled,
         )
+        if config.workflow_google_form_url:
+
+            async def _form_speaker_drain() -> None:
+                await asyncio.sleep(5)
+                while True:
+                    try:
+                        from bot.workflow_live_onboard import drain_assigned_form_sends
+
+                        n = await drain_assigned_form_sends(client, config)
+                        if n:
+                            logger.info("Form speaker drain sent %d", n)
+                    except Exception:
+                        logger.exception("Form speaker drain failed")
+                    await asyncio.sleep(3)
+
+            asyncio.create_task(_form_speaker_drain())
+            logger.info("Form speaker drain enabled (every 3s)")
         if config.workflow_wallet_notify_enabled:
 
             async def _delayed_wallet_notify() -> None:

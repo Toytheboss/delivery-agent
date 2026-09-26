@@ -805,11 +805,50 @@ async def run_form_dispatch_once(
                 record_id,
                 chat_id,
             )
+            try:
+                from bot.workflow_form_claim import claim_path_for, finish_form_send
+                from bot.workflow_live_onboard import account_key
+
+                finish_form_send(claim_path_for(config), record_id, account_key(config))
+            except Exception:  # noqa: BLE001
+                logger.exception("form claim finish failed for %r", project_name)
+            continue
+
+        from bot.workflow_form_claim import (
+            begin_form_send,
+            claim_path_for,
+            finish_form_send,
+            release_form_send,
+        )
+        from bot.workflow_live_onboard import account_key
+
+        claim_owner = account_key(config)
+        claim_path = claim_path_for(config)
+        decision = begin_form_send(
+            claim_path,
+            record_id,
+            claim_owner,
+            chat_id=chat_id,
+            project_name=project_name,
+            chat_title=title_by_chat.get(chat_id) or "",
+        )
+        if decision != "send":
+            if decision == "done":
+                sent.add(record_id)
+                state_dirty = True
+            else:
+                logger.info(
+                    "Skip live project %r (%s): form claim %s",
+                    project_name,
+                    record_id,
+                    decision,
+                )
             continue
 
         try:
             await send_form_messages(client, config, chat_id, project_name)
         except Exception as exc:
+            release_form_send(claim_path, record_id, claim_owner)
             logger.exception(
                 "Failed to send Google Form to chat_id=%s project=%r",
                 chat_id,
@@ -823,6 +862,20 @@ async def run_form_dispatch_once(
                 pass
             continue
 
+        finish_form_send(claim_path, record_id, claim_owner)
+        try:
+            from bot.workflow_live_onboard import _mark_onboard_form_sent
+
+            _mark_onboard_form_sent(
+                config,
+                record_id,
+                by=claim_owner,
+                chat_id=chat_id,
+                chat_title=title_by_chat.get(chat_id) or "",
+                project_name=project_name,
+            )
+        except Exception:  # noqa: BLE001
+            logger.exception("onboard form-sent note failed for %r", project_name)
         sent.add(record_id)
         sent_now += 1
         state_dirty = True

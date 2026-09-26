@@ -231,6 +231,90 @@ async def _maybe_write_tg_chat_id(
     return f"Saved TG chat id {chat_id} to Lark."
 
 
+def _speaker_label(speaker: str) -> str:
+    return "Josh" if speaker == "josh" else "Roy"
+
+
+async def _prepare_mark_live_form_speaker(
+    client: TelegramClient,
+    config: AppConfig,
+    *,
+    record_id: str,
+    project_name: str,
+    chat_id: int,
+    chat_title: str,
+) -> str | None:
+    """Reserve the form slot, then assign the other bot when both are in the group.
+
+    Reserve happens before any await so a progress-table scan cannot start the
+    bubbles during the membership lookup.
+    """
+    if not config.workflow_mark_live_also_send_form or not config.workflow_google_form_url:
+        return None
+    from bot.workflow_form_claim import (
+        assign_form_sender,
+        claim_path_for,
+        live_form_speaker,
+        other_account,
+        reserve_form_send,
+    )
+    from bot.workflow_live_onboard import (
+        account_key,
+        peer_account_in_chat,
+        remember_group_membership,
+    )
+
+    issuer = account_key(config)
+    path = claim_path_for(config)
+    reserve_form_send(
+        path,
+        record_id,
+        chat_id=chat_id,
+        project_name=project_name,
+        chat_title=chat_title,
+        requested_by=issuer,
+    )
+    peer = other_account(issuer)
+    try:
+        peer_in = await peer_account_in_chat(client, chat_id, peer)
+    except Exception:
+        logger.exception(
+            "mark-live form speaker lookup failed project=%r chat=%s",
+            project_name,
+            chat_id,
+        )
+        peer_in = False
+    speaker = live_form_speaker(issuer, peer_in_group=peer_in)
+    assign_form_sender(
+        path,
+        record_id,
+        speaker,
+        chat_id=chat_id,
+        project_name=project_name,
+        chat_title=chat_title,
+        requested_by=issuer,
+    )
+    flags = {issuer: True, peer: peer_in}
+    remember_group_membership(
+        config,
+        rid=record_id,
+        project_name=project_name,
+        chat_id=chat_id,
+        chat_title=chat_title,
+        roy_in=bool(flags.get("roy")),
+        josh_in=bool(flags.get("josh")),
+    )
+    logger.info(
+        "mark-live form speaker=%s issuer=%s peer_in=%s project=%r chat=%s",
+        speaker,
+        issuer,
+        peer_in,
+        project_name,
+        chat_id,
+    )
+    return speaker
+
+
 async def _apply_mark_live(
     client: TelegramClient,
     config: AppConfig,
@@ -242,6 +326,14 @@ async def _apply_mark_live(
     chat_id: int,
     chat_title: str,
 ) -> str:
+    speaker = await _prepare_mark_live_form_speaker(
+        client,
+        config,
+        record_id=record_id,
+        project_name=project_name,
+        chat_id=chat_id,
+        chat_title=chat_title,
+    )
     loop = asyncio.get_running_loop()
     old_status = _field_text(fields, config.workflow_status_field)
     new_status = config.workflow_trigger_status
@@ -316,6 +408,8 @@ async def _apply_mark_live(
             lines.append(
                 f"Google Form sent to {outcome.get('chat_title') or 'matched group'}."
             )
+        elif form == "deferred" and speaker:
+            lines.append(f"Live form will be sent by {_speaker_label(speaker)}.")
         elif form == "already_sent":
             lines.append("Google Form already sent earlier (skipped).")
         elif form and str(form).startswith("no_group"):

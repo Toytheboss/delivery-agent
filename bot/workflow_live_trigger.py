@@ -213,39 +213,97 @@ async def process_live_project(
                     rid,
                     chat_id,
                 )
-            else:
                 try:
-                    await send_form_messages(client, config, chat_id, name)
+                    from bot.workflow_form_claim import claim_path_for, finish_form_send
+                    from bot.workflow_live_onboard import account_key
+
+                    finish_form_send(claim_path_for(config), rid, account_key(config))
+                except Exception:  # noqa: BLE001
+                    logger.exception("form claim finish failed for %r", name)
+            else:
+                from bot.workflow_form_claim import (
+                    begin_form_send,
+                    claim_path_for,
+                    finish_form_send,
+                    release_form_send,
+                )
+                from bot.workflow_live_onboard import account_key
+
+                claim_owner = account_key(config)
+                claim_path = claim_path_for(config)
+                decision = begin_form_send(
+                    claim_path,
+                    rid,
+                    claim_owner,
+                    chat_id=chat_id,
+                    project_name=name,
+                    chat_title=titles.get(chat_id) or "",
+                )
+                if decision == "done":
                     sent.add(rid)
                     _save_state(state_path, sent)
-                    loop = asyncio.get_running_loop()
-                    await _mark_sent_in_lark(loop, token, config, rid)
-                    try:
-                        from bot.workflow_form_chase import note_form_sent
-
-                        note_form_sent(
-                            config,
-                            record_id=rid,
-                            project_name=name,
-                            chat_id=chat_id,
-                            source=source or "live_trigger",
-                        )
-                    except Exception:  # noqa: BLE001
-                        logger.exception("form-chase note failed for %r", name)
-                    result["form"] = "sent"
-                    result["chat_id"] = chat_id
-                    result["chat_title"] = titles.get(chat_id)
+                    result["form"] = "already_sent"
+                elif decision != "send":
+                    result["form"] = "deferred"
                     logger.info(
-                        "live-trigger form sent %r (%s) -> %s (%s) via %s",
+                        "live-trigger form deferred %r (%s) caller=%s claim=%s",
                         name,
                         rid,
-                        chat_id,
-                        titles.get(chat_id),
-                        source,
+                        claim_owner,
+                        decision,
                     )
-                except Exception as exc:  # noqa: BLE001
-                    logger.exception("live-trigger form send failed for %r", name)
-                    result["form"] = f"send_failed:{exc}"
+                else:
+                    try:
+                        await send_form_messages(client, config, chat_id, name)
+                    except Exception as exc:  # noqa: BLE001
+                        release_form_send(claim_path, rid, claim_owner)
+                        logger.exception("live-trigger form send failed for %r", name)
+                        result["form"] = f"send_failed:{exc}"
+                    else:
+                        finish_form_send(claim_path, rid, claim_owner)
+                        sent.add(rid)
+                        _save_state(state_path, sent)
+                        loop = asyncio.get_running_loop()
+                        try:
+                            await _mark_sent_in_lark(loop, token, config, rid)
+                        except Exception:  # noqa: BLE001
+                            logger.exception("live-trigger mark form-sent in Lark failed for %r", name)
+                        try:
+                            from bot.workflow_form_chase import note_form_sent
+
+                            note_form_sent(
+                                config,
+                                record_id=rid,
+                                project_name=name,
+                                chat_id=chat_id,
+                                source=source or "live_trigger",
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception("form-chase note failed for %r", name)
+                        try:
+                            from bot.workflow_live_onboard import _mark_onboard_form_sent
+
+                            _mark_onboard_form_sent(
+                                config,
+                                rid,
+                                by=claim_owner,
+                                chat_id=chat_id,
+                                chat_title=titles.get(chat_id) or "",
+                                project_name=name,
+                            )
+                        except Exception:  # noqa: BLE001
+                            logger.exception("onboard form-sent note failed for %r", name)
+                        result["form"] = "sent"
+                        result["chat_id"] = chat_id
+                        result["chat_title"] = titles.get(chat_id)
+                        logger.info(
+                            "live-trigger form sent %r (%s) -> %s (%s) via %s",
+                            name,
+                            rid,
+                            chat_id,
+                            titles.get(chat_id),
+                            source,
+                        )
     else:
         result["form"] = "no_form_url"
 
@@ -301,9 +359,12 @@ async def process_live_project(
     else:
         result["kpi45"] = "disabled"
 
-    result["ok"] = result["form"] in {"sent", "already_sent"} or str(
-        result["logo"]
-    ).startswith("ok")
+    result["ok"] = result["form"] in {
+        "sent",
+        "already_sent",
+        "already_sent_chat",
+        "deferred",
+    } or str(result["logo"]).startswith("ok")
     return result
 
 

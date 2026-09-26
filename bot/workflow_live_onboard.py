@@ -274,6 +274,104 @@ async def resolve_project_chat(
     return chat_id, title, reason or "unmatched"
 
 
+def _mark_onboard_form_sent(
+    config: Any,
+    rid: str,
+    *,
+    by: str,
+    chat_id: int,
+    chat_title: str,
+    project_name: str,
+) -> None:
+    path = _state_path(config)
+    with _locked_state(path) as data:
+        entry = _project_entry(data, rid)
+        entry["project_name"] = project_name or entry.get("project_name") or ""
+        if chat_id:
+            entry["chat_id"] = int(chat_id)
+        if chat_title:
+            entry["chat_title"] = chat_title
+        entry["form"] = "sent"
+        entry["form_by"] = by
+
+
+def remember_group_membership(
+    config: Any,
+    *,
+    rid: str,
+    project_name: str,
+    chat_id: int,
+    chat_title: str,
+    roy_in: bool,
+    josh_in: bool,
+) -> None:
+    """Record who was in the group at Mark live, before the Lark ping is composed."""
+    path = _state_path(config)
+    with _locked_state(path) as data:
+        entry = _project_entry(data, rid)
+        entry["project_name"] = project_name or entry.get("project_name") or ""
+        entry["chat_id"] = int(chat_id)
+        if chat_title:
+            entry["chat_title"] = chat_title
+        entry["roy_in"] = bool(roy_in)
+        entry["josh_in"] = bool(josh_in)
+
+
+async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) -> bool:
+    """True when the other bot account is a member of this group."""
+    username = {"roy": "Roy4by4", "josh": "Josh_0zh"}.get(str(peer or "").strip().lower(), "")
+    if not username:
+        return False
+    try:
+        user = await client.get_entity(username)
+        entity = await client.get_entity(chat_id)
+    except Exception:
+        logger.exception(
+            "form speaker: cannot resolve peer=%s chat=%s", peer, chat_id
+        )
+        return False
+    try:
+        uid = int(getattr(user, "id", 0) or 0)
+    except (TypeError, ValueError):
+        uid = 0
+    if not uid:
+        return False
+    from telethon.tl.types import Channel, Chat
+
+    if isinstance(entity, Channel):
+        from telethon.errors import UserNotParticipantError
+        from telethon.tl.functions.channels import GetParticipantRequest
+
+        try:
+            await client(GetParticipantRequest(entity, user))
+            return True
+        except UserNotParticipantError:
+            return False
+        except Exception:
+            logger.exception(
+                "form speaker: channel participant lookup failed peer=%s chat=%s",
+                peer,
+                chat_id,
+            )
+            return False
+    if isinstance(entity, Chat):
+        from telethon.tl.functions.messages import GetFullChatRequest
+
+        try:
+            full = await client(GetFullChatRequest(entity.id))
+        except Exception:
+            logger.exception(
+                "form speaker: basic-group lookup failed peer=%s chat=%s",
+                peer,
+                chat_id,
+            )
+            return False
+        parts = getattr(getattr(full, "full_chat", None), "participants", None)
+        users = getattr(parts, "participants", None) or []
+        return any(int(getattr(item, "user_id", 0) or 0) == uid for item in users)
+    return False
+
+
 async def _send_form_if_needed(
     client: TelegramClient,
     config: Any,
@@ -285,22 +383,64 @@ async def _send_form_if_needed(
     chat_title: str,
     source: str,
 ) -> str:
+    from bot.workflow_form_claim import (
+        begin_form_send,
+        claim_path_for,
+        finish_form_send,
+        release_form_send,
+    )
+
+    owner = account_key(config)
+    claim_path = claim_path_for(config)
     root = ROOT
     state_path = root / config.workflow_state_file
     sent = _load_state(state_path)
     if rid in sent:
+        finish_form_send(claim_path, rid, owner)
         return "already_sent"
     if chat_id in _chat_ids_already_sent_form(config):
         sent.add(rid)
         _save_state(state_path, sent)
+        finish_form_send(claim_path, rid, owner)
         return "already_sent_chat"
+    decision = begin_form_send(
+        claim_path,
+        rid,
+        owner,
+        chat_id=chat_id,
+        project_name=name,
+        chat_title=chat_title,
+    )
+    if decision == "done":
+        sent.add(rid)
+        _save_state(state_path, sent)
+        return "already_sent"
+    if decision != "send":
+        logger.info(
+            "live-onboard form deferred %r (%s) caller=%s claim=%s",
+            name,
+            rid,
+            owner,
+            decision,
+        )
+        return "deferred"
     try:
         await send_form_messages(client, config, chat_id, name)
     except Exception as exc:  # noqa: BLE001
+        release_form_send(claim_path, rid, owner)
         logger.exception("live-onboard form send failed for %r", name)
         return f"send_failed:{exc}"
+    finish_form_send(claim_path, rid, owner)
     sent.add(rid)
     _save_state(state_path, sent)
+    _mark_onboard_form_sent(
+        config,
+        rid,
+        by=owner,
+        chat_id=chat_id,
+        chat_title=chat_title,
+        project_name=name,
+    )
     try:
         loop = asyncio.get_running_loop()
         await _mark_sent_in_lark(loop, token, config, rid)
@@ -319,11 +459,12 @@ async def _send_form_if_needed(
     except Exception:  # noqa: BLE001
         logger.exception("form-chase note failed for %r", name)
     logger.info(
-        "live-onboard form sent %r (%s) -> %s (%s)",
+        "live-onboard form sent %r (%s) -> %s (%s) by %s",
         name,
         rid,
         chat_id,
         chat_title,
+        owner,
     )
     return "sent"
 
@@ -563,6 +704,65 @@ async def drain_pending_roy_notifies(config: Any) -> int:
         queued += 1
         logger.info("live-onboard drain queued Lark ping for %s", rid)
     return queued
+
+
+async def drain_assigned_form_sends(client: TelegramClient, config: Any) -> int:
+    """Post live-form bubbles this account was assigned, and take back expired handoffs."""
+    if not getattr(config, "workflow_enabled", False):
+        return 0
+    if not getattr(config, "workflow_google_form_url", ""):
+        return 0
+    from bot.workflow_form_claim import (
+        claim_path_for,
+        pending_form_sends,
+        reclaim_expired_form_sends,
+    )
+    from bot.workflow_live_trigger import _load_progress_records
+
+    key = account_key(config)
+    path = claim_path_for(config)
+    jobs = pending_form_sends(path, key)
+    jobs.extend(reclaim_expired_form_sends(path, key))
+    if not jobs:
+        return 0
+    try:
+        token, _records = await _load_progress_records(config)
+    except Exception:
+        logger.exception("form speaker drain: failed to load Lark records")
+        return 0
+    sent_n = 0
+    seen: set[str] = set()
+    for job in jobs:
+        rid = str(job.get("record_id") or "")
+        if not rid or rid in seen:
+            continue
+        seen.add(rid)
+        try:
+            chat_id = int(job.get("chat_id") or 0)
+        except (TypeError, ValueError):
+            chat_id = 0
+        if not chat_id:
+            continue
+        status = await _send_form_if_needed(
+            client,
+            config,
+            token=token,
+            rid=rid,
+            name=str(job.get("project_name") or ""),
+            chat_id=chat_id,
+            chat_title=str(job.get("chat_title") or ""),
+            source="form_speaker",
+        )
+        if status == "sent":
+            sent_n += 1
+            logger.info(
+                "form speaker drain sent %r (%s) chat_id=%s by %s",
+                job.get("project_name"),
+                rid,
+                chat_id,
+                key,
+            )
+    return sent_n
 
 
 async def maybe_onboard_on_join(
