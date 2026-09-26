@@ -40,9 +40,9 @@ _DIAG_RE = re.compile(
     r"(?is)^\s*(?:[/@])?(onchain|twitter|website|project)\s+diag\s*[!.。！]*\s*$"
 )
 _KIND_LABEL = {
-    "onchain": "KPI 6 on-chain",
-    "twitter": "KPI 1 Twitter",
-    "website": "KPI 3 website",
+    "onchain": "On-chain",
+    "twitter": "Twitter",
+    "website": "Website",
     "project": "Project diag",
 }
 _PASS = "通过"
@@ -62,7 +62,7 @@ _KPI2_FAIL = (
 )
 _KPI7_COPY = KPI7_PASS_COPY
 _KPI7_OPEN = (
-    "Ongoing operations verification: not passed (KPI 1–6 still have open items)"
+    "Ongoing operations verification: not passed (earlier checks still have open items)"
 )
 _SKIPPED_COPY = {
     "twitter": "Twitter operations verification: already passed",
@@ -240,8 +240,9 @@ def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
     result = outcome.get("result") or "不通过"
     label = _KIND_LABEL.get(kind, kind)
     copy = str(outcome.get("copy") or "").strip()
+    result_en = {"通过": "passed", "不通过": "failed"}.get(str(result), str(result))
     if copy:
-        return f"{label} written for {project!r}: {result}\n{copy}"
+        return f"{label} written for {project!r}: {result_en}\n{copy}"
     reason = outcome.get("reason") or ""
     extra = ""
     if kind == "onchain":
@@ -257,7 +258,7 @@ def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
             extra += " unread"
         elif reason == "below_threshold":
             extra = f" ({twitter_fail_note(outcome)})"
-    return f"{label} written for {project!r}: {result}{extra}"
+    return f"{label} written for {project!r}: {result_en}{extra}"
 
 
 async def _run_one(
@@ -469,13 +470,13 @@ def _project_diag_rows(
         kpi6_note = onchain_fail_note(onchain)
     kpi7_note = _KPI7_COPY if kpi7_ok else _KPI7_OPEN
     return [
-        ("KPI 1 Twitter", kpi1_ok, kpi1_note),
-        ("KPI 2 PR", kpi2_ok, kpi2_note),
-        ("KPI 3 Website", kpi3_ok, kpi3_note),
-        ("KPI 4 Product", kpi4_ok, _KPI4_COPY),
-        ("KPI 5 Independence", kpi5_ok, _KPI5_COPY),
-        ("KPI 6 On-chain", kpi6_ok, kpi6_note),
-        ("KPI 7 Ongoing", kpi7_ok, kpi7_note),
+        ("Twitter", kpi1_ok, kpi1_note),
+        ("News/PR", kpi2_ok, kpi2_note),
+        ("Website", kpi3_ok, kpi3_note),
+        ("Product", kpi4_ok, _KPI4_COPY),
+        ("Independence", kpi5_ok, _KPI5_COPY),
+        ("On-chain", kpi6_ok, kpi6_note),
+        ("Ongoing operations", kpi7_ok, kpi7_note),
     ]
 
 
@@ -488,17 +489,17 @@ async def run_kpi_diag(
 ) -> str:
     del client
     if not getattr(config, "workflow_kpi_diag_enabled", False):
-        return "KPI diag is disabled on this bot."
+        return "This check is disabled on this bot."
     kind = parse_kpi_diag_command(getattr(command_message, "raw_text", None) or "")
     if not kind:
-        return "Unknown KPI diag command."
+        return "Unknown diag command."
 
     app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()
     table_id = str(getattr(config, "workflow_progress_table_id", "") or "").strip()
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
     if not app_token or not table_id:
-        return "KPI diag is not configured."
+        return "Project diag is not configured."
     if not app_id or not app_secret:
         return "Missing LARK_APP_ID / LARK_APP_SECRET in .env"
 
@@ -524,7 +525,7 @@ async def run_kpi_diag(
         names = ", ".join(name for _rid, name, _fields in matches)
         return (
             f"Ambiguous ({len(matches)} projects): {names}. "
-            "Not running KPI diag until the group maps to one project."
+            "Not running this check until the group maps to one project."
         )
 
     record_id, project_name, fields = matches[0]
@@ -550,5 +551,5 @@ async def run_kpi_diag(
         logger.exception(
             "kpi_diag: %s failed project=%r record=%s", kind, project_name, record_id
         )
-        return f"Matched {project_name!r} but KPI diag failed: {exc}"
+        return f"Matched {project_name!r} but the check failed: {exc}"
     return _reply_for(kind, outcome)

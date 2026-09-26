@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-26 · project diag 回复去掉 KPI 字样和中文
+
+### 修复
+- TG `project diag` 项名改为 Twitter / News/PR / Website 等，不再出现 KPI
+- 「满足审核要求」改为英文 `Meets the audit requirement`，进度表和群回复一致
+
+---
+
 ## 2026-09-26 · KPI 3 认 BOT Chain 名字
 
 ### 优化

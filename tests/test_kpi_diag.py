@@ -113,7 +113,7 @@ def test_kpi6_counts_successful_to_contract_skips_create():
     assert verdict["tx_count"] == 3
     assert verdict["passed"] is False
     assert "上线日至核查日" not in verdict["copy"]
-    assert "满足审核要求" not in verdict["copy"]
+    assert "Meets the audit requirement" not in verdict["copy"]
     assert "Tx hashes:" in verdict["copy"]
     assert "ok1" in verdict["copy"]
     assert "ok2" in verdict["copy"]
@@ -144,7 +144,7 @@ def test_kpi6_pass_lists_three_wallets_and_five_hashes():
     verdict = evaluate_kpi6(contract=ca, txs=txs, window_start=start)
     assert verdict["passed"] is True
     assert verdict["tx_count"] == 7
-    assert "满足审核要求" in verdict["copy"]
+    assert "Meets the audit requirement" in verdict["copy"]
     assert verdict["copy"].count("0x") >= 3
     listed_hashes = [line for line in verdict["copy"].splitlines() if line.startswith("h")]
     assert listed_hashes == ["h6", "h5", "h4", "h3", "h2"]
@@ -189,7 +189,7 @@ def test_twitter_handle_and_no_account_copy():
             "https://x.com/Foo/status/3",
         ],
     )
-    assert "满足审核要求" not in below
+    assert "Meets the audit requirement" not in below
     assert below.endswith(
         "https://x.com/Foo/status/1\nhttps://x.com/Foo/status/2\nhttps://x.com/Foo/status/3"
     )
@@ -199,7 +199,7 @@ def test_twitter_handle_and_no_account_copy():
         reason="ok",
         links=[f"https://x.com/Foo/status/{i}" for i in range(1, 8)],
     )
-    assert "满足审核要求" in copy
+    assert "Meets the audit requirement" in copy
     assert "https://x.com/Foo/status/5" in copy
     assert "https://x.com/Foo/status/6" not in copy
 
@@ -213,13 +213,13 @@ def test_live_start_is_shanghai_midnight():
 
 def test_project_diag_english_pass_and_fail_copy():
     passed_rows = [
-        ("KPI 1 Twitter", True, "Twitter operations verification: already passed"),
-        ("KPI 2 PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
-        ("KPI 3 Website", True, "Website display verification: already passed"),
-        ("KPI 4 Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
-        ("KPI 5 Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
-        ("KPI 6 On-chain", True, "User and interaction verification: already passed"),
-        ("KPI 7 Ongoing", True, "Ongoing operations verification: website and product were reachable on the check day; Twitter, community and product all have ongoing updates; ongoing operations verification passed"),
+        ("Twitter", True, "Twitter operations verification: already passed"),
+        ("News/PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
+        ("Website", True, "Website display verification: already passed"),
+        ("Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
+        ("Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
+        ("On-chain", True, "User and interaction verification: already passed"),
+        ("Ongoing operations", True, "Ongoing operations verification: website and product were reachable on the check day; Twitter, community and product all have ongoing updates; ongoing operations verification passed"),
     ]
     text = format_project_diag_reply(
         project="Testing", rows=passed_rows, coord_written=True
@@ -227,6 +227,7 @@ def test_project_diag_english_pass_and_fail_copy():
     assert text.startswith("Project diag for Testing: passed")
     assert "Failed" not in text.split("Passed")[0]
     assert "Final evaluation: passed" in text
+    assert "KPI" not in text
     assert twitter_fail_note({"reason": "below_threshold", "count": 3}) == (
         "Twitter operations verification: official account posted 3 "
         "original posts in the last 30 days (threshold ≥5); "
@@ -240,33 +241,34 @@ def test_project_diag_english_pass_and_fail_copy():
         project="Testing",
         rows=[
             (
-                "KPI 1 Twitter",
+                "Twitter",
                 False,
                 "Twitter operations verification: official account could not be "
                 "read for original posts in the last 30 days; "
                 "Twitter operations verification failed",
             ),
-            ("KPI 2 PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
+            ("News/PR", True, "News/PR verification: a news URL was submitted; news/PR verification passed"),
             (
-                "KPI 3 Website",
+                "Website",
                 False,
                 "Website display verification: no official website URL submitted; "
                 "website display verification failed",
             ),
-            ("KPI 4 Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
-            ("KPI 5 Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
-            ("KPI 6 On-chain", True, "User and interaction verification: already passed"),
+            ("Product", True, "Product availability verification: mainnet MVP is live; wallet can connect, interact with the contract and consume gas; product availability verification passed"),
+            ("Independence", True, "Independence verification: mainnet go-live and product interaction have been manually verified; independence verification passed"),
+            ("On-chain", True, "User and interaction verification: already passed"),
             (
-                "KPI 7 Ongoing",
+                "Ongoing operations",
                 False,
-                "Ongoing operations verification: not passed (KPI 1–6 still have open items)",
+                "Ongoing operations verification: not passed (earlier checks still have open items)",
             ),
         ],
         coord_written=False,
     )
     assert "Project diag for Testing: failed" in failed
     assert failed.index("Failed") < failed.index("Passed")
-    assert "KPI 1 Twitter:" in failed
+    assert "Twitter:" in failed
+    assert "KPI" not in failed
     assert "Final evaluation: not written" in failed
     skipped = format_project_diag_reply(
         project="Testing", rows=[], coord_written=True, skipped=True

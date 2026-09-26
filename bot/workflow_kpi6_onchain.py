@@ -33,7 +33,7 @@ _FAIL = "不通过"
 _SCAN_API = "https://scan.botchain.ai/api"
 _WALLET_SHOW = 3
 _TX_SHOW = 5
-_MEETS_AUDIT = "满足审核要求"
+_MEETS_AUDIT = "Meets the audit requirement"
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
