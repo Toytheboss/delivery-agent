@@ -15,7 +15,14 @@ from bot.workflow_kpi6_onchain import (
     is_create_tx,
     unique_wallets,
 )
-from bot.workflow_kpi_diag import is_kpi_diag_command, parse_kpi_diag_command
+from bot.workflow_kpi_diag import (
+    format_project_diag_reply,
+    is_kpi_diag_command,
+    onchain_fail_note,
+    parse_kpi_diag_command,
+    twitter_fail_note,
+    website_fail_note,
+)
 from bot.workflow_kpi_write import merge_kpi_copy, merge_kpi_result, parse_live_start
 
 
@@ -25,6 +32,9 @@ def test_diag_commands_match_plain_text_not_quote():
     assert parse_kpi_diag_command("website diag") == "website"
     assert parse_kpi_diag_command("/onchain diag") == "onchain"
     assert parse_kpi_diag_command("website diag!") == "website"
+    assert parse_kpi_diag_command("project diag") == "project"
+    assert parse_kpi_diag_command("/project diag") == "project"
+    assert is_kpi_diag_command("PROJECT DIAG")
     assert is_kpi_diag_command("ONCHAIN DIAG")
     assert not is_kpi_diag_command("pr support")
     assert not is_kpi_diag_command("please onchain diag this")
@@ -126,3 +136,43 @@ def test_live_start_is_shanghai_midnight():
     assert dt is not None
     assert dt.hour == 0
     assert dt.day == 26
+
+
+def test_project_diag_english_pass_and_fail_copy():
+    passed_rows = [
+        ("KPI 1 Twitter", True, ""),
+        ("KPI 2 PR", True, ""),
+        ("KPI 3 Website", True, ""),
+        ("KPI 4 Product", True, ""),
+        ("KPI 5 Independence", True, ""),
+        ("KPI 6 On-chain", True, ""),
+    ]
+    text = format_project_diag_reply(
+        project="Testing", rows=passed_rows, coord_written=True
+    )
+    assert text.startswith("Project diag for Testing: passed")
+    assert "Failed:" not in text
+    assert "Coordination: passed" in text
+    assert twitter_fail_note({"reason": "below_threshold", "count": 3}) == (
+        "3 original posts in 30 days, need ≥5"
+    )
+    assert onchain_fail_note({"reason": "below_threshold", "wallets": 2, "txs": 4}) == (
+        "2 wallets / 4 txs, need ≥3 wallets and ≥5 txs"
+    )
+    assert website_fail_note({"reason": "no_url"}) == "no site URL"
+    failed = format_project_diag_reply(
+        project="Testing",
+        rows=[
+            ("KPI 1 Twitter", False, "3 original posts in 30 days, need ≥5"),
+            ("KPI 2 PR", True, ""),
+            ("KPI 3 Website", True, ""),
+            ("KPI 4 Product", True, ""),
+            ("KPI 5 Independence", True, ""),
+            ("KPI 6 On-chain", False, "2 wallets / 4 txs, need ≥3 wallets and ≥5 txs"),
+        ],
+        coord_written=False,
+    )
+    assert "Project diag for Testing: failed" in failed
+    assert "Failed: KPI 1 Twitter, KPI 6 On-chain" in failed
+    assert "KPI 1 Twitter: failed (3 original posts in 30 days, need ≥5)" in failed
+    assert "Coordination: not written" in failed

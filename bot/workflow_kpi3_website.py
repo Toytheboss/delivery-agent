@@ -378,14 +378,20 @@ def audit_kpi3_for_fields(
 ) -> str:
     """Write KPI 3 copy + result. Live hook skips repeats; diag always re-runs."""
     if not getattr(config, "workflow_kpi3_enabled", True):
-        return "disabled"
+        return {"result": "disabled", "passed": False, "reason": "disabled", "project": project_name}
     rid = (record_id or "").strip()
     if not rid:
-        return "no_record"
+        return {"result": "no_record", "passed": False, "reason": "no_record", "project": project_name}
     path = _state_path(config)
     state = _load_state(path)
     if skip_if_audited and rid in state:
-        return f"already:{state[rid]}"
+        prev = state[rid]
+        return {
+            "result": prev,
+            "passed": prev == _PASS,
+            "reason": "already",
+            "project": project_name,
+        }
 
     from bot.workflow_form_dispatch import _field_text
     from bot.workflow_kpi_write import field_result, merge_kpi_copy, merge_kpi_result
@@ -426,7 +432,12 @@ def audit_kpi3_for_fields(
         )
     except Exception:
         logger.exception("kpi3: failed to write result project=%r record=%s", name, rid)
-        return "write_failed"
+        return {
+            "result": "write_failed",
+            "passed": False,
+            "reason": "write_failed",
+            "project": name,
+        }
     state[rid] = result
     try:
         _save_state(path, state)
@@ -440,7 +451,12 @@ def audit_kpi3_for_fields(
         (url or "")[:80],
         verdict.reason,
     )
-    return result
+    return {
+        "result": result,
+        "passed": result == _PASS,
+        "reason": verdict.reason,
+        "project": name,
+    }
 
 
 async def audit_kpi3_for_live_record(
@@ -454,9 +470,12 @@ async def audit_kpi3_for_live_record(
     import asyncio
 
     loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(
+    out = await loop.run_in_executor(
         None,
         lambda: audit_kpi3_for_fields(
             token, config, record_id, fields, project_name=project_name
         ),
     )
+    if isinstance(out, dict):
+        return str(out.get("result") or "")
+    return str(out)
