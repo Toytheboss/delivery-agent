@@ -889,7 +889,7 @@ def load_config() -> AppConfig:
             )
         ),
         workflow_form_received_notify_enabled=bool(
-            workflow.get("form_received_notify_enabled", True)
+            workflow.get("form_received_notify_enabled", False)
         ),
         workflow_form_received_notify_state_file=str(
             workflow.get(

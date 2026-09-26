@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-26 · 关掉表单收到推群
+
+### 优化
+- Project verification push 不再发 Google Onboarding form received
+- 开关默认关，要开再把 `form_received_notify_enabled` 设回 true
+
+---
+
 ## 2026-09-26 · project diag 回复去掉 KPI 字样和中文
 
 ### 修复

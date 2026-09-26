@@ -184,7 +184,7 @@ def _send_one(
 async def run_form_received_notify_once(config: Any) -> int:
     """Baseline existing complete forms; notify only newly completed live rows."""
     global _LAST_SCAN
-    if not getattr(config, "workflow_form_received_notify_enabled", True):
+    if not getattr(config, "workflow_form_received_notify_enabled", False):
         return 0
     if not sends_lark_notify(config):
         return 0
