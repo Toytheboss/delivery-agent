@@ -162,6 +162,10 @@ class AppConfig:
     workflow_live_link_field: str
     workflow_project_link_field: str
     workflow_logo_state_file: str
+    workflow_kpi3_enabled: bool
+    workflow_kpi3_copy_field: str
+    workflow_kpi3_result_field: str
+    workflow_kpi3_state_file: str
     workflow_wallet_notify_enabled: bool
     workflow_wallet_table_id: str
     workflow_wallet_required_fields: list[str]
@@ -765,6 +769,20 @@ def load_config() -> AppConfig:
         ),
         workflow_logo_state_file=str(
             workflow.get("logo_state_file", "data/logo_fill_state.json")
+        ),
+        workflow_kpi3_enabled=bool((workflow.get("kpi3") or {}).get("enabled", True)),
+        workflow_kpi3_copy_field=str(
+            (workflow.get("kpi3") or {}).get("copy_field")
+            or "KPI 3 - 官网展示验证"
+        ).strip(),
+        workflow_kpi3_result_field=str(
+            (workflow.get("kpi3") or {}).get("result_field")
+            or "官网验证结果"
+        ).strip(),
+        workflow_kpi3_state_file=str(
+            (workflow.get("kpi3") or {}).get(
+                "state_file", "data/kpi3_website_state.json"
+            )
         ),
         workflow_wallet_notify_enabled=bool(
             workflow.get("wallet_notify_enabled", False)

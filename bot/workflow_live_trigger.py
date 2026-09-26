@@ -105,6 +105,7 @@ async def process_live_project(
         "project_name": project_name,
         "form": "skipped",
         "logo": "skipped",
+        "kpi3": "skipped",
         "error": None,
     }
     if not config.workflow_enabled:
@@ -272,6 +273,19 @@ async def process_live_project(
                 pass
     else:
         result["logo"] = "disabled"
+
+    if getattr(config, "workflow_kpi3_enabled", True):
+        try:
+            from bot.workflow_kpi3_website import audit_kpi3_for_live_record
+
+            result["kpi3"] = await audit_kpi3_for_live_record(
+                config, token, rid, fields, project_name=name
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("live-trigger kpi3 failed for %r", name)
+            result["kpi3"] = f"err:{exc}"
+    else:
+        result["kpi3"] = "disabled"
 
     result["ok"] = result["form"] in {"sent", "already_sent"} or str(
         result["logo"]
