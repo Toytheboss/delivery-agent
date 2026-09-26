@@ -11,6 +11,7 @@ import requests
 from bot.lark_bitable import update_record
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_write import (
+    SH,
     extract_contract,
     field_result,
     find_wallet_row,
