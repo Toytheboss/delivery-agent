@@ -141,6 +141,18 @@ def test_twitter_handle_and_no_account_copy():
         "Twitter operations verification failed"
     )
     assert "posted 5 original posts" in build_kpi1_copy(handle="Foo", count=5, reason="ok")
+    copy = build_kpi1_copy(
+        handle="Foo",
+        count=5,
+        reason="ok",
+        links=[
+            "https://x.com/Foo/status/1",
+            "https://x.com/Foo/status/2",
+        ],
+    )
+    assert copy.endswith(
+        "https://x.com/Foo/status/1\nhttps://x.com/Foo/status/2"
+    )
 
 
 def test_live_start_is_shanghai_midnight():

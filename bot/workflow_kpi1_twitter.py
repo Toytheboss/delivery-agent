@@ -37,6 +37,7 @@ _DEFAULT_RESULT_FIELD = "推特验证结果"
 _PASS = "通过"
 _FAIL = "不通过"
 _THRESHOLD = 5
+_LINK_LIMIT = 5
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
@@ -121,6 +122,49 @@ def is_retweet(text: str, extra: dict[str, Any] | None = None) -> bool:
         return True
     rest = str(blob.get("full_text") or blob.get("text") or text or "")
     return rest.lstrip().startswith("RT @")
+
+
+def _tweet_id(extra: dict[str, Any] | None) -> str:
+    blob = extra or {}
+    for key in ("id_str", "id", "idStr"):
+        raw = blob.get(key)
+        if raw is None:
+            continue
+        text = str(raw).strip()
+        if text.isdigit():
+            return text
+    return ""
+
+
+def original_status_links(
+    handle: str,
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    *,
+    since: datetime,
+    limit: int = _LINK_LIMIT,
+) -> list[str]:
+    who = (handle or "").strip().lstrip("@")
+    if not who or limit <= 0:
+        return []
+    ranked: list[tuple[datetime, str]] = []
+    for dt, text, extra in rows:
+        if dt < since or is_retweet(text, extra):
+            continue
+        tweet_id = _tweet_id(extra if isinstance(extra, dict) else None)
+        if not tweet_id:
+            continue
+        ranked.append((dt, f"https://x.com/{who}/status/{tweet_id}"))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    links: list[str] = []
+    seen: set[str] = set()
+    for _dt, url in ranked:
+        if url in seen:
+            continue
+        seen.add(url)
+        links.append(url)
+        if len(links) >= limit:
+            break
+    return links
 
 
 def _parse_created(value: Any) -> datetime | None:
@@ -377,26 +421,40 @@ def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, 
     return out
 
 
-def count_originals(handle: str, *, since: datetime) -> tuple[int | None, str]:
-    """Count originals in ``since``..now. Prefer X API once credentials exist."""
+def collect_originals(
+    handle: str, *, since: datetime
+) -> tuple[int | None, str, list[str]]:
+    """Count originals in ``since``..now and keep recent status URLs."""
     if x_api_configured():
         api = _x_api(handle, since)
         if api is None:
-            return None, "unread"
+            return None, "unread", []
         n = sum(1 for dt, text, extra in api if dt >= since and not is_retweet(text, extra))
-        return n, "x_api"
+        return n, "x_api", original_status_links(handle, api, since=since)
     syn = _syndication(handle)
     if syn:
         n = sum(1 for dt, text, extra in syn if dt >= since and not is_retweet(text, extra))
-        return n, "syndication"
+        return n, "syndication", original_status_links(handle, syn, since=since)
     rss = _nitter_rss(handle)
     if rss:
         n = sum(1 for dt, text in rss if dt >= since and not is_retweet(text))
-        return n, "nitter"
-    return None, "unread"
+        return n, "nitter", []
+    return None, "unread", []
 
 
-def build_kpi1_copy(*, handle: str, count: int | None, reason: str) -> str:
+def count_originals(handle: str, *, since: datetime) -> tuple[int | None, str]:
+    """Count originals in ``since``..now. Prefer X API once credentials exist."""
+    count, source, _links = collect_originals(handle, since=since)
+    return count, source
+
+
+def build_kpi1_copy(
+    *,
+    handle: str,
+    count: int | None,
+    reason: str,
+    links: list[str] | None = None,
+) -> str:
     if reason == "no_account":
         return (
             "Twitter operations verification: no official account submitted; "
@@ -411,20 +469,31 @@ def build_kpi1_copy(*, handle: str, count: int | None, reason: str) -> str:
         )
     n = int(count)
     suffix = "passed" if n >= _THRESHOLD else "failed"
-    return (
+    text = (
         f"Twitter operations verification: official account{who} posted {n} "
         f"original posts in the last 30 days (threshold ≥{_THRESHOLD}); "
         f"Twitter operations verification {suffix}"
     )
+    urls = [str(url).strip() for url in (links or []) if str(url).strip()][:_LINK_LIMIT]
+    if urls:
+        text = text + "\n" + "\n".join(urls)
+    return text
 
 
-def evaluate_kpi1(*, handle: str, count: int | None, unread: bool) -> dict[str, Any]:
+def evaluate_kpi1(
+    *,
+    handle: str,
+    count: int | None,
+    unread: bool,
+    links: list[str] | None = None,
+) -> dict[str, Any]:
     if not handle:
         return {
             "passed": False,
             "reason": "no_account",
             "copy": build_kpi1_copy(handle="", count=None, reason="no_account"),
             "count": 0,
+            "links": [],
         }
     if unread or count is None:
         return {
@@ -432,13 +501,16 @@ def evaluate_kpi1(*, handle: str, count: int | None, unread: bool) -> dict[str, 
             "reason": "unread",
             "copy": build_kpi1_copy(handle=handle, count=None, reason="unread"),
             "count": None,
+            "links": [],
         }
     passed = count >= _THRESHOLD
+    urls = list(links or [])[:_LINK_LIMIT]
     return {
         "passed": passed,
         "reason": "pass" if passed else "below_threshold",
-        "copy": build_kpi1_copy(handle=handle, count=count, reason="ok"),
+        "copy": build_kpi1_copy(handle=handle, count=count, reason="ok", links=urls),
         "count": count,
+        "links": urls,
     }
 
 
@@ -466,11 +538,18 @@ def audit_kpi1_for_fields(
     since = now_shanghai() - timedelta(days=30)
     count: int | None = None
     unread = False
+    links: list[str] = []
     if handle:
-        count, source = count_originals(handle, since=since)
+        count, source, links = collect_originals(handle, since=since)
         unread = source == "unread"
-        logger.info("kpi1: handle=%s source=%s count=%s", handle, source, count)
-    verdict = evaluate_kpi1(handle=handle, count=count, unread=unread)
+        logger.info(
+            "kpi1: handle=%s source=%s count=%s links=%s",
+            handle,
+            source,
+            count,
+            len(links),
+        )
+    verdict = evaluate_kpi1(handle=handle, count=count, unread=unread, links=links)
     existing_copy = _field_text(fields, copy_field)
     existing_result = field_result(fields, result_field)
     copy = merge_kpi_copy(existing_copy, str(verdict["copy"]))

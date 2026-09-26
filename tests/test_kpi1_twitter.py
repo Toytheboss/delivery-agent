@@ -6,7 +6,9 @@ from bot.workflow_kpi1_twitter import (
     SH,
     _utc_stamp,
     _x_api,
+    collect_originals,
     count_originals,
+    original_status_links,
     x_api_configured,
 )
 
@@ -137,3 +139,42 @@ def test_x_api_stops_paging_after_window(monkeypatch):
     tweet_calls = [p for p in calls if p is not None]
     assert len(tweet_calls) == 1
     assert "pagination_token" not in (tweet_calls[0] or {})
+
+
+def test_original_status_links_newest_five_skip_retweets():
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    rows = [
+        (datetime(2026, 9, 10, tzinfo=timezone.utc), "old", {"id": "10"}),
+        (datetime(2026, 9, 20, tzinfo=timezone.utc), "RT @x hi", {"id": "20"}),
+        (datetime(2026, 9, 21, tzinfo=timezone.utc), "a", {"id": "21"}),
+        (datetime(2026, 9, 22, tzinfo=timezone.utc), "b", {"id_str": "22"}),
+        (datetime(2026, 9, 23, tzinfo=timezone.utc), "c", {"id": "23"}),
+        (datetime(2026, 9, 24, tzinfo=timezone.utc), "d", {"id": "24"}),
+        (datetime(2026, 9, 25, tzinfo=timezone.utc), "e", {"id": "25"}),
+        (datetime(2026, 8, 1, tzinfo=timezone.utc), "too old", {"id": "1"}),
+    ]
+    links = original_status_links("Demo", rows, since=since)
+    assert links == [
+        "https://x.com/Demo/status/25",
+        "https://x.com/Demo/status/24",
+        "https://x.com/Demo/status/23",
+        "https://x.com/Demo/status/22",
+        "https://x.com/Demo/status/21",
+    ]
+
+
+def test_collect_originals_returns_links_from_x_api(monkeypatch):
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    tweets = [
+        (datetime(2026, 9, 14, tzinfo=timezone.utc), "five", {"id": "5"}),
+        (datetime(2026, 9, 13, tzinfo=timezone.utc), "four", {"id": "4"}),
+    ]
+    monkeypatch.setenv("X_BEARER_TOKEN", "test")
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start: tweets)
+    count, source, links = collect_originals("demo", since=since)
+    assert source == "x_api"
+    assert count == 2
+    assert links == [
+        "https://x.com/demo/status/5",
+        "https://x.com/demo/status/4",
+    ]
