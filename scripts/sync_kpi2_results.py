@@ -3,11 +3,13 @@
 
 The criterion is deliberately mechanical:
   - a non-empty ``KPI 2 - PR 新闻链接验证`` cell → 新闻验证结果 = 通过
-  - an empty cell → 新闻验证结果 = 不通过
+  - an empty cell → 新闻验证结果 = 不通过, but only with ``--include-empty``
 
 This script is intentionally manual (dry-run by default). It does not create a
 Day-based audit schedule, write KPI coordination fields, or send group pushes.
-Use ``--execute`` only after reviewing its plan.
+By default it only backfills passed results for existing links, so it is safe
+before the final KPI audit cohort and schedule are decided. Use
+``--include-empty --execute`` only for a defined audit cohort.
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ def plan_updates(
     *,
     link_field: str,
     result_field: str,
+    include_empty: bool = False,
 ) -> list[dict[str, str]]:
     """Return only tracker rows whose KPI 2 result differs from its link state."""
     plan: list[dict[str, str]] = []
@@ -63,6 +66,8 @@ def plan_updates(
         if not record_id:
             continue
         wanted = expected_result(fields, link_field)
+        if wanted == FAIL and not include_empty:
+            continue
         current = selected_value(fields.get(result_field))
         if current == wanted:
             continue
@@ -88,6 +93,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--result-field", default=DEFAULT_RESULT_FIELD)
     parser.add_argument("--limit", type=int, default=0, help="Maximum writes; 0 is unlimited.")
     parser.add_argument(
+        "--include-empty",
+        action="store_true",
+        help="Also mark empty PR-link cells as failed; use only for a defined audit cohort.",
+    )
+    parser.add_argument(
         "--execute",
         action="store_true",
         help="Apply updates. Without this flag the script only prints a plan.",
@@ -112,6 +122,7 @@ def main() -> int:
         records,
         link_field=args.link_field,
         result_field=args.result_field,
+        include_empty=args.include_empty,
     )
 
     pass_count = sum(item["wanted"] == PASS for item in plan)

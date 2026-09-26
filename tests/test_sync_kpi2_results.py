@@ -30,7 +30,7 @@ def test_plan_updates_passes_previously_entered_pr_link():
     ]
 
 
-def test_plan_updates_fails_empty_pr_link_and_skips_correct_rows():
+def test_plan_updates_skips_empty_pr_links_by_default():
     records = [
         {
             "record_id": "rec_empty",
@@ -54,6 +54,13 @@ def test_plan_updates_fails_empty_pr_link_and_skips_correct_rows():
         records,
         link_field="KPI 2 - PR 新闻链接验证",
         result_field="新闻验证结果",
+    ) == []
+
+    assert plan_updates(
+        records,
+        link_field="KPI 2 - PR 新闻链接验证",
+        result_field="新闻验证结果",
+        include_empty=True,
     ) == [
         {
             "record_id": "rec_empty",
