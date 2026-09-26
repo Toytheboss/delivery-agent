@@ -19,6 +19,7 @@ from bot.workflow_kpi_pass_chain import (
     KPI7_PASS_COPY,
     apply_pass_chain,
     coord_is_pass,
+    write_kpi2_pass,
 )
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
@@ -306,6 +307,15 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
+    if field_is_filled(fields, _KPI2_LINK) and not _cell_passed(fields, _KPI2_RESULT):
+        try:
+            await loop.run_in_executor(
+                None, lambda: write_kpi2_pass(token, config, record_id)
+            )
+            fields = {**fields, _KPI2_RESULT: _PASS}
+        except Exception:
+            logger.exception("kpi_diag: KPI 2 pass write failed record=%s", record_id)
+
     kpi4_ok = _cell_passed(fields, _KPI4_RESULT)
     kpi5_ok = _cell_passed(fields, _KPI5_RESULT)
     if not kpi4_ok or not kpi5_ok:

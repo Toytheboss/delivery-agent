@@ -302,6 +302,23 @@ def test_pass_chain_fills_empty_kpi45_on_live_project():
     assert plan["write_time"] is True
 
 
+def test_pass_chain_writes_kpi2_when_pr_link_exists():
+    from bot.workflow_kpi_pass_chain import pass_chain_plan
+
+    live = {
+        "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+        "主网上线时间": "2026-09-01T00:10:00+08:00",
+        "KPI 2 - PR 新闻链接验证": "https://x.com/SprayMe/status/1",
+    }
+    plan = pass_chain_plan(live)
+    assert plan["write_kpi2"] is True
+    live["新闻验证结果"] = "通过"
+    plan = pass_chain_plan(live)
+    assert plan["write_kpi2"] is False
+    plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR 新闻链接验证": "https://x.com/x/status/1"})
+    assert plan["write_kpi2"] is False
+
+
 def test_pass_chain_stamps_time_when_coord_already_passed():
     from bot.workflow_kpi_pass_chain import pass_chain_plan
 

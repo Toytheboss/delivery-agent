@@ -58,6 +58,13 @@ def kpi2_passed(fields: dict[str, Any]) -> bool:
     return kpi_cell_passed(fields, _KPI2_RESULT) or field_is_filled(fields, _KPI2_LINK)
 
 
+def kpi2_needed(fields: dict[str, Any]) -> bool:
+    """Link is in the tracker, but 新闻验证结果 is still empty."""
+    return field_is_filled(fields, _KPI2_LINK) and not kpi_cell_passed(
+        fields, _KPI2_RESULT
+    )
+
+
 def kpi45_needed(fields: dict[str, Any]) -> bool:
     return not kpi_cell_passed(fields, _KPI4_RESULT) or not kpi_cell_passed(
         fields, _KPI5_RESULT
@@ -82,12 +89,15 @@ def pass_chain_plan(fields: dict[str, Any], status_field: str = "项目状态") 
     """What this row still needs. Does not talk to Lark."""
     eligible = diag_not_eligible_reason(fields, status_field) is None
     plan = {
+        "write_kpi2": False,
         "write_kpi45": False,
         "write_kpi7": False,
         "write_coord": False,
         "write_time": False,
         "eligible": eligible,
     }
+    if eligible and kpi2_needed(fields):
+        plan["write_kpi2"] = True
     if eligible and kpi45_needed(fields):
         plan["write_kpi45"] = True
     if coord_is_pass(fields) and not judge_time_filled(fields):
@@ -116,6 +126,16 @@ def pass_chain_plan(fields: dict[str, Any], status_field: str = "项目状态") 
 
 def _stamp() -> str:
     return now_shanghai().strftime("%Y-%m-%d %H:%M")
+
+
+def write_kpi2_pass(token: str, config: Any, record_id: str) -> None:
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        record_id,
+        {_KPI2_RESULT: _PASS},
+    )
 
 
 def write_kpi7_pass(
@@ -182,6 +202,10 @@ def apply_pass_chain(
     status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
     plan = pass_chain_plan(fields, status_field)
     done: list[str] = []
+    if plan["write_kpi2"]:
+        write_kpi2_pass(token, config, record_id)
+        done.append("kpi2")
+        fields = {**fields, _KPI2_RESULT: _PASS}
     if plan["write_kpi45"]:
         from bot.workflow_kpi45_live import fill_kpi45_for_fields
 
@@ -218,7 +242,8 @@ def apply_pass_chain_records(
             fields, str(getattr(config, "workflow_status_field", "") or "项目状态")
         )
         if not (
-            plan["write_kpi45"]
+            plan["write_kpi2"]
+            or plan["write_kpi45"]
             or plan["write_kpi7"]
             or plan["write_coord"]
             or plan["write_time"]
