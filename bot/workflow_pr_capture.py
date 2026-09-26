@@ -62,7 +62,7 @@ _PR_CMD_RE = re.compile(
 )
 _DEFAULT_LINK_FIELD = "KPI 2 - PR 新闻链接验证"
 _DEFAULT_RESULT_FIELD = "新闻验证结果"
-_KPI2_PASSED = ["通过"]
+_KPI2_PASSED = "通过"
 _DEFAULT_NOTIFY_CHAT = "oc_717a560011483216c49329fda5e43b41"
 _PROGRESS_BASE_URL = (
     "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e"
@@ -239,7 +239,9 @@ def kpi2_pass_fields(
     KPI 2 is intentionally mechanical: once the tracker contains a URL, the
     news verification result is passed. Content review is outside this workflow.
     """
-    return {link_field: url, result_field: list(_KPI2_PASSED)}
+    # SingleSelect writes as a string. Sending ["通过"] (the read shape)
+    # raises 1254062 SingleSelectFieldConvFail.
+    return {link_field: url, result_field: _KPI2_PASSED}
 
 
 def collect_urls_from_text(text: str) -> list[str]:

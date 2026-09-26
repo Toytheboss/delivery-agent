@@ -148,7 +148,7 @@ def main() -> int:
             args.app_token,
             args.table_id,
             item["record_id"],
-            {args.result_field: [item["wanted"]]},
+            {args.result_field: item["wanted"]},
         )
         updated += 1
         print(f"UPDATED {item['project']} -> {item['wanted']}")
