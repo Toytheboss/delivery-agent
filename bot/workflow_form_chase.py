@@ -125,6 +125,18 @@ def missing_fields(fields: dict[str, Any], names: list[str]) -> list[str]:
     return [n for n in names if not field_is_filled(fields, n)]
 
 
+def chase_should_complete(
+    *,
+    filled: int,
+    missing: list[str],
+    min_filled: int,
+) -> bool:
+    """Stop chasing when nothing is missing, or enough required cells are filled."""
+    if not missing:
+        return True
+    return filled >= min_filled
+
+
 # Lark column → wording closer to the Google Form questions
 _FIELD_LABELS = {
     "Project name": "Project Name",
@@ -508,7 +520,9 @@ async def run_form_chase_once(
         ]
         filled = len(filled_names)
         missing = missing_fields(wallet_fields or {}, fields_needed)
-        if filled >= min_filled:
+        if chase_should_complete(
+            filled=filled, missing=missing, min_filled=min_filled
+        ):
             meta["done"] = True
             meta["filled_count"] = filled
             meta["completed_at"] = now

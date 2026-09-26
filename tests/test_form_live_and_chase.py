@@ -32,6 +32,17 @@ def test_live_form_splits_into_three_bubbles():
     assert split_reply_bubbles("a\n---\nb") == ["a", "b"]
 
 
+def test_chase_stops_when_missing_list_is_empty():
+    from bot.workflow_form_chase import chase_should_complete
+
+    assert chase_should_complete(filled=4, missing=[], min_filled=4)
+    assert chase_should_complete(filled=4, missing=[], min_filled=6)
+    assert chase_should_complete(filled=4, missing=["Project logo"], min_filled=4)
+    assert not chase_should_complete(
+        filled=3, missing=["Project logo"], min_filled=4
+    )
+
+
 def test_chase_required_fields_include_legacy_contract_name():
     names = [
         "Mainnet Contract Addresss",
