@@ -7,6 +7,7 @@ from bot.workflow_pr_capture import (
     collect_urls_from_message,
     is_pr_capture_command,
     is_tweet_url,
+    kpi2_pass_fields,
     pick_pr_url,
     profile_url_from_pr_url,
     tg_message_link,
@@ -61,6 +62,16 @@ def test_profile_url_from_tweet_status():
 def test_fallback_to_first_http_url():
     assert pick_pr_url(["https://mirror.xyz/post/1"]) == "https://mirror.xyz/post/1"
     assert pick_pr_url([]) == ""
+
+
+def test_kpi2_pass_fields_sets_link_and_pass_result():
+    assert kpi2_pass_fields(
+        link_field="KPI 2 - PR 新闻链接验证",
+        url="https://x.com/project/status/123",
+    ) == {
+        "KPI 2 - PR 新闻链接验证": "https://x.com/project/status/123",
+        "新闻验证结果": ["通过"],
+    }
 
 
 def test_collect_urls_from_text_and_entities():
