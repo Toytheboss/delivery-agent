@@ -220,7 +220,7 @@ async def run_form_received_notify_once(config: Any) -> int:
         config.workflow_wallet_table_id,
     )
     fields_needed = _chase_fields(config) or list(DEFAULT_CHASE_FIELDS)
-    min_filled = max(int(getattr(config, "workflow_form_chase_min_filled", 4) or 4), 1)
+    required = max(len(fields_needed), 1)
     name_field = str(
         getattr(config, "workflow_project_name_field", "项目名称 Project Name")
         or "项目名称 Project Name"
@@ -247,7 +247,7 @@ async def run_form_received_notify_once(config: Any) -> int:
             wallet_records, name, fields_needed=fields_needed
         )
         filled = count_filled_fields(wallet_fields or {}, fields_needed)
-        if filled < min_filled:
+        if filled < required:
             continue
         complete_ids.add(rid)
         if rid in notified:
