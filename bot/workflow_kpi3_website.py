@@ -374,8 +374,9 @@ def audit_kpi3_for_fields(
     fields: dict[str, Any],
     *,
     project_name: str = "",
+    skip_if_audited: bool = True,
 ) -> str:
-    """Write KPI 3 copy + result for one live record. Skip if already audited."""
+    """Write KPI 3 copy + result. Live hook skips repeats; diag always re-runs."""
     if not getattr(config, "workflow_kpi3_enabled", True):
         return "disabled"
     rid = (record_id or "").strip()
@@ -383,10 +384,11 @@ def audit_kpi3_for_fields(
         return "no_record"
     path = _state_path(config)
     state = _load_state(path)
-    if rid in state:
+    if skip_if_audited and rid in state:
         return f"already:{state[rid]}"
 
     from bot.workflow_form_dispatch import _field_text
+    from bot.workflow_kpi_write import field_result, merge_kpi_copy, merge_kpi_result
 
     name = (project_name or "").strip() or _field_text(
         fields, config.workflow_project_name_field
@@ -404,11 +406,15 @@ def audit_kpi3_for_fields(
     result_field = str(
         getattr(config, "workflow_kpi3_result_field", "") or _DEFAULT_RESULT_FIELD
     )
+    copy = merge_kpi_copy(_field_text(fields, copy_field), verdict.copy)
+    result = merge_kpi_result(
+        field_result(fields, result_field), passed=verdict.passed
+    )
     payload = kpi3_result_fields(
         copy_field=copy_field,
         result_field=result_field,
-        copy=verdict.copy,
-        result=verdict.result,
+        copy=copy,
+        result=result,
     )
     try:
         update_record(
@@ -421,17 +427,17 @@ def audit_kpi3_for_fields(
     except Exception:
         logger.exception("kpi3: failed to write result project=%r record=%s", name, rid)
         return "write_failed"
-    state[rid] = verdict.result
+    state[rid] = result
     _save_state(path, state)
     logger.info(
         "kpi3: %s project=%r record=%s url=%s reason=%s",
-        verdict.result,
+        result,
         name,
         rid,
         (url or "")[:80],
         verdict.reason,
     )
-    return verdict.result
+    return result
 
 
 async def audit_kpi3_for_live_record(

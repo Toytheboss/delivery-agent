@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-09-26 · Roy号群口令审 KPI 1 / 3 / 6
+
+### 新增
+- 项目群直接发 `onchain diag` / `twitter diag` / `website diag` 即审对应 KPI 并写回进度表，不用 quote
+- 只接 Roy号；没合约写「没有检测到合约」不通过；复审追加记录，过了才把结果改成通过
+
+---
+
 ## 2026-09-26 · 谷歌表单回收后推 Project verification push
 
 ### 新增

@@ -253,6 +253,7 @@ class AppConfig:
     pr_capture_link_field: str
     pr_capture_notify_enabled: bool
     pr_capture_notify_chat_id: str
+    workflow_kpi_diag_enabled: bool
     pr_backlink_enabled: bool
     pr_backlink_table_id: str
     pr_backlink_path: str
@@ -1139,6 +1140,9 @@ def load_config() -> AppConfig:
             or workflow.get("verify_alert_lark_chat_id")
             or "oc_717a560011483216c49329fda5e43b41"
         ).strip(),
+        workflow_kpi_diag_enabled=bool(
+            (workflow.get("kpi_diag") or {}).get("enabled", False)
+        ),
         pr_backlink_enabled=bool((workflow.get("pr_backlink") or {}).get("enabled", False)),
         pr_backlink_table_id=str(
             (workflow.get("pr_backlink") or {}).get("table_id") or "tbllA25Mz66e8wpv"
