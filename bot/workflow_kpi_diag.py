@@ -12,15 +12,18 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
-from bot.lark_bitable import get_tenant_access_token, list_records, update_record
+from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.workflow_form_chase import field_is_filled
-from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi45_live import _KPI4_COPY, _KPI5_COPY, fill_kpi45_for_fields
+from bot.workflow_kpi_pass_chain import (
+    KPI7_PASS_COPY,
+    apply_pass_chain,
+    coord_is_pass,
+    judge_time_filled,
+)
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
     field_result,
-    merge_kpi_copy,
-    now_shanghai,
 )
 from bot.workflow_pr_capture import _collect_matches
 
@@ -42,8 +45,6 @@ _KIND_LABEL = {
     "project": "Project diag",
 }
 _PASS = "通过"
-_COORD_FIELD = "KPI 统筹"
-_JUDGE_FIELD = "KPI 判定时间"
 _KPI1_RESULT = "推特验证结果"
 _KPI2_LINK = "KPI 2 - PR 新闻链接验证"
 _KPI2_RESULT = "新闻验证结果"
@@ -52,18 +53,13 @@ _KPI4_RESULT = "产品可用验证结果"
 _KPI5_RESULT = "独立性验证结果"
 _KPI6_RESULT = "交互验证结果"
 _KPI7_RESULT = "持续运营要求验证结果"
-_KPI7_COPY_FIELD = "KPI 7 - 持续运营要求验证"
 _KPI2_PASS = (
     "News/PR verification: a news URL was submitted; news/PR verification passed"
 )
 _KPI2_FAIL = (
     "News/PR verification: no news URL submitted; news/PR verification failed"
 )
-_KPI7_COPY = (
-    "Ongoing operations verification: website and product were reachable on the "
-    "check day; Twitter, community and product all have ongoing updates; "
-    "ongoing operations verification passed"
-)
+_KPI7_COPY = KPI7_PASS_COPY
 _KPI7_OPEN = (
     "Ongoing operations verification: not passed (KPI 1–6 still have open items)"
 )
@@ -258,46 +254,6 @@ def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
     return f"{label} written for {project!r}: {result}{extra}"
 
 
-def _write_kpi7_pass(
-    token: str, config: AppConfig, record_id: str, existing_copy: str = ""
-) -> None:
-    update_record(
-        token,
-        config.workflow_base_app_token,
-        config.workflow_progress_table_id,
-        record_id,
-        {
-            _KPI7_COPY_FIELD: merge_kpi_copy(existing_copy, _KPI7_COPY),
-            _KPI7_RESULT: _PASS,
-        },
-    )
-
-
-def _write_final_evaluation(token: str, config: AppConfig, record_id: str) -> None:
-    stamp = now_shanghai().strftime("%Y-%m-%d %H:%M")
-    last_error: Exception | None = None
-    for coord in (_PASS, "有效 KPI"):
-        try:
-            update_record(
-                token,
-                config.workflow_base_app_token,
-                config.workflow_progress_table_id,
-                record_id,
-                {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-    if last_error:
-        update_record(
-            token,
-            config.workflow_base_app_token,
-            config.workflow_progress_table_id,
-            record_id,
-            {_COORD_FIELD: "有效 KPI"},
-        )
-
-
 async def _run_one(
     loop: asyncio.AbstractEventLoop,
     kind: str,
@@ -351,7 +307,14 @@ async def _run_project_diag(
     fields: dict[str, Any],
     project_name: str,
 ) -> str:
-    if already_passed(fields, _COORD_FIELD):
+    if coord_is_pass(fields):
+        if not judge_time_filled(fields):
+            try:
+                await loop.run_in_executor(
+                    None, lambda: apply_pass_chain(token, config, record_id, fields)
+                )
+            except Exception:
+                logger.exception("kpi_diag: judge time stamp failed record=%s", record_id)
         return format_project_diag_reply(
             project=project_name, rows=[], coord_written=True, skipped=True
         )
@@ -399,20 +362,27 @@ async def _run_project_diag(
     kpi6_ok = bool(onchain.get("passed") or onchain.get("result") == _PASS)
     kpi7_ok = already_passed(fields, _KPI7_RESULT)
     first_six_ok = kpi1_ok and kpi2_ok and kpi3_ok and kpi4_ok and kpi5_ok and kpi6_ok
-    if first_six_ok and not kpi7_ok:
+    overlay = dict(fields)
+    if kpi1_ok:
+        overlay[_KPI1_RESULT] = _PASS
+    if kpi2_ok:
+        overlay[_KPI2_RESULT] = _PASS
+    if kpi3_ok:
+        overlay[_KPI3_RESULT] = _PASS
+    overlay[_KPI4_RESULT] = _PASS
+    overlay[_KPI5_RESULT] = _PASS
+    if kpi6_ok:
+        overlay[_KPI6_RESULT] = _PASS
+    coord_written = False
+    if first_six_ok:
         try:
             await loop.run_in_executor(
-                None,
-                lambda: _write_kpi7_pass(
-                    token,
-                    config,
-                    record_id,
-                    _field_text(fields, _KPI7_COPY_FIELD),
-                ),
+                None, lambda: apply_pass_chain(token, config, record_id, overlay)
             )
             kpi7_ok = True
+            coord_written = True
         except Exception as exc:  # noqa: BLE001
-            logger.exception("kpi_diag: KPI 7 write failed record=%s", record_id)
+            logger.exception("kpi_diag: pass-chain write failed record=%s", record_id)
             rows = _project_diag_rows(
                 kpi1_ok,
                 twitter,
@@ -430,7 +400,7 @@ async def _run_project_diag(
                 format_project_diag_reply(
                     project=project_name, rows=rows, coord_written=False
                 )
-                + f"\nKPI 7 write failed: {exc}"
+                + f"\nFinal evaluation write failed: {exc}"
             )
     rows = _project_diag_rows(
         kpi1_ok,
@@ -445,22 +415,6 @@ async def _run_project_diag(
         onchain,
         kpi7_ok,
     )
-    all_ok = first_six_ok and kpi7_ok
-    coord_written = False
-    if all_ok:
-        try:
-            await loop.run_in_executor(
-                None, lambda: _write_final_evaluation(token, config, record_id)
-            )
-            coord_written = True
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("kpi_diag: final evaluation write failed record=%s", record_id)
-            return (
-                format_project_diag_reply(
-                    project=project_name, rows=rows, coord_written=False
-                )
-                + f"\nFinal evaluation write failed: {exc}"
-            )
     return format_project_diag_reply(
         project=project_name, rows=rows, coord_written=coord_written
     )

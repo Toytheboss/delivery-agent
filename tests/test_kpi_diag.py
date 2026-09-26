@@ -255,3 +255,49 @@ def test_diag_requires_live_on_or_after_sept_2026():
         )
         is None
     )
+
+
+def test_pass_chain_plan_six_pass_then_seven_coord_time():
+    from bot.workflow_kpi_pass_chain import pass_chain_plan
+
+    live = {
+        "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+        "主网上线时间": "2026-09-01T00:10:00+08:00",
+        "推特验证结果": "通过",
+        "新闻验证结果": "通过",
+        "官网验证结果": "通过",
+        "产品可用验证结果": "通过",
+        "独立性验证结果": "通过",
+        "交互验证结果": "通过",
+    }
+    plan = pass_chain_plan(live)
+    assert plan["write_kpi7"] is True
+    assert plan["write_coord"] is True
+    assert plan["write_time"] is True
+    live["持续运营要求验证结果"] = "通过"
+    plan = pass_chain_plan(live)
+    assert plan["write_kpi7"] is False
+    assert plan["write_coord"] is True
+    assert plan["write_time"] is True
+    live["KPI 统筹"] = "有效 KPI"
+    plan = pass_chain_plan(live)
+    assert plan["write_kpi7"] is False
+    assert plan["write_coord"] is False
+    assert plan["write_time"] is True
+    live["KPI 判定时间"] = "2026-09-26 11:00"
+    plan = pass_chain_plan(live)
+    assert plan["write_time"] is False
+
+
+def test_pass_chain_stamps_time_when_coord_already_passed():
+    from bot.workflow_kpi_pass_chain import pass_chain_plan
+
+    fields = {
+        "项目状态": "对接中",
+        "KPI 统筹": ["通过"],
+    }
+    plan = pass_chain_plan(fields)
+    assert plan["write_time"] is True
+    assert plan["write_kpi7"] is False
+    assert plan["write_coord"] is False
+

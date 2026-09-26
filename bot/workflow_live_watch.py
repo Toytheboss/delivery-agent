@@ -100,6 +100,16 @@ async def run_live_status_watch_once(
         except Exception:
             logger.exception("live-status-watch: deploy-status piggyback failed")
 
+    if getattr(config, "workflow_kpi_diag_enabled", False):
+        try:
+            from bot.workflow_kpi_pass_chain import apply_pass_chain_records
+
+            n = apply_pass_chain_records(_token, config, records)
+            if n:
+                logger.info("live-status-watch: kpi pass-chain wrote %s row(s)", n)
+        except Exception:
+            logger.exception("live-status-watch: kpi pass-chain piggyback failed")
+
     live_now: list[tuple[str, str]] = []
     for record in records:
         rid = str(record.get("record_id") or "")
