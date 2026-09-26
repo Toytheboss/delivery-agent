@@ -40,9 +40,13 @@ _THRESHOLD = 5
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
 _KPI2_LINK = "KPI 2 - PR 新闻链接验证"
-_CHAIN_RE = re.compile(r"bot\s*chain|botchain", re.I)
-_LIVE_RE = re.compile(
-    r"\blive\b|\blaunched\b|\blaunch(?:ing|ed)?\b|\bmainnet\b|\bgo[\s-]?live\b",
+_CHAIN = r"(?:bot\s*chain|botchain)"
+_LIVE_ON_CHAIN_RE = re.compile(
+    rf"\b(?:go[\s-]?live|live|launched)\s+on\s+{_CHAIN}\b",
+    re.I,
+)
+_PARTNERSHIP_CHAIN_RE = re.compile(
+    rf"\bpartnership(?:\s+with)?\s+{_CHAIN}\b",
     re.I,
 )
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
@@ -255,7 +259,9 @@ def is_mainnet_pr_tweet(
     body = text or ""
     if is_retweet(body, extra):
         return False
-    if not _CHAIN_RE.search(body) or not _LIVE_RE.search(body):
+    if not (
+        _LIVE_ON_CHAIN_RE.search(body) or _PARTNERSHIP_CHAIN_RE.search(body)
+    ):
         return False
     return tweet_has_project_name(body, project_name)
 

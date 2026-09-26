@@ -184,7 +184,7 @@ def test_collect_originals_returns_links_from_x_api(monkeypatch):
     ]
 
 
-def test_mainnet_pr_needs_project_name_chain_and_live():
+def test_mainnet_pr_live_on_chain_or_partnership():
     extra = {"id": "9"}
     assert is_mainnet_pr_tweet(
         "BanshanBook is live on Botchain mainnet today",
@@ -196,6 +196,31 @@ def test_mainnet_pr_needs_project_name_chain_and_live():
         extra,
         project_name="BanshanBook",
     )
+    assert is_mainnet_pr_tweet(
+        "Ezswap launched on Botchain mainnet",
+        extra,
+        project_name="ezswap",
+    )
+    assert is_mainnet_pr_tweet(
+        "Ezswap go-live on Botchain",
+        extra,
+        project_name="ezswap",
+    )
+    assert is_mainnet_pr_tweet(
+        "Ezswap partnership with Botchain",
+        extra,
+        project_name="ezswap",
+    )
+    assert is_mainnet_pr_tweet(
+        "Ezswap partnership Botchain",
+        extra,
+        project_name="ezswap",
+    )
+    assert is_mainnet_pr_tweet(
+        "Ezswap partnership with BotChain",
+        extra,
+        project_name="ezswap",
+    )
     assert not is_mainnet_pr_tweet(
         "We are live on Botchain mainnet today",
         extra,
@@ -203,6 +228,16 @@ def test_mainnet_pr_needs_project_name_chain_and_live():
     )
     assert not is_mainnet_pr_tweet(
         "BanshanBook shipped a new feature",
+        extra,
+        project_name="BanshanBook",
+    )
+    assert not is_mainnet_pr_tweet(
+        "BanshanBook is live. We love Botchain",
+        extra,
+        project_name="BanshanBook",
+    )
+    assert not is_mainnet_pr_tweet(
+        "BanshanBook partnership with Uniswap",
         extra,
         project_name="BanshanBook",
     )

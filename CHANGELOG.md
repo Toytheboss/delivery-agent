@@ -11,6 +11,15 @@
 
 ---
 
+## 2026-09-27 · PR 推文改为两路短语匹配
+
+### 优化
+- 主网 PR 不再要求项目名、链名、live 三个词各自出现
+- 路 1：`live / launched / go-live on Botchain`（含 Now live on BOT Chain）加项目名
+- 路 2：`partnership with Botchain` / `partnership Botchain` / `partnership with BotChain` 加项目名
+
+---
+
 ## 2026-09-26 · twitter diag 从官号推文回填主网 PR
 
 ### 新增
