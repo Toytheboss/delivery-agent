@@ -106,6 +106,7 @@ async def process_live_project(
         "form": "skipped",
         "logo": "skipped",
         "kpi3": "skipped",
+        "kpi45": "skipped",
         "error": None,
     }
     if not config.workflow_enabled:
@@ -286,6 +287,19 @@ async def process_live_project(
             result["kpi3"] = f"err:{exc}"
     else:
         result["kpi3"] = "disabled"
+
+    if getattr(config, "workflow_kpi45_enabled", True):
+        try:
+            from bot.workflow_kpi45_live import fill_kpi45_for_live_record
+
+            result["kpi45"] = await fill_kpi45_for_live_record(
+                config, token, rid, fields, project_name=name
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("live-trigger kpi45 failed for %r", name)
+            result["kpi45"] = f"err:{exc}"
+    else:
+        result["kpi45"] = "disabled"
 
     result["ok"] = result["form"] in {"sent", "already_sent"} or str(
         result["logo"]

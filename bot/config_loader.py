@@ -166,6 +166,12 @@ class AppConfig:
     workflow_kpi3_copy_field: str
     workflow_kpi3_result_field: str
     workflow_kpi3_state_file: str
+    workflow_kpi45_enabled: bool
+    workflow_kpi4_copy_field: str
+    workflow_kpi4_result_field: str
+    workflow_kpi5_copy_field: str
+    workflow_kpi5_result_field: str
+    workflow_kpi45_state_file: str
     workflow_wallet_notify_enabled: bool
     workflow_wallet_table_id: str
     workflow_wallet_required_fields: list[str]
@@ -782,6 +788,28 @@ def load_config() -> AppConfig:
         workflow_kpi3_state_file=str(
             (workflow.get("kpi3") or {}).get(
                 "state_file", "data/kpi3_website_state.json"
+            )
+        ),
+        workflow_kpi45_enabled=bool((workflow.get("kpi45") or {}).get("enabled", True)),
+        workflow_kpi4_copy_field=str(
+            (workflow.get("kpi45") or {}).get("kpi4_copy_field")
+            or "KPI 4 - 产品可用验证"
+        ).strip(),
+        workflow_kpi4_result_field=str(
+            (workflow.get("kpi45") or {}).get("kpi4_result_field")
+            or "产品可用验证结果"
+        ).strip(),
+        workflow_kpi5_copy_field=str(
+            (workflow.get("kpi45") or {}).get("kpi5_copy_field")
+            or "KPI 5 - 项目独立性验证"
+        ).strip(),
+        workflow_kpi5_result_field=str(
+            (workflow.get("kpi45") or {}).get("kpi5_result_field")
+            or "独立性验证结果"
+        ).strip(),
+        workflow_kpi45_state_file=str(
+            (workflow.get("kpi45") or {}).get(
+                "state_file", "data/kpi45_live_state.json"
             )
         ),
         workflow_wallet_notify_enabled=bool(
