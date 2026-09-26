@@ -192,7 +192,7 @@ def test_mainnet_pr_needs_project_name_chain_and_live():
         project_name="BanshanBook",
     )
     assert is_mainnet_pr_tweet(
-        "Banshan Book launched on BOT Chain",
+        "Banshan × BOT Chain  Now live on BOT Chain Mainnet",
         extra,
         project_name="BanshanBook",
     )
@@ -212,6 +212,19 @@ def test_mainnet_pr_needs_project_name_chain_and_live():
         project_name="BanshanBook",
     )
     assert tweet_has_project_name("go live with Banshan Book now", "BanshanBook")
+    assert tweet_has_project_name(
+        "Banshan × BOT Chain  Now live on BOT Chain Mainnet",
+        "BanshanBook",
+    )
+    assert not tweet_has_project_name(
+        "Books evolved. Now live on BOT Chain Mainnet",
+        "BanshanBook",
+    )
+    assert not is_mainnet_pr_tweet(
+        "Foo is live on Botchain mainnet",
+        extra,
+        project_name="FooChain",
+    )
 
 
 def test_find_mainnet_pr_url_takes_newest_hit():

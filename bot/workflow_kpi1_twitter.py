@@ -176,21 +176,74 @@ def original_status_links(
     return links
 
 
+_NAME_STOP = frozenset(
+    {
+        "chain",
+        "protocol",
+        "network",
+        "finance",
+        "official",
+        "project",
+        "launch",
+        "mainnet",
+        "labs",
+        "lab",
+        "dao",
+        "token",
+        "coin",
+        "swap",
+        "defi",
+        "nft",
+        "web",
+        "bot",
+        "app",
+    }
+)
+
+
 def _compact_latin(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "", (text or "").lower())
 
 
-def tweet_has_project_name(text: str, project_name: str) -> bool:
+def _project_name_needles(project_name: str) -> list[str]:
     raw = (project_name or "").strip()
     if len(raw) < 2:
-        return False
-    blob = text or ""
+        return []
+    needles: list[str] = []
     if re.search(r"[\u4e00-\u9fff]", raw):
-        return raw.lower() in blob.lower()
+        needles.append(raw.lower())
     compact = _compact_latin(raw)
-    if len(compact) < 3:
-        return False
-    return compact in _compact_latin(blob)
+    if len(compact) >= 3:
+        needles.append(compact)
+    parts = re.findall(r"[A-Z]+(?![a-z])|[A-Z]?[a-z]+|[0-9]+", raw)
+    if not parts:
+        parts = re.split(r"[\s_\-]+", raw)
+    for part in parts:
+        token = _compact_latin(part)
+        if len(token) >= 6 and token not in _NAME_STOP:
+            needles.append(token)
+    seen: set[str] = set()
+    out: list[str] = []
+    for item in needles:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
+
+
+def tweet_has_project_name(text: str, project_name: str) -> bool:
+    blob = text or ""
+    compact_blob = _compact_latin(blob)
+    lower_blob = blob.lower()
+    for needle in _project_name_needles(project_name):
+        if re.search(r"[\u4e00-\u9fff]", needle):
+            if needle in lower_blob:
+                return True
+            continue
+        if needle in compact_blob:
+            return True
+    return False
 
 
 def is_mainnet_pr_tweet(
