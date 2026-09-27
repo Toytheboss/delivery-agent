@@ -435,18 +435,18 @@ async def main() -> None:
         if getattr(config, "workflow_blake_weekly_enabled", False):
             asyncio.create_task(blake_weekly_loop(config))
             logger.info(
-                "Workflow Blake weekly enabled (chat_id=%s, daily hour=%s:00 ping weekday=%s Asia/Shanghai)",
+                "Workflow Blake weekly enabled (chat_id=%s, daily@%02d:00 send Mon %02d:00:00 Asia/Shanghai)",
                 getattr(config, "workflow_blake_weekly_chat_id", ""),
-                getattr(config, "workflow_blake_weekly_hour", 0),
-                getattr(config, "workflow_blake_weekly_weekday", 0),
+                getattr(config, "workflow_blake_weekly_daily_hour", 0),
+                getattr(config, "workflow_blake_weekly_hour", 12),
             )
         if getattr(config, "pr_weekly_enabled", False):
             asyncio.create_task(pr_weekly_loop(config))
             logger.info(
-                "Workflow PR weekly enabled (chat_id=%s, daily hour=%s:00 ping weekday=%s Asia/Shanghai)",
+                "Workflow PR weekly enabled (chat_id=%s, daily@%02d:00 send Mon %02d:00:00 Asia/Shanghai)",
                 getattr(config, "pr_weekly_chat_id", ""),
-                getattr(config, "pr_weekly_hour", 0),
-                getattr(config, "pr_weekly_weekday", 0),
+                getattr(config, "pr_weekly_daily_hour", 0),
+                getattr(config, "pr_weekly_hour", 12),
             )
     logger.info(
         "Bot running. Folders=%s, group_replies=%s, chats=%d, qa_test_groups=%s, "

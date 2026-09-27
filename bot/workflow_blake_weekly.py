@@ -1,4 +1,4 @@
-"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 00:00."""
+"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 12:00:00."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import re
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -21,11 +21,19 @@ from bot.lark_bitable import (
 )
 from bot.lark_im import send_text_to_chat
 from bot.project_logo import link_str, upload_bitable_image
+from bot.weekly_schedule import (
+    TZ,
+    daily_hour as _sched_daily_hour,
+    ping_weekday,
+    prepare_minutes as _sched_prepare_minutes,
+    send_hour as _sched_send_hour,
+    sleep_until,
+    this_send_at,
+)
 from bot.workflow_form_dispatch import _field_text, _normalize_name
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
-TZ = timezone(timedelta(hours=8))
 
 _LIVE_TIME_FIELD = "主网上线时间"
 _INTRO_PROGRESS_FIELD = "项目简介（1-2句话）"
@@ -51,11 +59,19 @@ def week_monday(now: datetime | None = None) -> datetime:
 
 
 def _ping_weekday(config: Any) -> int:
-    return int(getattr(config, "workflow_blake_weekly_weekday", 0) or 0)
+    return ping_weekday(config, "workflow_blake_weekly_weekday")
 
 
 def _ping_hour(config: Any) -> int:
-    return int(getattr(config, "workflow_blake_weekly_hour", 0) or 0)
+    return _sched_send_hour(config, "workflow_blake_weekly_hour")
+
+
+def _daily_hour(config: Any) -> int:
+    return _sched_daily_hour(config, "workflow_blake_weekly_daily_hour")
+
+
+def _prepare_minutes(config: Any) -> int:
+    return _sched_prepare_minutes(config, "workflow_blake_weekly_prepare_minutes")
 
 
 def in_ping_window(config: Any, now: datetime | None = None) -> bool:
@@ -65,7 +81,7 @@ def in_ping_window(config: Any, now: datetime | None = None) -> bool:
 
 def in_daily_window(config: Any, now: datetime | None = None) -> bool:
     now = (now or datetime.now(TZ)).astimezone(TZ)
-    return now.hour == _ping_hour(config)
+    return now.hour == _daily_hour(config)
 
 
 def report_monday(now: datetime, *, ping: bool = False) -> datetime:
@@ -407,9 +423,13 @@ def upsert_week_rows(
 
 
 def run_blake_weekly_once(
-    config: Any, *, now: datetime | None = None, force: bool = False
+    config: Any,
+    *,
+    now: datetime | None = None,
+    force: bool = False,
+    send: bool | None = None,
 ) -> dict[str, Any]:
-    """Refresh this week's live projects daily; ping the group on Monday 00:00."""
+    """Refresh this week's live projects daily; ping the group on Monday 12:00:00."""
     result: dict[str, Any] = {
         "sent": False,
         "updated": False,
@@ -425,17 +445,39 @@ def run_blake_weekly_once(
 
     now = (now or datetime.now(TZ)).astimezone(TZ)
     ping_slot = in_ping_window(config, now)
-    should_ping = force or ping_slot
-    monday = report_monday(now, ping=ping_slot)
+    if send is False:
+        use_ping_week = True
+        should_send = False
+    elif send is True:
+        use_ping_week = True
+        should_send = True
+    else:
+        use_ping_week = bool(force or ping_slot)
+        should_send = use_ping_week
+    monday = report_monday(now, ping=use_ping_week)
     period = period_label(monday)
     result["period"] = period
     state_path = _state_path(config)
     state = _load_state(state_path)
     today = now.date().isoformat()
-    if not force and state.get("last_upsert_date") == today:
+    if (
+        not force
+        and send is None
+        and not use_ping_week
+        and state.get("last_upsert_date") == today
+    ):
         result["skipped"] = True
         result["reason"] = "already_updated"
         return result
+
+    pending = state.get("pending_ping")
+    if (
+        should_send
+        and isinstance(pending, dict)
+        and str(pending.get("period") or "") == period
+        and str(pending.get("text") or "").strip()
+    ):
+        return _send_prepared_blake_ping(config, state_path, state, pending, result)
 
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
@@ -481,14 +523,55 @@ def run_blake_weekly_once(
     state["last_count"] = len(projects)
 
     chat_id = str(getattr(config, "workflow_blake_weekly_chat_id", "") or "").strip()
-    if not should_ping:
+    text = ""
+    if projects and chat_id:
+        text = build_blake_ping(
+            count=len(projects),
+            monday=monday,
+            at_open_id=str(getattr(config, "workflow_blake_weekly_at_open_id", "") or ""),
+            at_name=str(
+                getattr(config, "workflow_blake_weekly_at_name", "") or _DEFAULT_AT_NAME
+            ),
+            table_url_value=table_url(config),
+        )
+    slot = this_send_at(
+        now, weekday=_ping_weekday(config), hour=_ping_hour(config)
+    )
+    state["pending_ping"] = {
+        "period": period,
+        "text": text,
+        "chat_id": chat_id,
+        "count": len(projects),
+        "send_at": slot.isoformat(),
+        "prepared_at": now.isoformat(timespec="seconds"),
+    }
+    if not should_send:
         _save_state(state_path, state)
-        result["reason"] = "daily_update"
+        result["reason"] = "prepared" if send is False else "daily_update"
         logger.info(
             "blake weekly table updated period=%s count=%d", period, len(projects)
         )
         return result
-    if not projects:
+    return _send_prepared_blake_ping(
+        config, state_path, state, state["pending_ping"], result, token=token
+    )
+
+
+def _send_prepared_blake_ping(
+    config: Any,
+    state_path: Path,
+    state: dict[str, Any],
+    pending: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    token: str | None = None,
+) -> dict[str, Any]:
+    period = str(pending.get("period") or result.get("period") or "")
+    result["period"] = period
+    result["count"] = int(pending.get("count") or 0)
+    chat_id = str(pending.get("chat_id") or "").strip()
+    text = str(pending.get("text") or "").strip()
+    if not result["count"] or not text:
         _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "no_projects"
@@ -500,60 +583,110 @@ def run_blake_weekly_once(
         result["reason"] = "missing_chat_id"
         logger.warning("blake weekly: table filled but chat_id missing")
         return result
-    if not force and state.get("last_ping_period") == period:
+    if state.get("last_ping_period") == period:
         _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "already_sent"
         return result
-
-    text = build_blake_ping(
-        count=len(projects),
-        monday=monday,
-        at_open_id=str(getattr(config, "workflow_blake_weekly_at_open_id", "") or ""),
-        at_name=str(
-            getattr(config, "workflow_blake_weekly_at_name", "") or _DEFAULT_AT_NAME
-        ),
-        table_url_value=table_url(config),
-    )
+    if token is None:
+        app_id = os.getenv("LARK_APP_ID", "").strip()
+        app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+        if not app_id or not app_secret:
+            result["skipped"] = True
+            result["reason"] = "missing_lark_credentials"
+            return result
+        token = get_tenant_access_token(app_id, app_secret)
     send_text_to_chat(token, chat_id, text)
     state["last_ping_period"] = period
     state["last_sent_at"] = datetime.now(TZ).isoformat(timespec="seconds")
+    state["pending_ping"] = pending
     _save_state(state_path, state)
     result["sent"] = True
     logger.info(
-        "blake weekly sent period=%s count=%d chat=%s", period, len(projects), chat_id
+        "blake weekly sent period=%s count=%d chat=%s", period, result["count"], chat_id
     )
     return result
-
-
-def _seconds_until_daily(hour: int) -> float:
-    now = datetime.now(TZ)
-    target = now.replace(hour=hour, minute=0, second=0, microsecond=0)
-    if now >= target:
-        target += timedelta(days=1)
-    return max((target - now).total_seconds(), 1.0)
 
 
 async def blake_weekly_loop(config: Any) -> None:
     weekday = _ping_weekday(config)
     hour = _ping_hour(config)
+    daily = _daily_hour(config)
+    lead = timedelta(minutes=_prepare_minutes(config))
     logger.info(
-        "blake weekly daily hour=%02d:00 ping weekday=%d Asia/Shanghai",
-        hour,
+        "blake weekly daily hour=%02d:00 ping weekday=%d send=%02d:00:00 prepare-%dm Asia/Shanghai",
+        daily,
         weekday,
+        hour,
+        _prepare_minutes(config),
     )
     loop = asyncio.get_running_loop()
     while True:
         try:
-            if in_daily_window(config):
-                await loop.run_in_executor(None, run_blake_weekly_once, config)
-                await asyncio.sleep(90)
-                continue
-            sleep_for = min(
-                300.0,
-                await loop.run_in_executor(None, _seconds_until_daily, hour),
+            now = datetime.now(TZ)
+            slot = this_send_at(now, weekday=weekday, hour=hour)
+            state = _load_state(_state_path(config))
+            monday = report_monday(slot, ping=True)
+            period = period_label(monday)
+            if state.get("last_ping_period") == period:
+                slot = slot + timedelta(days=7)
+                monday = report_monday(slot, ping=True)
+                period = period_label(monday)
+            prep_at = slot - lead
+            today = now.date().isoformat()
+            events: list[datetime] = []
+            daily_at = now.replace(hour=daily, minute=0, second=0, microsecond=0)
+            if state.get("last_upsert_date") != today:
+                events.append(daily_at if daily_at > now else now)
+            pending = state.get("pending_ping")
+            pending_ok = (
+                isinstance(pending, dict)
+                and str(pending.get("period") or "") == period
+                and str(pending.get("text") or "").strip()
             )
-            await asyncio.sleep(sleep_for)
+            if not pending_ok:
+                events.append(prep_at if prep_at > now else now)
+            if state.get("last_ping_period") != period:
+                events.append(slot if slot > now else now)
+            if not events:
+                nxt = slot + timedelta(days=7) - lead
+                await sleep_until(nxt)
+                continue
+            await sleep_until(min(events))
+            now = datetime.now(TZ)
+            daily_at = now.replace(hour=daily, minute=0, second=0, microsecond=0)
+            if (
+                now >= daily_at
+                and _load_state(_state_path(config)).get("last_upsert_date")
+                != now.date().isoformat()
+            ):
+                await loop.run_in_executor(
+                    None, lambda: run_blake_weekly_once(config, send=None)
+                )
+            now = datetime.now(TZ)
+            if now >= prep_at and _load_state(_state_path(config)).get(
+                "last_ping_period"
+            ) != period:
+                pending = _load_state(_state_path(config)).get("pending_ping")
+                pending_ok = (
+                    isinstance(pending, dict)
+                    and str(pending.get("period") or "") == period
+                    and str(pending.get("text") or "").strip()
+                )
+                if not pending_ok:
+                    await loop.run_in_executor(
+                        None,
+                        lambda: run_blake_weekly_once(config, send=False),
+                    )
+            now = datetime.now(TZ)
+            if now >= slot and _load_state(_state_path(config)).get(
+                "last_ping_period"
+            ) != period:
+                await sleep_until(slot)
+                await loop.run_in_executor(
+                    None, lambda: run_blake_weekly_once(config, send=True)
+                )
+            await asyncio.sleep(1)
         except Exception:
             logger.exception("blake weekly loop failed")
             await asyncio.sleep(60)

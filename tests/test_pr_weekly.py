@@ -50,11 +50,14 @@ def test_wednesday_report_window_is_in_progress_week():
     assert label_end == collect_end
 
 
-def test_ping_window_is_monday_midnight_by_default():
-    cfg = SimpleNamespace(pr_weekly_weekday=0, pr_weekly_hour=0)
-    assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 10, tzinfo=TZ)) is True
-    assert in_ping_window(cfg, datetime(2026, 9, 27, 0, 10, tzinfo=TZ)) is False
+def test_ping_window_is_monday_noon_by_default_hour():
+    cfg = SimpleNamespace(
+        pr_weekly_weekday=0, pr_weekly_hour=12, pr_weekly_daily_hour=0
+    )
+    assert in_ping_window(cfg, datetime(2026, 9, 28, 12, 0, tzinfo=TZ)) is True
+    assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 10, tzinfo=TZ)) is False
     assert in_daily_window(cfg, datetime(2026, 9, 24, 0, 10, tzinfo=TZ)) is True
+    assert in_daily_window(cfg, datetime(2026, 9, 24, 12, 0, tzinfo=TZ)) is False
 
 
 def test_ping_mentions_lighter_jasper_and_copy():
@@ -183,7 +186,9 @@ def test_run_once_daily_updates_without_ping(tmp_path):
     cfg = SimpleNamespace(
         pr_weekly_enabled=True,
         pr_weekly_weekday=0,
-        pr_weekly_hour=0,
+        pr_weekly_hour=12,
+        pr_weekly_daily_hour=0,
+        pr_weekly_prepare_minutes=5,
         pr_weekly_state_file=str(tmp_path / "state.json"),
         pr_weekly_chat_id="oc_chat",
         pr_weekly_table_url="https://example.com/pr",
@@ -222,7 +227,64 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         upsert.assert_called_once()
         send.assert_not_called()
 
-        mon = datetime(2026, 9, 28, 0, 10, tzinfo=TZ)
+        mon = datetime(2026, 9, 28, 12, 0, tzinfo=TZ)
         ping = run_pr_weekly_once(cfg, now=mon)
         assert ping["sent"] is True
         send.assert_called_once()
+
+
+def test_prepare_then_send_does_not_rescan(tmp_path):
+    from bot.weekly_schedule import this_send_at
+    from bot.workflow_pr_weekly import run_pr_weekly_once
+
+    now = datetime(2026, 9, 28, 11, 55, tzinfo=TZ)
+    assert this_send_at(now, weekday=0, hour=12) == datetime(
+        2026, 9, 28, 12, 0, tzinfo=TZ
+    )
+    cfg = SimpleNamespace(
+        pr_weekly_enabled=True,
+        pr_weekly_weekday=0,
+        pr_weekly_hour=12,
+        pr_weekly_daily_hour=0,
+        pr_weekly_prepare_minutes=5,
+        pr_weekly_state_file=str(tmp_path / "state.json"),
+        pr_weekly_chat_id="oc_chat",
+        pr_weekly_table_url="https://example.com/pr",
+        pr_weekly_assignees=[],
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+        workflow_live_link_field="已上线链接🔗",
+        pr_capture_link_field="KPI 2 - PR 新闻链接验证",
+        pr_capture_events_file=str(tmp_path / "events.jsonl"),
+    )
+    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    progress = [
+        {
+            "record_id": "rec1",
+            "last_modified_time": in_ms,
+            "fields": {
+                "项目名称 Project Name": "PromptMint",
+                "已上线链接🔗": "https://prompt.example/",
+                "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
+            },
+        }
+    ]
+    with (
+        patch.dict("os.environ", {"LARK_APP_ID": "id", "LARK_APP_SECRET": "secret"}),
+        patch("bot.workflow_pr_weekly.get_tenant_access_token", return_value="tok"),
+        patch("bot.workflow_pr_weekly.list_records", return_value=progress),
+        patch("bot.workflow_pr_weekly.upsert_week_rows") as upsert,
+        patch("bot.workflow_pr_weekly.send_text_to_chat") as send,
+    ):
+        prepared = run_pr_weekly_once(cfg, now=now, send=False)
+        assert prepared["updated"] is True
+        assert prepared["sent"] is False
+        assert prepared["reason"] == "prepared"
+        send.assert_not_called()
+        sent = run_pr_weekly_once(
+            cfg, now=datetime(2026, 9, 28, 12, 0, tzinfo=TZ), send=True
+        )
+        assert sent["sent"] is True
+        send.assert_called_once()
+        assert upsert.call_count == 1

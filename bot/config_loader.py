@@ -220,6 +220,8 @@ class AppConfig:
     workflow_blake_weekly_table_url: str
     workflow_blake_weekly_weekday: int
     workflow_blake_weekly_hour: int
+    workflow_blake_weekly_daily_hour: int
+    workflow_blake_weekly_prepare_minutes: int
     workflow_blake_weekly_state_file: str
     pr_weekly_enabled: bool
     pr_weekly_chat_id: str
@@ -228,6 +230,8 @@ class AppConfig:
     pr_weekly_table_url: str
     pr_weekly_weekday: int
     pr_weekly_hour: int
+    pr_weekly_daily_hour: int
+    pr_weekly_prepare_minutes: int
     pr_weekly_state_file: str
     pr_weekly_assignees: list
     pr_capture_events_file: str
@@ -1021,7 +1025,13 @@ def load_config() -> AppConfig:
             (workflow.get("blake_weekly") or {}).get("weekday", 0)
         ),
         workflow_blake_weekly_hour=int(
-            (workflow.get("blake_weekly") or {}).get("hour", 0)
+            (workflow.get("blake_weekly") or {}).get("hour", 12)
+        ),
+        workflow_blake_weekly_daily_hour=int(
+            (workflow.get("blake_weekly") or {}).get("daily_hour", 0)
+        ),
+        workflow_blake_weekly_prepare_minutes=int(
+            (workflow.get("blake_weekly") or {}).get("prepare_minutes", 5)
         ),
         workflow_blake_weekly_state_file=str(
             (workflow.get("blake_weekly") or {}).get(
@@ -1048,7 +1058,13 @@ def load_config() -> AppConfig:
             )
         ).strip(),
         pr_weekly_weekday=int((workflow.get("pr_weekly") or {}).get("weekday", 0)),
-        pr_weekly_hour=int((workflow.get("pr_weekly") or {}).get("hour", 0)),
+        pr_weekly_hour=int((workflow.get("pr_weekly") or {}).get("hour", 12)),
+        pr_weekly_daily_hour=int(
+            (workflow.get("pr_weekly") or {}).get("daily_hour", 0)
+        ),
+        pr_weekly_prepare_minutes=int(
+            (workflow.get("pr_weekly") or {}).get("prepare_minutes", 5)
+        ),
         pr_weekly_state_file=str(
             (workflow.get("pr_weekly") or {}).get(
                 "state_file",
