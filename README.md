@@ -1,31 +1,22 @@
 # Delivery Agent
 
-Telegram **Userbot** + Lark (Feishu) workflow automation for project delivery.
+Telegram **Userbot** + Lark (Feishu) automation for project delivery, KPI audit, and internal ops.
 
-It answers partner FAQs in Telegram groups, greets new project chats, runs the **mainnet-live → Google Form → logo → wallet** pipeline with Lark, and gives operators daily/weekly ops reports.
+The same codebase runs **two** Telegram accounts:
 
-> This is a **Userbot** (Telethon personal account), **not** a BotFather bot.  
+| Account | Typical work |
+|---------|----------------|
+| **交付号** | Partner-group FAQ, welcome, live → Google Form → logo → wallet, tech-support tickets |
+| **审核号** | KPI checks and writes, live-onboard Lark pings, weekly PR / frontend pings |
+
+> These are **Userbots** (Telethon personal accounts), **not** BotFather bots.  
 > Secrets stay local: `.env`, `*.session`, and real `config/*.yaml` are **never** committed.
 
-> **Maintaining this doc:** every new / changed / removed bot capability must be reflected in **Features** (and Config / Env / Ops tables if needed) in the same change set. See `.cursor/rules/readme-feature-sync.mdc`.
-
-> **迭代记录：** 按时间整理的功能更新说明见 [CHANGELOG.md](CHANGELOG.md)（类似应用商店更新日志）。每次实质功能推送请同步追加一条。
+> **Changelog:** dated shipping notes live in [CHANGELOG.md](CHANGELOG.md). This README is the map of what the system does now; the changelog is the history.
 
 ---
 
 ## Features (full list)
-
-
-### Tech Support 答疑升级
-
-| Feature | What it does |
-|---------|----------------|
-| **Quote + `tech support`** | Josh/Roy reply to a project question and send `tech support` / `/tech` to open a Lark ticket. |
-| **Lark @ assignees** | Posts to the tech support chat and @ configured assignees (e.g. Cisco-BE, Roy). |
-| **Ticket reply → TG** | When tech replies to the Lark ticket, Bot quotes the original TG question with the answer. |
-| **Auto-learn + Agent KB** | After TG delivery, Q&A is saved under `knowledge/learned/` and upserted to the Agent glossary Bitable. |
-| **Ops handbook** | See [docs/tech-support-handbook.md](docs/tech-support-handbook.md). |
-
 
 ### 1. Scope & access control
 
@@ -33,9 +24,9 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Folder scope** | Only listens / auto-replies inside configured Telegram *Projects* folders (e.g. multiple folders with a shared name prefix). |
 | **Pilot mode** | Optional: FAQ auto-reply limited to listed pilot groups while testing. |
-| **Group replies toggle / monitor mode** | When group replies are disabled, project-group questions and explicit `@Josh` mentions are queued in the Dashboard for human review without posting a Telegram reply; welcome and ops workflows remain active. |
+| **Group replies toggle / monitor mode** | When group replies are off, project-group questions and explicit @mentions of the delivery account are queued in the operator console for human review; welcome and ops workflows stay on. |
 | **Ignored groups** | Hard skip list (`config/ignored_groups.yaml`). |
-| **BD / ignore blacklist** | Listed users never get auto-replies (`config/whitelist.yaml` → `ignore_users`), except workflow operators on mark-live / send-form. |
+| **Ignore blacklist** | Listed users never get auto-replies (`config/whitelist.yaml` → `ignore_users`), except workflow operators on mark-live / send-form. |
 | **QA testers** | Configured accounts/groups can ask without `@mention`, skip reply delay, and use ops commands (`config/qa_testers.yaml`). |
 | **Workflow operators** | Username allowlist for mark-live / send-form / reports. |
 | **Rate limit** | Per (chat, user) cooldown between auto-replies. |
@@ -48,10 +39,10 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 |---------|----------------|
 | **Knowledge RAG** | Retrieves chunks from `knowledge/` (markdown FAQ packs, help docs, learned notes). |
 | **LLM compose** | DeepSeek / OpenAI-compatible chat; answers in the asker’s language (`auto` ZH/EN). |
-| **Trigger rules** | Optional strict group mode (`trigger.require_explicit_mention`) replies only to an explicit `@bot`; otherwise supports reply-to-bot, question-like text, or `trigger.hint_keywords`. |
+| **Trigger rules** | Optional strict group mode (`trigger.require_explicit_mention`) replies only to an explicit `@`; otherwise supports reply-to-bot, question-like text, or `trigger.hint_keywords`. |
 | **Stay silent when unsure** | Below `min_relevance_score`, blocked commercial topics, or model `NEEDS_HUMAN` → no reply. |
-| **Multi-bubble replies** | Splits long answers on `---`; optional delay before first reply + gap between bubbles (more “human”). |
-| **FAQ footer** | Optional bold/italic disclaimer after a successful FAQ reply only. |
+| **Multi-bubble replies** | Splits long answers on `---`; optional delay before first reply + gap between bubbles. |
+| **FAQ footer** | Optional disclaimer after a successful FAQ reply only. |
 | **URL hygiene** | Can scrub blocked URLs so they never appear in answers. |
 | **Periodic KB reload** | Reloads knowledge on the same interval as folder refresh. |
 
@@ -71,11 +62,11 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 
 | Feature | What it does |
 |---------|----------------|
-| **Join greeting** | When the account is added to a group whose title matches keywords (e.g. brand / partner tokens). |
+| **Join greeting** | When the account is added to a group whose title matches keywords. |
 | **Language detection** | Samples recent non-bot messages → title hint → English fallback. |
-| **Timed sequence** | Configurable ZH/EN multi-step welcome (`delay_seconds`: e.g. 0 / 30 / 60). |
+| **Timed sequence** | Configurable ZH/EN multi-step welcome (`delay_seconds`). |
 | **Min-message gate** | `0` = greet immediately; `>0` = wait for N non-bot messages. |
-| **Baseline (no spam)** | Existing matching groups are marked “already greeted” on first enable / pilot expand — scans never backfill-greet old chats. |
+| **Baseline (no spam)** | Existing matching groups are marked “already greeted” on first enable — scans never backfill-greet old chats. |
 | **Pilot kickoff** | Can greet configured pilot groups at startup. |
 | **Backup scan** | Periodic scan only processes pending joins; does not spam baselined groups. |
 
@@ -88,7 +79,7 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 | **Auto-file new chats** | On join (and periodic scan), puts matching-title groups into the first free Projects folder. |
 | **Keyword match** | Uses `scope.auto_add_keywords` (or welcome keywords). |
 | **Capacity** | Respects ~100 chats per Telegram folder; optional auto-create `prefix #N` folders. |
-| **Title cache** | Remembers chat titles for later form matching (avoids heavy `get_entity` storms). |
+| **Title cache** | Remembers chat titles for later form / KPI matching. |
 | **TG rate limiting** | Serializes / paces heavy Telegram calls as folders grow. |
 
 ---
@@ -97,12 +88,13 @@ It answers partner FAQs in Telegram groups, greets new project chats, runs the *
 
 End-to-end path when a project goes **Mainnet Live**:
 
-1. Detect live (webhook / status watch / TG mark-live)  
-2. Match Lark project ↔ Telegram group  
-3. Send Google onboarding form  
-4. Fill project logo into Lark (best-effort, once)  
-5. Partner submits form → Apps Script → Lark wallet table  
-6. Optional: chase incomplete forms, notify internal groups, daily Lark digest  
+1. Detect live (webhook / status watch / TG mark-live)
+2. Match Lark project ↔ Telegram group
+3. Send Google onboarding form
+4. Fill project logo into Lark (best-effort, once)
+5. Partner submits form → Apps Script → Lark wallet table
+6. Chase incomplete forms; optional wallet notify; daily Lark digest
+7. On the audit account: live-onboard ping to the internal Lark group (after confirming the delivery account is in the TG group); auto-fill website / product / independence KPI cells when eligible
 
 | Feature | What it does |
 |---------|----------------|
@@ -111,16 +103,18 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Deploy status watch** | Tracks enter/leave mainnet-live / mainnet-deploying / testnet-deploying for daily report. |
 | **Startup live catch-up** | Optional one-shot process of live rows missing form/logo. |
 | **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
-| **Manual send form** | Ops command in current group as fallback. |
+| **Manual send form** | Ops command in the current group as fallback. |
 | **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
 | **Logo fill** | Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). |
 | **Form / logo poll** | Optional expensive poller (off by default; prefer webhook + watch + mark-live). |
-| **Form chase (24h)** | After form sent: if wallet table still has &lt; N of required fields after 24h, resend reminder listing **missing fields** (capped reminders). |
-| **Wallet notify (TG)** | When required wallet fields are complete, notify finance/ops/tech chats (optional). |
+| **Form chase** | After the form is sent: daily reminder listing **still-missing** required fields, until the missing list is empty or the reminder cap is hit. An empty missing list stops chase even if a legacy `min_filled` threshold would have said otherwise. |
+| **Wallet notify (TG)** | When required wallet fields are complete, notify configured chats (optional; often off). |
 | **Lark wallet digest** | Daily Lark IM digest of newly collected wallet projects (Asia/Shanghai hour). |
+| **Live onboard ping** | Audit account posts a live-onboard note to the configured Lark chat; checks the delivery account is in the TG group before sending. |
+| **Form-received ping** | Optional; **off by default**. Does not ping the group when the Google form comes in. |
 | **Baseline existing live** | First run can mark already-live rows as handled to avoid spam. |
 
-**Workflow command aliases** (configurable; defaults in `config.yaml.example`):
+**Workflow command aliases** (configurable; defaults in `config/config.yaml.example`):
 
 | Action | Keywords |
 |--------|----------|
@@ -129,17 +123,61 @@ End-to-end path when a project goes **Mainnet Live**:
 
 ---
 
-### 7. Operator reports & metrics
+### 7. KPI audit (audit account)
+
+Standard product checks on the Progress Tracker. Eligible rows: already mainnet-live, live date on or after `2026-09-01`. Official cadence is **Day 1** (live) → **Day 4** first check → **Day 7** recheck of held items only.
+
+Telegram replies in the project group use English labels (Twitter / News/PR / Website / …), not the word “KPI”.
 
 | Feature | What it does |
 |---------|----------------|
-| **Persistent counters** | FAQ sessions/bubbles/footer, social, welcome, folder add, form/logo outcomes, mark-live, webhooks, wallet digest, messages processed, etc. |
+| **`project diag`** | Runs remaining checks, writes result cells, and if 1–6 all pass, auto-writes item 7 + coordination + judgment time. Already-passed cells are not re-audited. |
+| **`twitter diag`** | Official X account: ≥ `5` original posts in `30` days. Can also fill the News/PR URL from a matching mainnet PR tweet if that cell is empty. |
+| **`website diag`** | Official site shows the chain name as required. |
+| **`onchain diag`** | Mainnet contract, ≥ `3` unique wallets, ≥ `5` successful core txs. |
+| **Live hook (3 / 4 / 5)** | On live: website check plus product-available and independence copy when those cells are empty. Live hook does **not** call the X API. |
+| **News/PR (`pr support`)** | Quote a PR post in the project group and send `pr support` to overwrite the News/PR URL cell (and mark news verification passed). |
+
+Coordination outcomes: **Valid KPI** / **Held for rectification** (Day 4) / **KPI failed** (Day 7 only). Group copy for official pushes is drafted separately; this repo does not auto-post those verification messages from the delivery console.
+
+---
+
+### 8. Weekly Lark pings (audit account)
+
+| Feature | What it does |
+|---------|----------------|
+| **PR weekly** | Daily `00:00` refreshes the PR-link table. Sunday `23:55` prepares the ping; Monday `00:00:00` sends only. |
+| **Frontend weekly** | Same clock for the live-project / logo / site table ping. |
+| **No double send** | Past the send instant by more than a short grace, or if a ping already went out in the last 18 hours, skip until **next** week. Already-sent Lark posts are not edited. |
+
+Templates: `config/pr_weekly.example.yaml` and the frontend-weekly example in `config/`.
+
+---
+
+### 9. Tech support escalation
+
+| Feature | What it does |
+|---------|----------------|
+| **Quote + `tech support`** | Delivery or audit account replies to a project question and sends `tech support` / `/tech` to open a Lark ticket. |
+| **Lark @ assignees** | Posts to the configured tech-support chat and @ the configured assignees. |
+| **Ticket reply → TG** | When someone replies to that Lark ticket, the bot quotes the original TG question with the answer. |
+| **Auto-learn + Agent KB** | After TG delivery, Q&A is saved under `knowledge/learned/` and upserted to the Agent glossary Bitable. |
+| **Ops handbook** | [docs/tech-support-handbook.md](docs/tech-support-handbook.md). |
+
+---
+
+### 10. Operator console & metrics
+
+| Feature | What it does |
+|---------|----------------|
+| **Delivery console** | Web console over disk-backed snapshots: delivery funnel (bind → deploy → form → wallet), project list, automations, analytics, audit log, monitor-mode human-review queue. KPI audit is **not** on this console yet. |
+| **Persistent counters** | FAQ, social, welcome, folder add, form/logo, mark-live, webhooks, wallet digest, messages processed, etc. |
 | **Stats (detail)** | Full Chinese ops breakdown. |
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
-| **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix (processed / replied / FAQ / social / welcome / form). |
-| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl`: inbound text + reply text + outcome/reason/score (retain N days, default 90); monitor-mode questions are marked `human_review` / `manual review` for the Dashboard queue. |
+| **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix. |
+| **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl` (retain N days, default 90); monitor-mode questions are marked `human_review` for the console queue. |
 
-**Report command aliases:**
+**Report command aliases** (Telegram, on-demand — no scheduled TG push):
 
 | Report | Commands |
 |--------|----------|
@@ -147,11 +185,11 @@ End-to-end path when a project goes **Mainnet Live**:
 | Weekly | `/report`, `交付周报`, `交付报告` |
 | Daily | `/daily`, `/daily_report`, `交付日报`, `今日交付日报`, and compact colon variants |
 
-Reports are **on-demand** (no scheduled TG push unless you add one).
+Scheduled **Lark** weekly pings are separate (section 8).
 
 ---
 
-### 8. Learn / absorb knowledge
+### 11. Learn / absorb knowledge
 
 | Feature | What it does |
 |---------|----------------|
@@ -159,11 +197,11 @@ Reports are **on-demand** (no scheduled TG push unless you add one).
 | **Reply-learn** | Reply to a partner message with the trigger to absorb that content. |
 | **Scope rules** | QA groups / QA testers / project folders (configurable). In project groups, typically **QA testers only**. |
 | **KB reload** | Reloads chunks after a successful learn. |
-| **Agent KB upsert** | Optional sync of learned Q&A into a Lark Bitable “Agent glossary” (create/update by id; no full-table wipe). |
+| **Agent KB upsert** | Optional sync of learned Q&A into a Lark Bitable glossary (create/update by id; no full-table wipe). |
 
 ---
 
-### 9. Lark knowledge sync
+### 12. Lark knowledge sync
 
 | Feature | What it does |
 |---------|----------------|
@@ -172,7 +210,7 @@ Reports are **on-demand** (no scheduled TG push unless you add one).
 
 ---
 
-### 10. External companion (documented, not Python)
+### 13. External companion (documented, not Python)
 
 | Feature | What it does |
 |---------|----------------|
@@ -183,22 +221,32 @@ Reports are **on-demand** (no scheduled TG push unless you add one).
 ## Architecture (high level)
 
 ```text
-Telegram folders / groups
+Telegram project folders
+        │
+        ├─ 交付号  FAQ / welcome / form / logo / wallet / tech support
+        └─ 审核号  KPI diag / live onboard ping / weekly Lark pings
         │
         ▼
- Telethon Userbot (bot.main)
+ Telethon Userbot (bot.main)  ×  two production processes
         │
         ├─ FAQ RAG (knowledge/ + LLM)
         ├─ Social / Welcome / Folder auto-add
         ├─ Ops commands (stats / daily / weekly)
         ├─ Learn → knowledge/learned (+ optional Lark Agent KB)
         │
-        └─ Workflow
-              ├─ Lark webhook / status watch / mark-live
-              ├─ Send Google Form → partner group
-              ├─ Logo fill → Progress Tracker
-              ├─ Form chase (24h missing fields)
-              └─ Wallet table → notify / daily digest
+        ├─ Delivery workflow
+        │     ├─ Lark webhook / status watch / mark-live
+        │     ├─ Send Google Form → partner group
+        │     ├─ Logo fill → Progress Tracker
+        │     ├─ Form chase (missing fields)
+        │     └─ Wallet table → digest
+        │
+        ├─ KPI audit → Progress Tracker cells
+        ├─ Weekly PR / frontend pings → Lark groups
+        │
+        └─ Disk snapshots → operator console (funnel / projects / review queue)
+
+Lark Progress Tracker + wallet table
 ```
 
 ---
@@ -231,19 +279,22 @@ For the server-oriented two-step login flow, run
 Telegram verification code and 2FA password interactively. The password input
 is hidden and is not stored in shell history.
 
-Production: see [`deploy/README.md`](deploy/README.md) (`delivery-agent.service`).
+Production: see [`deploy/README.md`](deploy/README.md). Two accounts mean two
+systemd units / data dirs (same repo, different session and config). Shared
+runtime files (if used) stay **off** git.
 
 ---
 
 ## Layout
 
 ```
-bot/           Handlers, RAG, welcome, folder auto-add, Lark workflows, metrics, message log
+bot/           Handlers, RAG, welcome, folder auto-add, Lark workflows, KPI, weekly pings, metrics
 config/        *.example templates only (real YAML is gitignored)
 knowledge/     FAQ / docs packs (add private packs locally if needed)
 scripts/       Login, Lark KB upsert, Google Form → Lark Apps Script, webhook docs
 deploy/        systemd + bootstrap
-docs/          Operator notes (whitelist, workflows)
+docs/          Operator notes (whitelist, workflows, tech support)
+static/        Operator console prototype
 assets/        Optional brand assets for decks / docs
 ```
 
@@ -251,7 +302,13 @@ assets/        Optional brand assets for decks / docs
 
 ## Configuration map
 
-Primary file: `config/config.yaml.example`.
+Primary file: `config/config.yaml.example`. Extra fragments:
+
+| File | Controls |
+|------|----------|
+| `config/pr_weekly.example.yaml` | PR weekly table refresh + Monday `00:00:00` ping |
+| `config/*weekly.example.yaml` | Frontend weekly table refresh + Monday `00:00:00` ping |
+| `config/tech_support.example.yaml` | Tech-support Lark chat and assignees |
 
 | Block | Controls |
 |-------|----------|
@@ -262,7 +319,7 @@ Primary file: `config/config.yaml.example`.
 | `learn` | Trigger word, scopes, Agent KB table |
 | `knowledge` | Directory, chunk size, `top_k` |
 | `lark` | Wiki sync on/off + interval |
-| `workflow` | Live webhook/watch, form, logo, chase, wallet notify, digest, operators, command aliases |
+| `workflow` | Live webhook/watch, form, logo, chase, digest, live onboard, operators, command aliases |
 | `llm` | Provider, model, temperature |
 | `telegram` | Session name |
 | `metrics` | Counters + message JSONL log retention |
@@ -280,7 +337,7 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 | `TELEGRAM_PROXY` | Optional `socks5://` / `http://` proxy |
 | `LOG_LEVEL` | Logging verbosity |
 | `DEEPSEEK_API_KEY` or `OPENAI_API_KEY` | LLM |
-| `LARK_APP_ID` / `LARK_APP_SECRET` | Bitable / wiki / digest |
+| `LARK_APP_ID` / `LARK_APP_SECRET` | Bitable / wiki / digest / pings |
 | `LARK_WIKI_TOKEN` | Optional wiki sync |
 | `WORKFLOW_LIVE_WEBHOOK_SECRET` | Optional override for live webhook auth |
 
@@ -290,14 +347,18 @@ Companion YAML: `whitelist.yaml`, `qa_testers.yaml`, `ignored_groups.yaml`.
 
 | You want… | Do this |
 |-----------|---------|
-| FAQ in a partner group | Ensure group is in a scoped folder; ask with `@` or a clear question |
+| FAQ in a partner group | Ensure the group is in a scoped folder; ask with `@` or a clear question |
 | Greet a new partner group | Title matches welcome keywords; add the delivery account to the group |
 | Mark project live + send form | Operator sends `项目已上线` (or alias) in the group |
 | Resend form manually | `/send_form` / `发送上线表单` |
+| Escalate a tech question | Quote the question, then `tech support` |
+| Write a News/PR URL | Quote the PR post, then `pr support` |
+| Run KPI checks | In the project group on the **audit** account: `project diag` / `twitter diag` / `website diag` / `onchain diag` |
 | See last 24h ops | `交付日报` / `/daily` |
 | See last 7 days summary | `交付周报` / `/report` |
 | Full counters | `交付统计` / `/stats` |
 | Teach the bot a fact | QA tester: `学习 …` (or configured trigger) |
+| Watch delivery funnel | Operator console (snapshots; not a substitute for the Progress Tracker KPI cells) |
 | Audit ask/reply text | Read `data/message_logs/messages-YYYY-MM-DD.jsonl` on the server |
 
 More operator detail: [`docs/delivery-operator-whitelist.md`](docs/delivery-operator-whitelist.md).
@@ -310,6 +371,7 @@ More operator detail: [`docs/delivery-operator-whitelist.md`](docs/delivery-oper
 - Keep private product/brand knowledge out of public forks if needed
 - Follow Telegram ToS for userbots
 - Prefer webhook + status watch over folder-wide form polling on large estates (avoids Telegram flood waits)
+- Runtime state, shared onboard files, and group caches stay off git
 
 ---
 
