@@ -141,6 +141,14 @@ async def main() -> None:
     load_dotenv(ROOT / ".env")
     setup_logging()
     logger = logging.getLogger(__name__)
+    from bot.boot_check import assert_bot_imports
+
+    try:
+        loaded = assert_bot_imports()
+    except Exception:
+        logger.exception("Startup import check failed")
+        sys.exit(1)
+    logger.info("Startup import check ok (%d modules)", len(loaded))
 
     api_id = os.getenv("TELEGRAM_API_ID", "").strip()
     api_hash = os.getenv("TELEGRAM_API_HASH", "").strip()
