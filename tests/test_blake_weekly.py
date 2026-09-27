@@ -45,13 +45,13 @@ def test_report_monday_on_wednesday_stays_current_week():
     assert monday == datetime(2026, 9, 21, tzinfo=TZ)
 
 
-def test_ping_window_is_monday_noon():
+def test_ping_window_is_monday_midnight():
     cfg = SimpleNamespace(
         workflow_blake_weekly_weekday=0,
-        workflow_blake_weekly_hour=12,
+        workflow_blake_weekly_hour=0,
         workflow_blake_weekly_daily_hour=0,
     )
-    assert in_ping_window(cfg, datetime(2026, 9, 28, 12, 0, tzinfo=TZ)) is True
+    assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 0, tzinfo=TZ)) is True
     assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 15, tzinfo=TZ)) is False
     assert in_daily_window(cfg, datetime(2026, 9, 23, 0, 15, tzinfo=TZ)) is True
     assert in_daily_window(cfg, datetime(2026, 9, 23, 1, 0, tzinfo=TZ)) is False
@@ -155,7 +155,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
     cfg = SimpleNamespace(
         workflow_blake_weekly_enabled=True,
         workflow_blake_weekly_weekday=0,
-        workflow_blake_weekly_hour=12,
+        workflow_blake_weekly_hour=0,
         workflow_blake_weekly_daily_hour=0,
         workflow_blake_weekly_prepare_minutes=5,
         workflow_blake_weekly_state_file=str(tmp_path / "state.json"),
@@ -198,7 +198,9 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         upsert.assert_called_once()
         send.assert_not_called()
 
-        mon = datetime(2026, 9, 28, 12, 0, tzinfo=TZ)
-        ping = run_blake_weekly_once(cfg, now=mon)
+        mon = datetime(2026, 9, 28, 0, 0, tzinfo=TZ)
+        no_ping = run_blake_weekly_once(cfg, now=mon)
+        assert no_ping["sent"] is False
+        ping = run_blake_weekly_once(cfg, now=mon, send=True)
         assert ping["sent"] is True
         send.assert_called_once()

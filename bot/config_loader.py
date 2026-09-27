@@ -1025,7 +1025,7 @@ def load_config() -> AppConfig:
             (workflow.get("blake_weekly") or {}).get("weekday", 0)
         ),
         workflow_blake_weekly_hour=int(
-            (workflow.get("blake_weekly") or {}).get("hour", 12)
+            (workflow.get("blake_weekly") or {}).get("hour", 0)
         ),
         workflow_blake_weekly_daily_hour=int(
             (workflow.get("blake_weekly") or {}).get("daily_hour", 0)
@@ -1058,7 +1058,7 @@ def load_config() -> AppConfig:
             )
         ).strip(),
         pr_weekly_weekday=int((workflow.get("pr_weekly") or {}).get("weekday", 0)),
-        pr_weekly_hour=int((workflow.get("pr_weekly") or {}).get("hour", 12)),
+        pr_weekly_hour=int((workflow.get("pr_weekly") or {}).get("hour", 0)),
         pr_weekly_daily_hour=int(
             (workflow.get("pr_weekly") or {}).get("daily_hour", 0)
         ),

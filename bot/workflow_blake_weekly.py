@@ -1,4 +1,4 @@
-"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 12:00:00."""
+"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 00:00:00."""
 
 from __future__ import annotations
 
@@ -28,7 +28,9 @@ from bot.weekly_schedule import (
     prepare_minutes as _sched_prepare_minutes,
     send_hour as _sched_send_hour,
     sleep_until,
+    ping_sent_recently,
     this_send_at,
+    upcoming_send_at,
 )
 from bot.workflow_form_dispatch import _field_text, _normalize_name
 
@@ -76,7 +78,11 @@ def _prepare_minutes(config: Any) -> int:
 
 def in_ping_window(config: Any, now: datetime | None = None) -> bool:
     now = (now or datetime.now(TZ)).astimezone(TZ)
-    return now.weekday() == _ping_weekday(config) and now.hour == _ping_hour(config)
+    return (
+        now.weekday() == _ping_weekday(config)
+        and now.hour == _ping_hour(config)
+        and now.minute == 0
+    )
 
 
 def in_daily_window(config: Any, now: datetime | None = None) -> bool:
@@ -429,7 +435,7 @@ def run_blake_weekly_once(
     force: bool = False,
     send: bool | None = None,
 ) -> dict[str, Any]:
-    """Refresh this week's live projects daily; ping the group on Monday 12:00:00."""
+    """Refresh this week's live projects daily; ping the group on Monday 00:00:00."""
     result: dict[str, Any] = {
         "sent": False,
         "updated": False,
@@ -453,7 +459,7 @@ def run_blake_weekly_once(
         should_send = True
     else:
         use_ping_week = bool(force or ping_slot)
-        should_send = use_ping_week
+        should_send = False
     monday = report_monday(now, ping=use_ping_week)
     period = period_label(monday)
     result["period"] = period
@@ -583,7 +589,9 @@ def _send_prepared_blake_ping(
         result["reason"] = "missing_chat_id"
         logger.warning("blake weekly: table filled but chat_id missing")
         return result
-    if state.get("last_ping_period") == period:
+    if state.get("last_ping_period") == period or ping_sent_recently(
+        state, datetime.now(TZ)
+    ):
         _save_state(state_path, state)
         result["skipped"] = True
         result["reason"] = "already_sent"
@@ -624,14 +632,21 @@ async def blake_weekly_loop(config: Any) -> None:
     while True:
         try:
             now = datetime.now(TZ)
-            slot = this_send_at(now, weekday=weekday, hour=hour)
             state = _load_state(_state_path(config))
+            tentative = this_send_at(now, weekday=weekday, hour=hour)
+            monday = report_monday(tentative, ping=True)
+            period = period_label(monday)
+            already = state.get("last_ping_period") == period or ping_sent_recently(
+                state, now
+            )
+            slot = upcoming_send_at(
+                now,
+                weekday=weekday,
+                hour=hour,
+                already_sent=already,
+            )
             monday = report_monday(slot, ping=True)
             period = period_label(monday)
-            if state.get("last_ping_period") == period:
-                slot = slot + timedelta(days=7)
-                monday = report_monday(slot, ping=True)
-                period = period_label(monday)
             prep_at = slot - lead
             today = now.date().isoformat()
             events: list[datetime] = []

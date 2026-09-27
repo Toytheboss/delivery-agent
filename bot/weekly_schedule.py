@@ -7,10 +7,12 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 TZ = timezone(timedelta(hours=8))
-DEFAULT_SEND_HOUR = 12
+DEFAULT_SEND_HOUR = 0
 DEFAULT_DAILY_HOUR = 0
 DEFAULT_PREPARE_MINUTES = 5
 DEFAULT_WEEKDAY = 0  # Monday
+SEND_GRACE = timedelta(minutes=2)
+SENT_RECENT = timedelta(hours=18)
 
 
 def ping_weekday(config: Any, attr: str) -> int:
@@ -64,6 +66,49 @@ def this_send_at(now: datetime, *, weekday: int, hour: int) -> datetime:
     return now.replace(hour=hour, minute=0, second=0, microsecond=0) - timedelta(
         days=days
     )
+
+
+def ping_sent_recently(
+    state: dict[str, Any] | None,
+    now: datetime,
+    *,
+    window: timedelta = SENT_RECENT,
+) -> bool:
+    """True if we already pinged the group in this window — do not send again."""
+    raw = str((state or {}).get("last_sent_at") or "").strip()
+    if not raw:
+        return False
+    try:
+        sent = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    if sent.tzinfo is None:
+        sent = sent.replace(tzinfo=TZ)
+    return now.astimezone(TZ) - sent.astimezone(TZ) < window
+
+
+def upcoming_send_at(
+    now: datetime,
+    *,
+    weekday: int,
+    hour: int,
+    already_sent: bool,
+    grace: timedelta = SEND_GRACE,
+) -> datetime:
+    """Next Monday 00:00:00. Do not replay last week's slot after a restart.
+
+    Only the same ping instant plus a short grace may still send. Later the
+    same night, skip until next week — never send a second copy.
+    """
+    now = now.astimezone(TZ)
+    slot = this_send_at(now, weekday=weekday, hour=hour)
+    if already_sent:
+        return slot + timedelta(days=7)
+    if now < slot:
+        return slot
+    if now <= slot + grace:
+        return slot
+    return slot + timedelta(days=7)
 
 
 def send_due(now: datetime, *, weekday: int, hour: int) -> bool:

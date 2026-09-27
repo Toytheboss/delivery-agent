@@ -50,11 +50,11 @@ def test_wednesday_report_window_is_in_progress_week():
     assert label_end == collect_end
 
 
-def test_ping_window_is_monday_noon_by_default_hour():
+def test_ping_window_is_monday_midnight():
     cfg = SimpleNamespace(
-        pr_weekly_weekday=0, pr_weekly_hour=12, pr_weekly_daily_hour=0
+        pr_weekly_weekday=0, pr_weekly_hour=0, pr_weekly_daily_hour=0
     )
-    assert in_ping_window(cfg, datetime(2026, 9, 28, 12, 0, tzinfo=TZ)) is True
+    assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 0, tzinfo=TZ)) is True
     assert in_ping_window(cfg, datetime(2026, 9, 28, 0, 10, tzinfo=TZ)) is False
     assert in_daily_window(cfg, datetime(2026, 9, 24, 0, 10, tzinfo=TZ)) is True
     assert in_daily_window(cfg, datetime(2026, 9, 24, 12, 0, tzinfo=TZ)) is False
@@ -186,7 +186,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
     cfg = SimpleNamespace(
         pr_weekly_enabled=True,
         pr_weekly_weekday=0,
-        pr_weekly_hour=12,
+        pr_weekly_hour=0,
         pr_weekly_daily_hour=0,
         pr_weekly_prepare_minutes=5,
         pr_weekly_state_file=str(tmp_path / "state.json"),
@@ -227,8 +227,10 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         upsert.assert_called_once()
         send.assert_not_called()
 
-        mon = datetime(2026, 9, 28, 12, 0, tzinfo=TZ)
-        ping = run_pr_weekly_once(cfg, now=mon)
+        mon = datetime(2026, 9, 28, 0, 0, tzinfo=TZ)
+        no_ping = run_pr_weekly_once(cfg, now=mon)
+        assert no_ping["sent"] is False
+        ping = run_pr_weekly_once(cfg, now=mon, send=True)
         assert ping["sent"] is True
         send.assert_called_once()
 
@@ -237,14 +239,14 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
     from bot.weekly_schedule import this_send_at
     from bot.workflow_pr_weekly import run_pr_weekly_once
 
-    now = datetime(2026, 9, 28, 11, 55, tzinfo=TZ)
-    assert this_send_at(now, weekday=0, hour=12) == datetime(
-        2026, 9, 28, 12, 0, tzinfo=TZ
+    now = datetime(2026, 9, 27, 23, 55, tzinfo=TZ)
+    assert this_send_at(now, weekday=0, hour=0) == datetime(
+        2026, 9, 21, 0, 0, tzinfo=TZ
     )
     cfg = SimpleNamespace(
         pr_weekly_enabled=True,
         pr_weekly_weekday=0,
-        pr_weekly_hour=12,
+        pr_weekly_hour=0,
         pr_weekly_daily_hour=0,
         pr_weekly_prepare_minutes=5,
         pr_weekly_state_file=str(tmp_path / "state.json"),
@@ -283,7 +285,7 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
         assert prepared["reason"] == "prepared"
         send.assert_not_called()
         sent = run_pr_weekly_once(
-            cfg, now=datetime(2026, 9, 28, 12, 0, tzinfo=TZ), send=True
+            cfg, now=datetime(2026, 9, 28, 0, 0, tzinfo=TZ), send=True
         )
         assert sent["sent"] is True
         send.assert_called_once()

@@ -1,13 +1,13 @@
 # Daily 00:00 Asia/Shanghai → refresh 项目方PR链接推送
-# Monday 11:55 prepare, 12:00:00 send → ping 运营&品宣＆BD对接群
+# Sunday 23:55 prepare, Monday 00:00:00 send → ping 运营&品宣＆BD对接群
 pr_weekly:
   enabled: true
   chat_id: "oc_4613e10ffde1fde8dc14c1899b4520dd"  # 运营&品宣＆BD对接群
   table_id: "tbllA25Mz66e8wpv"
   view_id: "vew1kZdFkc"
   table_url: "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e?table=tbllA25Mz66e8wpv&view=vew1kZdFkc"
-  weekday: 0   # ping day: Monday=0
-  hour: 12     # send at 12:00:00
+  weekday: 0   # ping day: Monday=0 = Sunday 24:00
+  hour: 0      # send at 00:00:00
   daily_hour: 0
   prepare_minutes: 5
   state_file: "data/pr_weekly_state.json"
