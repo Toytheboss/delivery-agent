@@ -2,14 +2,16 @@
 
 Lazy ``from bot.workflow_xxx import`` inside functions does not run at import
 time, so a half-copied ``bot/`` tree can boot and only crash when a project
-goes live. Collect ``bot.workflow_*`` imports from every ``bot/*.py`` and load
-them before Telegram connects.
+goes live. Collect ``bot.workflow_*`` imports from every ``bot/*.py`` and
+require the matching files to exist and parse before Telegram connects.
+
+Do not import the modules here: some workflow files pull optional third-party
+packages that are only needed on that path.
 """
 
 from __future__ import annotations
 
 import ast
-import importlib
 from pathlib import Path
 
 BOT_DIR = Path(__file__).resolve().parent
@@ -49,10 +51,21 @@ def discover_required_modules(bot_dir: Path | None = None) -> list[str]:
 
 
 def assert_bot_imports(bot_dir: Path | None = None) -> list[str]:
-    loaded: list[str] = []
-    for name in discover_required_modules(bot_dir):
+    root = bot_dir or BOT_DIR
+    checked: list[str] = []
+    missing: list[str] = []
+    for name in discover_required_modules(root):
         if name in _SKIP_MODULES:
             continue
-        importlib.import_module(name)
-        loaded.append(name)
-    return loaded
+        stem = name.split(".", 1)[1]
+        if "." in stem:
+            continue
+        path = root / f"{stem}.py"
+        if not path.is_file():
+            missing.append(name)
+            continue
+        ast.parse(path.read_text(encoding="utf-8"))
+        checked.append(name)
+    if missing:
+        raise ModuleNotFoundError("Missing deployed modules: " + ", ".join(missing))
+    return checked

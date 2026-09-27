@@ -28,3 +28,18 @@ def test_discover_flags_lazy_workflow_even_if_file_missing(tmp_path):
     assert "bot.workflow_form_claim" in mods
     assert "bot.workflow_live_onboard" in mods
     assert not (tmp_path / "workflow_form_claim.py").exists()
+
+
+def test_assert_fails_when_lazy_workflow_file_is_missing(tmp_path):
+    from bot.boot_check import assert_bot_imports
+
+    (tmp_path / "workflow_live_onboard.py").write_text(
+        "def f():\n    from bot.workflow_form_claim import begin_form_send\n",
+        encoding="utf-8",
+    )
+    try:
+        assert_bot_imports(tmp_path)
+    except ModuleNotFoundError as exc:
+        assert "workflow_form_claim" in str(exc)
+    else:
+        raise AssertionError("expected missing workflow_form_claim to fail startup")

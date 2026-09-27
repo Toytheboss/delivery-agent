@@ -15,7 +15,7 @@
 
 ### 修复
 - 补上服务器缺失的 `workflow_form_claim.py`，上线恭喜和谷歌表单才能发出去
-- 进程连 Telegram 前扫描并加载全部 `bot.workflow_*`（含函数内懒加载）；缺文件直接退出，不再上线时才 `onboard_failed`
+- 进程连 Telegram 前扫描全部 `bot.workflow_*` 引用（含函数内懒加载），缺文件或语法错误直接退出，不再上线时才 `onboard_failed`
 
 ---
 
