@@ -1,9 +1,9 @@
-"""Fail process startup if deployed bot code imports a missing module.
+"""Fail process startup if workflow code imports a missing module.
 
-Lazy ``from bot.xxx import`` inside functions does not run at import time, so a
-half-copied ``bot/`` tree can boot and only crash when a project goes live.
-Scan every ``bot/*.py`` for ``bot.*`` imports and load them before Telegram
-connects.
+Lazy ``from bot.workflow_xxx import`` inside functions does not run at import
+time, so a half-copied ``bot/`` tree can boot and only crash when a project
+goes live. Collect ``bot.workflow_*`` imports from every ``bot/*.py`` and load
+them before Telegram connects.
 """
 
 from __future__ import annotations
@@ -34,12 +34,17 @@ def referenced_bot_modules(source: str) -> set[str]:
 def discover_required_modules(bot_dir: Path | None = None) -> list[str]:
     root = bot_dir or BOT_DIR
     needed: set[str] = set()
+    for path in sorted(root.glob("workflow_*.py")):
+        needed.add(f"bot.{path.stem}")
     for path in sorted(root.glob("*.py")):
         if path.name.startswith("_"):
             continue
-        needed.add(f"bot.{path.stem}")
         text = path.read_text(encoding="utf-8")
-        needed.update(referenced_bot_modules(text))
+        needed.update(
+            name
+            for name in referenced_bot_modules(text)
+            if name.startswith("bot.workflow_")
+        )
     return sorted(needed)
 
 
