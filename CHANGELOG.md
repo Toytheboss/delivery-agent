@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-09-27 · 上线飞书推送前现场核对 Josh 是否在群
+
+### 修复
+- 发 Project verification push 的 Live 通知前，用 Telegram 查 `Josh_0zh` 是否在该群，不再只信共享状态里的 `josh_in`
+
+---
+
 ## 2026-09-27 · 启动自检拦漏部署的 bot 模块
 
 ### 修复

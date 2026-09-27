@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, patch
+
 from bot.workflow_live_onboard import (
     _RETRY_NOTIFY,
     _SKIP_NOTIFY_SOURCES,
     build_onboard_message,
     classify_case,
+    lookup_live_membership,
+    merge_form_sender_into_membership,
     parse_bd_person,
     sends_lark_notify,
 )
@@ -105,3 +111,73 @@ def test_retry_covers_stuck_scheduled():
     assert "need_roy" in _RETRY_NOTIFY
     assert "sending" in _RETRY_NOTIFY
     assert "sent" not in _RETRY_NOTIFY
+
+
+def test_merge_form_sender_does_not_invent_josh():
+    roy_in, josh_in = merge_form_sender_into_membership(
+        False,
+        False,
+        form_status="sent",
+        form_by="roy",
+    )
+    assert roy_in is True
+    assert josh_in is False
+
+
+def test_merge_keeps_live_josh_lookup():
+    roy_in, josh_in = merge_form_sender_into_membership(
+        True,
+        True,
+        form_status="sent",
+        form_by="roy",
+    )
+    assert roy_in is True
+    assert josh_in is True
+
+
+def test_lookup_live_membership_checks_josh_on_roy_account():
+    cfg = SimpleNamespace(
+        workflow_live_onboard_account="roy",
+        group_replies_enabled=True,
+    )
+
+    async def _run():
+        with patch(
+            "bot.workflow_live_onboard.account_in_chat",
+            AsyncMock(return_value=(True, "turingscoutnew&botchain")),
+        ) as self_lookup, patch(
+            "bot.workflow_live_onboard.peer_account_in_chat",
+            AsyncMock(return_value=True),
+        ) as peer_lookup:
+            roy_in, josh_in = await lookup_live_membership(
+                object(), -100123, config=cfg
+            )
+            assert roy_in is True
+            assert josh_in is True
+            self_lookup.assert_awaited_once()
+            peer_lookup.assert_awaited_once()
+            assert peer_lookup.await_args.args[2] == "josh"
+
+    asyncio.run(_run())
+
+
+def test_lookup_live_membership_can_find_josh_when_shared_state_was_false():
+    cfg = SimpleNamespace(
+        workflow_live_onboard_account="roy",
+        group_replies_enabled=True,
+    )
+
+    async def _run():
+        with patch(
+            "bot.workflow_live_onboard.account_in_chat",
+            AsyncMock(return_value=(True, "g")),
+        ), patch(
+            "bot.workflow_live_onboard.peer_account_in_chat",
+            AsyncMock(return_value=True),
+        ):
+            assert await lookup_live_membership(object(), -1, config=cfg) == (
+                True,
+                True,
+            )
+
+    asyncio.run(_run())

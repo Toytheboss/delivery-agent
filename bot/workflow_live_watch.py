@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 
-async def _post_watch_hooks(config: AppConfig) -> None:
+async def _post_watch_hooks(client: TelegramClient, config: AppConfig) -> None:
     try:
         from bot.workflow_live_onboard import drain_pending_roy_notifies
 
-        await drain_pending_roy_notifies(config)
+        await drain_pending_roy_notifies(client, config)
     except Exception:
         logger.exception("live-status-watch: onboard drain failed")
     try:
@@ -120,13 +120,13 @@ async def run_live_status_watch_once(
             "live-status-watch baseline: marked %d currently-live row(s) (no send)",
             len(live_ids),
         )
-        await _post_watch_hooks(config)
+        await _post_watch_hooks(client, config)
         return 0
 
     newcomers = [(rid, name) for rid, name in live_now if rid not in seen]
     if not newcomers:
         # Drop rows that left live (optional); keep seen growing is fine.
-        await _post_watch_hooks(config)
+        await _post_watch_hooks(client, config)
         return 0
 
     triggered = 0
@@ -161,7 +161,7 @@ async def run_live_status_watch_once(
     # Also remember any live we already knew + newcomers
     seen |= live_ids
     _save_seen(path, seen)
-    await _post_watch_hooks(config)
+    await _post_watch_hooks(client, config)
     return triggered
 
 

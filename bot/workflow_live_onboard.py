@@ -318,6 +318,54 @@ def remember_group_membership(
         entry["josh_in"] = bool(josh_in)
 
 
+async def lookup_live_membership(
+    client: TelegramClient,
+    chat_id: int | None,
+    *,
+    config: Any,
+) -> tuple[bool, bool]:
+    """Fresh Telegram check of Roy号 and 交付号. Do not trust stored roy_in/josh_in."""
+    if chat_id is None:
+        return False, False
+    key = account_key(config)
+    try:
+        self_in, _ = await account_in_chat(client, int(chat_id))
+    except Exception:
+        logger.exception("live-onboard: self membership lookup failed chat=%s", chat_id)
+        self_in = False
+    peer = "josh" if key == "roy" else "roy"
+    try:
+        peer_in = await peer_account_in_chat(client, int(chat_id), peer)
+    except Exception:
+        logger.exception(
+            "live-onboard: peer membership lookup failed peer=%s chat=%s",
+            peer,
+            chat_id,
+        )
+        peer_in = False
+    if key == "roy":
+        return bool(self_in), bool(peer_in)
+    return bool(peer_in), bool(self_in)
+
+
+def merge_form_sender_into_membership(
+    roy_in: bool,
+    josh_in: bool,
+    *,
+    form_status: str,
+    form_by: str,
+) -> tuple[bool, bool]:
+    """If this account already sent the form, it is in the group."""
+    if not _form_ok(form_status):
+        return roy_in, josh_in
+    by = str(form_by or "").strip().lower()
+    if by == "roy":
+        roy_in = True
+    elif by == "josh":
+        josh_in = True
+    return roy_in, josh_in
+
+
 async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) -> bool:
     """True when the other bot account is a member of this group."""
     username = {"roy": "Roy4by4", "josh": "Josh_0zh"}.get(str(peer or "").strip().lower(), "")
@@ -512,6 +560,7 @@ async def _finalize_notify(
     rid: str,
     fields: dict[str, Any],
     source: str,
+    client: TelegramClient | None = None,
 ) -> None:
     if not sends_lark_notify(config):
         path = _state_path(config)
@@ -529,15 +578,53 @@ async def _finalize_notify(
             return
         if entry.get("notify") == "sending":
             return
-        roy_in = bool(entry.get("roy_in"))
-        josh_in = bool(entry.get("josh_in"))
-        form_status = str(entry.get("form") or "")
-        case = classify_case(roy_in, josh_in)
-        if not _form_ok(form_status):
-            case = 4
-        entry["case"] = case
         entry["notify"] = "sending"
+        chat_id = entry.get("chat_id")
+        form_status = str(entry.get("form") or "")
+        form_by = str(entry.get("form_by") or "")
+        try:
+            chat_id_int = int(chat_id) if chat_id is not None else None
+        except (TypeError, ValueError):
+            chat_id_int = None
+    if client is None or chat_id_int is None:
+        logger.warning(
+            "live-onboard: defer Lark ping until membership can be checked rid=%s chat=%s",
+            rid,
+            chat_id,
+        )
+        with _locked_state(path) as data:
+            entry = _project_entry(data, rid)
+            if entry.get("notify") != "sent":
+                entry["notify"] = "scheduled"
+        return
+    roy_in, josh_in = await lookup_live_membership(
+        client, chat_id_int, config=config
+    )
+    roy_in, josh_in = merge_form_sender_into_membership(
+        roy_in,
+        josh_in,
+        form_status=form_status,
+        form_by=form_by,
+    )
+    case = classify_case(roy_in, josh_in)
+    if not _form_ok(form_status):
+        case = 4
+    with _locked_state(path) as data:
+        entry = _project_entry(data, rid)
+        if entry.get("notify") == "sent":
+            return
+        entry["roy_in"] = roy_in
+        entry["josh_in"] = josh_in
+        entry["membership_checked_at"] = time.time()
+        entry["case"] = case
         snapshot = dict(entry)
+    logger.info(
+        "live-onboard notify membership rid=%s roy_in=%s josh_in=%s case=%s",
+        rid,
+        roy_in,
+        josh_in,
+        case,
+    )
     try:
         notify = await _notify_lark(config, snapshot, fields)
     except Exception:
@@ -651,13 +738,15 @@ async def run_live_onboard(
 
     if should_notify:
         asyncio.create_task(
-            _finalize_notify(config, rid=rid, fields=fields, source=source),
+            _finalize_notify(
+                config, rid=rid, fields=fields, source=source, client=client
+            ),
             name=f"live-onboard-notify-{rid}",
         )
     return out
 
 
-async def drain_pending_roy_notifies(config: Any) -> int:
+async def drain_pending_roy_notifies(client: TelegramClient, config: Any) -> int:
     """Roy号补发 Josh 留下的通知，以及重启后停在 scheduled/sending 的条目。"""
     if not sends_lark_notify(config):
         return 0
@@ -693,7 +782,11 @@ async def drain_pending_roy_notifies(config: Any) -> int:
                 continue
         asyncio.create_task(
             _finalize_notify(
-                config, rid=rid, fields=fields, source="roy_drain"
+                config,
+                rid=rid,
+                fields=fields,
+                source="roy_drain",
+                client=client,
             ),
             name=f"live-onboard-notify-{rid}",
         )
