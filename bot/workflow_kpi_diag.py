@@ -123,6 +123,241 @@ def latest_copy(copy: str) -> str:
     return text
 
 
+_RECHECK_SPLIT = re.compile(r"\n(?=Recheck \d{4}-\d{2}-\d{2} \d{2}:\d{2}: )")
+_RECHECK_HEAD = re.compile(r"^Recheck (\d{4}-\d{2}-\d{2} \d{2}:\d{2}): ")
+_ITEM_KIND = {
+    "Twitter": "twitter",
+    "News/PR": "news",
+    "Website": "website",
+    "Product": "product",
+    "Independence": "independence",
+    "On-chain": "onchain",
+    "Ongoing operations": "ops",
+}
+
+
+def split_copy_rounds(copy: str) -> list[tuple[str, str]]:
+    """Turn Lark copy (first block + Recheck stamps) into TG round titles."""
+    text = (copy or "").strip()
+    if not text:
+        return []
+    rounds: list[tuple[str, str]] = []
+    for chunk in _RECHECK_SPLIT.split(text):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        match = _RECHECK_HEAD.match(chunk)
+        if match:
+            rounds.append((f"Recheck {match.group(1)}", chunk[match.end() :].strip()))
+        else:
+            rounds.append(("First check", chunk))
+    return rounds
+
+
+def _round_result(body: str) -> str:
+    matches = list(re.finditer(r"verification (passed|failed)", body, flags=re.I))
+    if matches:
+        return matches[-1].group(1).lower()
+    low = body.lower()
+    if "already passed" in low:
+        return "passed"
+    if re.search(r"\bnot passed\b", low) or "failed" in low:
+        return "failed"
+    if re.search(r"\bpassed\b", low):
+        return "passed"
+    return "unknown"
+
+
+def _strip_verification_prefix(body: str) -> str:
+    first, nl, rest = body.partition("\n")
+    if ":" in first and "verification" in first.split(":", 1)[0].lower():
+        return (first.split(":", 1)[1] + nl + rest).strip()
+    return body.strip()
+
+
+def _generic_bullets(body: str) -> list[str]:
+    result = _round_result(body)
+    text = _strip_verification_prefix(body)
+    text = re.sub(
+        r";?\s*[A-Za-z0-9 /._-]+ verification (passed|failed)\s*$",
+        "",
+        text,
+        flags=re.I,
+    ).strip()
+    parts = [part.strip() for part in re.split(r";\s*", text) if part.strip()]
+    bullets: list[str] = []
+    for part in parts:
+        if part.lower() == "already passed":
+            bullets.append("- Already passed")
+            continue
+        if part.lower() == "meets the audit requirement":
+            bullets.append("- Meets the audit requirement")
+            continue
+        capped = part[0].upper() + part[1:] if part else part
+        bullets.append(f"- {capped}")
+    bullets.append(f"- Result: {result}")
+    return bullets
+
+
+def _website_bullets(body: str) -> list[str]:
+    low = body.lower()
+    result = _round_result(body)
+    if "already passed" in low:
+        return ["- Already passed", "- Result: passed"]
+    if "no official website url" in low:
+        return ["- Official website URL: not submitted", "- Result: failed"]
+    if "could not be opened" in low:
+        return ["- Site opened: no", "- Result: failed"]
+    bullets: list[str] = []
+    if "website opened" in low:
+        bullets.append("- Site opened: yes")
+    if "bot chain name is visible" in low:
+        bullets.append("- BOT Chain name: yes")
+    elif "bot chain name not found" in low:
+        bullets.append("- BOT Chain name: no")
+    if "no clickable https://botchain.ai or https://scan.botchain.ai" in low:
+        bullets.extend(["- https://botchain.ai: no", "- https://scan.botchain.ai: no"])
+    elif "page has clickable https://botchain.ai and https://scan.botchain.ai" in low:
+        bullets.extend(["- https://botchain.ai: yes", "- https://scan.botchain.ai: yes"])
+    elif "has clickable https://scan.botchain.ai, but no clickable https://botchain.ai" in low:
+        bullets.extend(["- https://botchain.ai: no", "- https://scan.botchain.ai: yes"])
+    elif "has clickable https://botchain.ai, but no clickable https://scan.botchain.ai" in low:
+        bullets.extend(["- https://botchain.ai: yes", "- https://scan.botchain.ai: no"])
+    elif "missing official links" in low:
+        bullets.append("- Official links: missing")
+    if not bullets:
+        return _generic_bullets(body)
+    bullets.append(f"- Result: {result}")
+    return bullets
+
+
+def _twitter_bullets(body: str) -> list[str]:
+    low = body.lower()
+    result = _round_result(body)
+    if "already passed" in low:
+        return ["- Already passed", "- Result: passed"]
+    if "no official account submitted" in low:
+        return ["- Official account: not submitted", "- Result: failed"]
+    bullets: list[str] = []
+    handle = re.search(r"@([A-Za-z0-9_]+)", body)
+    if handle:
+        bullets.append(f"- Official account: @{handle.group(1)}")
+    if "could not be read" in low:
+        bullets.append("- Original posts (30d): unread")
+    else:
+        posted = re.search(r"posted (\d+) original posts", body, flags=re.I)
+        if posted:
+            bullets.append(f"- Original posts (30d): {posted.group(1)} (need ≥5)")
+    bullets.append(f"- Result: {result}")
+    if "meets the audit requirement" in low:
+        bullets.append("- Meets the audit requirement")
+    bullets.extend(
+        f"- {line.strip()}"
+        for line in body.splitlines()
+        if line.strip().startswith("http")
+    )
+    return bullets
+
+
+def _onchain_bullets(body: str) -> list[str]:
+    low = body.lower()
+    result = _round_result(body)
+    if "already passed" in low:
+        return ["- Already passed", "- Result: passed"]
+    if "no contract detected" in low:
+        return ["- Contract: not submitted", "- Result: failed"]
+    bullets: list[str] = []
+    counts = re.search(
+        r"(\d+) unique wallets, (\d+) successful core txs",
+        body,
+        flags=re.I,
+    )
+    if counts:
+        bullets.append(f"- Unique wallets: {counts.group(1)} (need ≥3)")
+        bullets.append(f"- Core txs: {counts.group(2)} (need ≥5)")
+    bullets.append(f"- Result: {result}")
+    if "meets the audit requirement" in low:
+        bullets.append("- Meets the audit requirement")
+    section = ""
+    for line in body.splitlines():
+        raw = line.strip()
+        lowered = raw.lower()
+        if lowered == "wallets:":
+            section = "wallets"
+            bullets.append("- Wallets:")
+            continue
+        if lowered == "tx hashes:":
+            section = "hashes"
+            bullets.append("- Tx hashes:")
+            continue
+        if section and raw and not lowered.startswith("meets"):
+            bullets.append(f"  {raw}")
+    if len(bullets) == 1:
+        return _generic_bullets(body)
+    return bullets
+
+
+def _news_bullets(body: str) -> list[str]:
+    low = body.lower()
+    if "missing pr news link" in low:
+        return ["- News URL: not submitted", "- Result: failed"]
+    if "news url was submitted" in low:
+        return ["- News URL: submitted", "- Result: passed"]
+    return _generic_bullets(body)
+
+
+def format_check_bullets(kind: str, body: str) -> list[str]:
+    key = (kind or "").lower()
+    if key in {"website", "kpi3"}:
+        return _website_bullets(body)
+    if key in {"twitter", "kpi1"}:
+        return _twitter_bullets(body)
+    if key in {"onchain", "on-chain", "kpi6"}:
+        return _onchain_bullets(body)
+    if key in {"news", "news/pr", "kpi2"}:
+        return _news_bullets(body)
+    return _generic_bullets(body)
+
+
+def format_tg_check_reply(
+    *,
+    label: str,
+    project: str,
+    result: str,
+    copy: str,
+    kind: str = "",
+) -> str:
+    result_en = {"通过": "passed", "不通过": "failed"}.get(str(result), str(result))
+    check_kind = kind or _ITEM_KIND.get(label, label).lower()
+    lines = [f"{label} · {project} · {result_en}", ""]
+    rounds = split_copy_rounds(copy)
+    if not rounds:
+        lines.append(f"- Result: {result_en}")
+        return "\n".join(lines).rstrip()
+    for title, body in rounds:
+        lines.append(title)
+        lines.extend(format_check_bullets(check_kind, body))
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
+def format_named_check(name: str, note: str) -> str:
+    kind = _ITEM_KIND.get(name, "generic")
+    rounds = split_copy_rounds(note)
+    lines = [name]
+    if not rounds:
+        lines.extend(format_check_bullets(kind, note or "failed"))
+        return "\n".join(lines)
+    if len(rounds) == 1:
+        lines.extend(format_check_bullets(kind, rounds[0][1]))
+        return "\n".join(lines)
+    for title, body in rounds:
+        lines.append(title)
+        lines.extend(format_check_bullets(kind, body))
+        lines.append("")
+    return "\n".join(lines).rstrip()
+
+
 def twitter_fail_note(outcome: dict[str, Any]) -> str:
     copy = latest_copy(str(outcome.get("copy") or ""))
     if copy:
@@ -212,23 +447,25 @@ def format_project_diag_reply(
 ) -> str:
     if skipped:
         return (
-            f"Project diag for {project}: skipped\n"
-            "Final evaluation already passed."
+            f"Project diag · {project} · skipped\n\n"
+            "Final evaluation already passed, so this check was not re-run."
         )
     failed = [(name, note) for name, passed, note in rows if not passed]
     passed = [(name, note) for name, passed, note in rows if passed]
     overall = "passed" if not failed else "failed"
-    lines = [f"Project diag for {project}: {overall}", ""]
+    lines = [f"Project diag · {project} · {overall}", ""]
     if failed:
         lines.append("Failed")
-        for name, note in failed:
-            lines.append(f"{name}: {note}" if note else f"{name}: failed")
         lines.append("")
+        for name, note in failed:
+            lines.append(format_named_check(name, note or "failed"))
+            lines.append("")
     if passed:
         lines.append("Passed")
-        for name, note in passed:
-            lines.append(f"{name}: {note}" if note else f"{name}: passed")
         lines.append("")
+        for name, note in passed:
+            lines.append(format_named_check(name, note or "passed"))
+            lines.append("")
     lines.append(
         "Final evaluation: passed" if coord_written else "Final evaluation: not written"
     )
@@ -236,29 +473,24 @@ def format_project_diag_reply(
 
 
 def _reply_for(kind: str, outcome: dict[str, Any]) -> str:
-    project = outcome.get("project") or "this project"
+    project = str(outcome.get("project") or "this project")
     result = outcome.get("result") or "不通过"
     label = _KIND_LABEL.get(kind, kind)
     copy = str(outcome.get("copy") or "").strip()
-    result_en = {"通过": "passed", "不通过": "failed"}.get(str(result), str(result))
-    if copy:
-        return f"{label} written for {project!r}: {result_en}\n{copy}"
-    reason = outcome.get("reason") or ""
-    extra = ""
-    if kind == "onchain":
-        extra = f" wallets={outcome.get('wallets', 0)} txs={outcome.get('txs', 0)}"
-        if reason == "no_contract":
-            extra = " (no contract)"
-        elif reason == "below_threshold":
-            extra = f" ({onchain_fail_note(outcome)})"
-    elif kind == "twitter":
-        handle = outcome.get("handle") or ""
-        extra = f" @{handle}" if handle else " (no account)"
-        if reason == "unread":
-            extra += " unread"
-        elif reason == "below_threshold":
-            extra = f" ({twitter_fail_note(outcome)})"
-    return f"{label} written for {project!r}: {result_en}{extra}"
+    if not copy:
+        if kind == "onchain":
+            copy = onchain_fail_note(outcome)
+        elif kind == "twitter":
+            copy = twitter_fail_note(outcome)
+        elif kind == "website":
+            copy = website_fail_note(outcome)
+    return format_tg_check_reply(
+        label=label,
+        project=project,
+        result=str(result),
+        copy=copy,
+        kind=kind,
+    )
 
 
 async def _run_one(

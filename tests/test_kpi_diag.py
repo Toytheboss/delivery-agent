@@ -18,12 +18,14 @@ from bot.workflow_kpi6_onchain import (
 from bot.workflow_kpi_diag import (
     already_passed,
     format_project_diag_reply,
+    format_tg_check_reply,
     is_kpi_diag_command,
     onchain_fail_note,
     parse_kpi_diag_command,
     project_diag_audits_to_run,
     twitter_fail_note,
     website_fail_note,
+    _reply_for,
 )
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
@@ -224,7 +226,7 @@ def test_project_diag_english_pass_and_fail_copy():
     text = format_project_diag_reply(
         project="Testing", rows=passed_rows, coord_written=True
     )
-    assert text.startswith("Project diag for Testing: passed")
+    assert text.startswith("Project diag · Testing · passed")
     assert "Failed" not in text.split("Passed")[0]
     assert "Final evaluation: passed" in text
     assert "KPI" not in text
@@ -265,9 +267,12 @@ def test_project_diag_english_pass_and_fail_copy():
         ],
         coord_written=False,
     )
-    assert "Project diag for Testing: failed" in failed
+    assert "Project diag · Testing · failed" in failed
     assert failed.index("Failed") < failed.index("Passed")
-    assert "Twitter:" in failed
+    assert "\nTwitter\n" in failed
+    assert "Original posts (30d): unread" in failed
+    assert "Official website URL: not submitted" in failed
+    assert "- Result: failed" in failed
     assert "KPI" not in failed
     assert "Final evaluation: not written" in failed
     skipped = format_project_diag_reply(
@@ -275,6 +280,90 @@ def test_project_diag_english_pass_and_fail_copy():
     )
     assert "skipped" in skipped
     assert "Final evaluation already passed" in skipped
+
+
+def test_tg_check_reply_splits_rechecks_not_lark_blob():
+    first = (
+        "Website display verification: website opened, BOT Chain name is visible, "
+        "no clickable https://botchain.ai or https://scan.botchain.ai; "
+        "website display verification failed"
+    )
+    when = datetime(2026, 9, 28, 17, 33, tzinfo=timezone(timedelta(hours=8)))
+    second = (
+        "Website display verification: website opened, BOT Chain name is visible, "
+        "has clickable https://botchain.ai, but no clickable https://scan.botchain.ai; "
+        "website display verification failed"
+    )
+    third = (
+        "Website display verification: website opened, BOT Chain name is visible, "
+        "page has clickable https://botchain.ai and https://scan.botchain.ai; "
+        "website display verification passed"
+    )
+    copy = merge_kpi_copy(first, second, when)
+    copy = merge_kpi_copy(
+        copy,
+        third,
+        datetime(2026, 9, 29, 0, 8, tzinfo=timezone(timedelta(hours=8))),
+    )
+    text = format_tg_check_reply(
+        label="Website",
+        project="Relay",
+        result="passed",
+        copy=copy,
+        kind="website",
+    )
+    assert text.startswith("Website · Relay · passed")
+    assert "First check" in text
+    assert "Recheck 2026-09-28 17:33" in text
+    assert "Recheck 2026-09-29 00:08" in text
+    assert "written for" not in text
+    assert "website display verification:" not in text.lower()
+    first_block, after_first = text.split("First check", 1)
+    del first_block
+    round1, rest = after_first.split("Recheck 2026-09-28 17:33", 1)
+    round2, round3 = rest.split("Recheck 2026-09-29 00:08", 1)
+    assert "- Site opened: yes" in round1
+    assert "- BOT Chain name: yes" in round1
+    assert "- https://botchain.ai: no" in round1
+    assert "- https://scan.botchain.ai: no" in round1
+    assert "- Result: failed" in round1
+    assert "- https://botchain.ai: yes" in round2
+    assert "- https://scan.botchain.ai: no" in round2
+    assert "- Result: failed" in round2
+    assert "- https://botchain.ai: yes" in round3
+    assert "- https://scan.botchain.ai: yes" in round3
+    assert "- Result: passed" in round3
+    twitter = _reply_for(
+        "twitter",
+        {
+            "project": "SubscribeOne",
+            "result": "不通过",
+            "copy": merge_kpi_copy(
+                "Twitter operations verification: no official account submitted; "
+                "Twitter operations verification failed",
+                "Twitter operations verification: official account @Foo posted 3 "
+                "original posts in the last 30 days (threshold ≥5); "
+                "Twitter operations verification failed",
+                datetime(2026, 9, 26, 9, 30, tzinfo=timezone(timedelta(hours=8))),
+            ),
+        },
+    )
+    assert twitter.startswith("Twitter · SubscribeOne · failed")
+    assert "Official account: not submitted" in twitter
+    assert "Official account: @Foo" in twitter
+    assert "Original posts (30d): 3 (need ≥5)" in twitter
+    onchain = format_tg_check_reply(
+        label="On-chain",
+        project="Testing",
+        result="failed",
+        copy=(
+            "User and interaction verification: no contract detected; "
+            "user and interaction verification failed"
+        ),
+        kind="onchain",
+    )
+    assert "Contract: not submitted" in onchain
+    assert "First check" in onchain
 
 
 def test_project_diag_skips_already_passed_audits():
