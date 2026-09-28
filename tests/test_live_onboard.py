@@ -3,12 +3,14 @@ from __future__ import annotations
 import json
 from types import SimpleNamespace
 
+from bot.workflow_form_dispatch import match_project_to_chat
 from bot.workflow_live_onboard import (
     _RETRY_NOTIFY,
     _SKIP_NOTIFY_SOURCES,
     build_onboard_message,
     classify_case,
     form_already_sent,
+    load_peer_folder_titles,
     merge_membership,
     parse_bd_person,
     sends_lark_notify,
@@ -188,3 +190,37 @@ def test_retry_covers_stuck_scheduled():
     assert "need_roy" in _RETRY_NOTIFY
     assert "sending" in _RETRY_NOTIFY
     assert "sent" not in _RETRY_NOTIFY
+
+
+def test_peer_folder_cache_matches_delivery_account_group(tmp_path, monkeypatch):
+    josh_root = tmp_path / "delivery-agent" / "data"
+    josh_root.mkdir(parents=True)
+    (josh_root / "folder_title_cache.json").write_text(
+        json.dumps({"titles": {"-5408000001": {"title": "Delivery X Sample"}}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "bot.workflow_live_onboard._DATA_ROOTS",
+        (josh_root,),
+    )
+    titles, roy_ids, josh_ids = load_peer_folder_titles()
+    chat_id, reason = match_project_to_chat("sample", titles)
+    assert chat_id == -5408000001
+    assert chat_id in josh_ids
+    assert chat_id not in roy_ids
+    assert reason
+
+
+def test_cache_membership_kept_after_peer_live_false():
+    roy_in, josh_in = merge_membership(
+        self_key="roy",
+        self_in=False,
+        stored_roy=False,
+        stored_josh=True,
+        peer_live=False,
+    )
+    cache_josh = True
+    josh_in = josh_in or cache_josh
+    roy_in = roy_in or False
+    assert roy_in is False
+    assert josh_in is True

@@ -213,6 +213,46 @@ def _unique_data_roots() -> list[Path]:
     return out
 
 
+def _parse_title_cache_file(path: Path) -> dict[int, str]:
+    raw = _read_json_dict(path)
+    payload = raw.get("titles") if isinstance(raw.get("titles"), dict) else raw
+    if not isinstance(payload, dict):
+        return {}
+    titles: dict[int, str] = {}
+    for key, value in payload.items():
+        try:
+            chat_id = int(key)
+        except (TypeError, ValueError):
+            continue
+        title = value.get("title") if isinstance(value, dict) else value
+        title = str(title or "").strip()
+        if title:
+            titles[chat_id] = title
+    return titles
+
+
+def load_peer_folder_titles() -> tuple[dict[int, str], set[int], set[int]]:
+    """Union Folder title caches. Chat ids are tagged by which account cached them."""
+    titles: dict[int, str] = {}
+    roy_ids: set[int] = set()
+    josh_ids: set[int] = set()
+    for root in _unique_data_roots():
+        path = root / "folder_title_cache.json"
+        if not path.is_file():
+            continue
+        parsed = _parse_title_cache_file(path)
+        path_s = str(path).lower()
+        is_roy = "botchain-qa" in path_s
+        is_josh = "delivery-agent" in path_s or "josh-dashboard" in path_s
+        for chat_id, title in parsed.items():
+            titles[chat_id] = title
+            if is_roy:
+                roy_ids.add(chat_id)
+            if is_josh:
+                josh_ids.add(chat_id)
+    return titles, roy_ids, josh_ids
+
+
 def _read_json_dict(path: Path) -> dict[str, Any]:
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
@@ -373,6 +413,7 @@ async def resolve_project_chat(
                 reason = f"preferred chat ({why})"
 
     if chat_id is None:
+        titles.update(load_peer_folder_titles()[0])
         if scope is not None:
             if not scope.chat_ids:
                 await scope.refresh()
@@ -701,6 +742,10 @@ async def _finalize_notify(
             chat_id = None
         stored_roy = bool(entry.get("roy_in"))
         stored_josh = bool(entry.get("josh_in"))
+        _titles, cache_roy, cache_josh = load_peer_folder_titles()
+        if chat_id is not None:
+            stored_roy = stored_roy or chat_id in cache_roy
+            stored_josh = stored_josh or chat_id in cache_josh
         form_sent = _form_ok(str(entry.get("form") or "")) or form_already_sent(
             config, rid=rid, chat_id=chat_id
         )
@@ -711,6 +756,8 @@ async def _finalize_notify(
             "stored_roy": stored_roy,
             "stored_josh": stored_josh,
             "form_sent": form_sent,
+            "cache_roy": chat_id in cache_roy if chat_id is not None else False,
+            "cache_josh": chat_id in cache_josh if chat_id is not None else False,
         }
     self_in = False
     peer_live: bool | None = None
@@ -729,6 +776,8 @@ async def _finalize_notify(
         stored_josh=bool(snapshot["stored_josh"]),
         peer_live=peer_live,
     )
+    roy_in = roy_in or bool(snapshot.get("cache_roy"))
+    josh_in = josh_in or bool(snapshot.get("cache_josh"))
     peer_known = peer_live is not None or (
         bool(snapshot["stored_josh"])
         if account_key(config) == "roy"
@@ -850,6 +899,7 @@ async def run_live_onboard(
     should_notify = False
     key = account_key(config)
     peer_live: bool | None = None
+    _cache_titles, cache_roy, cache_josh = load_peer_folder_titles()
     if chat_id is not None:
         peer = "josh" if key == "roy" else "roy"
         peer_live = await lookup_peer_in_chat(client, chat_id, peer)
@@ -863,10 +913,15 @@ async def run_live_onboard(
         roy_in, josh_in = merge_membership(
             self_key=key,
             self_in=in_group,
-            stored_roy=bool(entry.get("roy_in")),
-            stored_josh=bool(entry.get("josh_in")),
+            stored_roy=bool(entry.get("roy_in"))
+            or (chat_id is not None and chat_id in cache_roy),
+            stored_josh=bool(entry.get("josh_in"))
+            or (chat_id is not None and chat_id in cache_josh),
             peer_live=peer_live,
         )
+        if chat_id is not None:
+            roy_in = roy_in or chat_id in cache_roy
+            josh_in = josh_in or chat_id in cache_josh
         entry["roy_in"] = roy_in
         entry["josh_in"] = josh_in
         entry[f"{key}_checked_at"] = now
