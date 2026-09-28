@@ -1,16 +1,15 @@
 from __future__ import annotations
 
-import asyncio
+import json
 from types import SimpleNamespace
-from unittest.mock import AsyncMock, patch
 
 from bot.workflow_live_onboard import (
     _RETRY_NOTIFY,
     _SKIP_NOTIFY_SOURCES,
     build_onboard_message,
     classify_case,
-    lookup_live_membership,
-    merge_form_sender_into_membership,
+    form_already_sent,
+    merge_membership,
     parse_bd_person,
     sends_lark_notify,
 )
@@ -21,6 +20,30 @@ def test_classify_cases():
     assert classify_case(True, False) == 2
     assert classify_case(False, True) == 3
     assert classify_case(False, False) == 4
+
+
+def test_merge_membership_keeps_stored_when_peer_lookup_fails():
+    roy_in, josh_in = merge_membership(
+        self_key="roy",
+        self_in=True,
+        stored_roy=False,
+        stored_josh=True,
+        peer_live=None,
+    )
+    assert roy_in is True
+    assert josh_in is True
+
+
+def test_merge_membership_live_false_overrides_stored():
+    roy_in, josh_in = merge_membership(
+        self_key="roy",
+        self_in=True,
+        stored_roy=True,
+        stored_josh=True,
+        peer_live=False,
+    )
+    assert roy_in is True
+    assert josh_in is False
 
 
 def test_parse_bd_person_from_user_field():
@@ -39,6 +62,7 @@ def test_case1_message_uses_group_title_and_at():
         group="vritz <> Botchain",
         bd_name="Ella",
         bd_open_id="ou_ella",
+        form_sent=True,
     )
     assert text.startswith('<at user_id="ou_ella">Ella</at>')
     assert "**Project:** `vritz`" in text
@@ -47,6 +71,7 @@ def test_case1_message_uses_group_title_and_at():
     assert "**Delivery:** Roy and Josh have joined" in text
     assert "**Form:** Onboarding Google Form has been sent" in text
     assert "Add Josh" not in text
+    assert "Create the project TG group" not in text
     assert "1. Help the project submit Twitter and the contract address to the form" in text
     assert "2. Share the mainnet-live PR tweet in the TG group and @ Roy and Josh" in text
 
@@ -58,6 +83,7 @@ def test_case2_asks_to_add_josh():
         group="vritz <> Botchain",
         bd_name="Ella",
         bd_open_id="ou_ella",
+        form_sent=True,
     )
     assert "**Delivery:** Roy has joined; Josh has not been added" in text
     assert "1. Add Josh to the TG group" in text
@@ -70,23 +96,74 @@ def test_case3_asks_to_add_roy():
         group="vritz <> Botchain",
         bd_name="Ella",
         bd_open_id="ou_ella",
+        form_sent=True,
     )
     assert "**Delivery:** Josh has joined; Roy has not been added" in text
     assert "1. Add Roy to the TG group" in text
 
 
-def test_case4_form_not_sent():
+def test_known_group_does_not_ask_to_create_when_form_already_sent():
+    text = build_onboard_message(
+        case=4,
+        project="vritz",
+        group="Botchain X Example",
+        bd_name="Ella",
+        bd_open_id="ou_ella",
+        form_sent=True,
+    )
+    assert "**TG group:** `Botchain X Example`" in text
+    assert "**Delivery:** Roy / Josh were not detected in this TG group" in text
+    assert "**Form:** Onboarding Google Form has been sent" in text
+    assert "Create the project TG group" not in text
+    assert "1. Add Roy and Josh to the TG group" in text
+    assert "Trigger the Onboarding Google Form send" not in text
+
+
+def test_both_in_group_but_form_not_sent():
+    text = build_onboard_message(
+        case=1,
+        project="vritz",
+        group="vritz <> Botchain",
+        bd_name="Ella",
+        bd_open_id="ou_ella",
+        form_sent=False,
+    )
+    assert "**Delivery:** Roy and Josh have joined" in text
+    assert "**Form:** Onboarding Google Form was not sent" in text
+    assert "1. Trigger the Onboarding Google Form send" in text
+    assert "Create the project TG group" not in text
+
+
+def test_case4_no_group():
     text = build_onboard_message(
         case=4,
         project="vritz",
         group="",
         bd_name="Ella",
         bd_open_id="ou_ella",
+        form_sent=False,
     )
     assert "**Delivery:** Roy / Josh were not detected in a TG group" in text
     assert "**Form:** Onboarding Google Form was not sent" in text
     assert "1. Create the project TG group, add Roy and Josh, then trigger the form send" in text
-    assert "**TG group:** `vritz`" in text
+    assert "**TG group:** `not matched`" in text
+
+
+def test_form_already_sent_from_peer_dispatch(tmp_path, monkeypatch):
+    (tmp_path / "form_dispatch_state.json").write_text(
+        json.dumps({"sent_record_ids": ["rec-form"]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "bot.workflow_live_onboard._DATA_ROOTS",
+        (tmp_path,),
+    )
+    cfg = SimpleNamespace(
+        workflow_state_file=str(tmp_path / "missing-dispatch.json"),
+        workflow_form_chase_state_file=str(tmp_path / "missing-chase.json"),
+    )
+    assert form_already_sent(cfg, rid="rec-form", chat_id=None) is True
+    assert form_already_sent(cfg, rid="rec-other", chat_id=None) is False
 
 
 def test_only_roy_sends_lark_notify():
@@ -111,73 +188,3 @@ def test_retry_covers_stuck_scheduled():
     assert "need_roy" in _RETRY_NOTIFY
     assert "sending" in _RETRY_NOTIFY
     assert "sent" not in _RETRY_NOTIFY
-
-
-def test_merge_form_sender_does_not_invent_josh():
-    roy_in, josh_in = merge_form_sender_into_membership(
-        False,
-        False,
-        form_status="sent",
-        form_by="roy",
-    )
-    assert roy_in is True
-    assert josh_in is False
-
-
-def test_merge_keeps_live_josh_lookup():
-    roy_in, josh_in = merge_form_sender_into_membership(
-        True,
-        True,
-        form_status="sent",
-        form_by="roy",
-    )
-    assert roy_in is True
-    assert josh_in is True
-
-
-def test_lookup_live_membership_checks_josh_on_roy_account():
-    cfg = SimpleNamespace(
-        workflow_live_onboard_account="roy",
-        group_replies_enabled=True,
-    )
-
-    async def _run():
-        with patch(
-            "bot.workflow_live_onboard.account_in_chat",
-            AsyncMock(return_value=(True, "turingscoutnew&botchain")),
-        ) as self_lookup, patch(
-            "bot.workflow_live_onboard.peer_account_in_chat",
-            AsyncMock(return_value=True),
-        ) as peer_lookup:
-            roy_in, josh_in = await lookup_live_membership(
-                object(), -100123, config=cfg
-            )
-            assert roy_in is True
-            assert josh_in is True
-            self_lookup.assert_awaited_once()
-            peer_lookup.assert_awaited_once()
-            assert peer_lookup.await_args.args[2] == "josh"
-
-    asyncio.run(_run())
-
-
-def test_lookup_live_membership_can_find_josh_when_shared_state_was_false():
-    cfg = SimpleNamespace(
-        workflow_live_onboard_account="roy",
-        group_replies_enabled=True,
-    )
-
-    async def _run():
-        with patch(
-            "bot.workflow_live_onboard.account_in_chat",
-            AsyncMock(return_value=(True, "g")),
-        ), patch(
-            "bot.workflow_live_onboard.peer_account_in_chat",
-            AsyncMock(return_value=True),
-        ):
-            assert await lookup_live_membership(object(), -1, config=cfg) == (
-                True,
-                True,
-            )
-
-    asyncio.run(_run())

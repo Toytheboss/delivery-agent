@@ -29,7 +29,7 @@ async def _post_watch_hooks(client: TelegramClient, config: AppConfig) -> None:
     try:
         from bot.workflow_live_onboard import drain_pending_roy_notifies
 
-        await drain_pending_roy_notifies(client, config)
+        await drain_pending_roy_notifies(config, client)
     except Exception:
         logger.exception("live-status-watch: onboard drain failed")
     try:

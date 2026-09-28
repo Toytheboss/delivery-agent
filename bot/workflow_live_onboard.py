@@ -71,6 +71,7 @@ def build_onboard_message(
     group: str,
     bd_name: str,
     bd_open_id: str,
+    form_sent: bool,
 ) -> str:
     at = (
         f'<at user_id="{bd_open_id}">{bd_name or "BD"}</at>'
@@ -78,33 +79,48 @@ def build_onboard_message(
         else f"@{bd_name or 'BD'}"
     )
     project_label = (project or "Unknown project").strip() or "Unknown project"
-    group_label = (group or project).strip() or "not matched"
+    has_group = bool((group or "").strip())
+    group_label = (group or "").strip() or "not matched"
     form_please = (
         "Help the project submit Twitter and the contract address to the form"
     )
     pr_please = (
         "Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
     )
+    roy_in = case in {1, 2}
+    josh_in = case in {1, 3}
     if case == 1:
         delivery = "Roy and Josh have joined"
-        form = "Onboarding Google Form has been sent"
-        please = [form_please, pr_please]
     elif case == 2:
         delivery = "Roy has joined; Josh has not been added"
-        form = "Onboarding Google Form has been sent"
-        please = ["Add Josh to the TG group", form_please, pr_please]
     elif case == 3:
         delivery = "Josh has joined; Roy has not been added"
-        form = "Onboarding Google Form has been sent"
-        please = ["Add Roy to the TG group", form_please, pr_please]
+    elif has_group:
+        delivery = "Roy / Josh were not detected in this TG group"
     else:
         delivery = "Roy / Josh were not detected in a TG group"
-        form = "Onboarding Google Form was not sent"
-        please = [
-            "Create the project TG group, add Roy and Josh, then trigger the form send",
-            form_please,
-            pr_please,
-        ]
+    form = (
+        "Onboarding Google Form has been sent"
+        if form_sent
+        else "Onboarding Google Form was not sent"
+    )
+    please: list[str] = []
+    if not has_group:
+        please.append(
+            "Create the project TG group, add Roy and Josh, then trigger the form send"
+        )
+    else:
+        missing = []
+        if not roy_in:
+            missing.append("Roy")
+        if not josh_in:
+            missing.append("Josh")
+        if missing:
+            please.append(f"Add {' and '.join(missing)} to the TG group")
+        if not form_sent:
+            please.append("Trigger the Onboarding Google Form send")
+    please.append(form_please)
+    please.append(pr_please)
     numbered = "\n".join(f"{i}. {item}" for i, item in enumerate(please, start=1))
     return (
         f"{at}\n\n"
@@ -171,6 +187,108 @@ def _project_entry(data: dict[str, Any], rid: str) -> dict[str, Any]:
         entry = {}
         projects[rid] = entry
     return entry
+
+
+_DATA_ROOTS = (
+    Path("/opt/botchain-qa-tg-bot/data"),
+    Path("/opt/delivery-agent/data"),
+    ROOT / "data",
+)
+
+
+def _unique_data_roots() -> list[Path]:
+    seen: set[str] = set()
+    out: list[Path] = []
+    for root in _DATA_ROOTS:
+        try:
+            if not root.is_dir():
+                continue
+            key = str(root.resolve())
+        except OSError:
+            continue
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(root)
+    return out
+
+
+def _read_json_dict(path: Path) -> dict[str, Any]:
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _config_state_paths(config: Any, attr: str, default: str) -> list[Path]:
+    rel = str(getattr(config, attr, "") or default)
+    names = {Path(rel).name, Path(default).name}
+    paths: list[Path] = []
+    seen: set[str] = set()
+    local = Path(rel)
+    if not local.is_absolute():
+        local = ROOT / local
+    candidates = [local]
+    for root in _unique_data_roots():
+        for name in names:
+            candidates.append(root / name)
+    for path in candidates:
+        try:
+            key = str(path.resolve()) if path.exists() else str(path)
+        except OSError:
+            key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
+def form_already_sent(
+    config: Any,
+    *,
+    rid: str,
+    chat_id: int | None,
+) -> bool:
+    """True if either account already sent the onboarding form."""
+    rid = str(rid or "").strip()
+    for path in _config_state_paths(
+        config, "workflow_state_file", "data/form_dispatch_state.json"
+    ):
+        sent = {
+            str(item)
+            for item in (_read_json_dict(path).get("sent_record_ids") or [])
+        }
+        if rid and rid in sent:
+            return True
+    for path in _config_state_paths(
+        config, "workflow_form_chase_state_file", "data/form_chase_state.json"
+    ):
+        projects = _read_json_dict(path).get("projects") or {}
+        if not isinstance(projects, dict):
+            continue
+        if rid:
+            meta = projects.get(rid)
+            if isinstance(meta, dict) and (
+                meta.get("first_sent_at") or meta.get("last_sent_at")
+            ):
+                return True
+        if chat_id is None:
+            continue
+        for meta in projects.values():
+            if not isinstance(meta, dict):
+                continue
+            try:
+                if int(meta.get("chat_id")) != int(chat_id):
+                    continue
+            except (TypeError, ValueError):
+                continue
+            if meta.get("first_sent_at") or meta.get("last_sent_at"):
+                return True
+    if chat_id is not None and int(chat_id) in _chat_ids_already_sent_form(config):
+        return True
+    return False
 
 
 async def account_in_chat(client: TelegramClient, chat_id: int) -> tuple[bool, str]:
@@ -318,73 +436,27 @@ def remember_group_membership(
         entry["josh_in"] = bool(josh_in)
 
 
-async def lookup_live_membership(
-    client: TelegramClient,
-    chat_id: int | None,
-    *,
-    config: Any,
-) -> tuple[bool, bool]:
-    """Fresh Telegram check of Roy号 and 交付号. Do not trust stored roy_in/josh_in."""
-    if chat_id is None:
-        return False, False
-    key = account_key(config)
-    try:
-        self_in, _ = await account_in_chat(client, int(chat_id))
-    except Exception:
-        logger.exception("live-onboard: self membership lookup failed chat=%s", chat_id)
-        self_in = False
-    peer = "josh" if key == "roy" else "roy"
-    try:
-        peer_in = await peer_account_in_chat(client, int(chat_id), peer)
-    except Exception:
-        logger.exception(
-            "live-onboard: peer membership lookup failed peer=%s chat=%s",
-            peer,
-            chat_id,
-        )
-        peer_in = False
-    if key == "roy":
-        return bool(self_in), bool(peer_in)
-    return bool(peer_in), bool(self_in)
-
-
-def merge_form_sender_into_membership(
-    roy_in: bool,
-    josh_in: bool,
-    *,
-    form_status: str,
-    form_by: str,
-) -> tuple[bool, bool]:
-    """If this account already sent the form, it is in the group."""
-    if not _form_ok(form_status):
-        return roy_in, josh_in
-    by = str(form_by or "").strip().lower()
-    if by == "roy":
-        roy_in = True
-    elif by == "josh":
-        josh_in = True
-    return roy_in, josh_in
-
-
-async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) -> bool:
-    """True when the other bot account is a member of this group."""
+async def lookup_peer_in_chat(
+    client: TelegramClient, chat_id: int, peer: str
+) -> bool | None:
+    """True/False when Telegram answered; None when the lookup itself failed."""
     username = {"roy": "Roy4by4", "josh": "Josh_0zh"}.get(str(peer or "").strip().lower(), "")
     if not username:
-        return False
+        return None
     try:
         user = await client.get_entity(username)
         entity = await client.get_entity(chat_id)
     except Exception:
         logger.exception(
-            "form speaker: cannot resolve peer=%s chat=%s", peer, chat_id
+            "live-onboard: cannot resolve peer=%s chat=%s", peer, chat_id
         )
-        return False
+        return None
     try:
         uid = int(getattr(user, "id", 0) or 0)
     except (TypeError, ValueError):
         uid = 0
     if not uid:
-        return False
+        return None
     from telethon.tl.types import Channel, Chat
 
     if isinstance(entity, Channel):
@@ -398,11 +470,11 @@ async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) 
             return False
         except Exception:
             logger.exception(
-                "form speaker: channel participant lookup failed peer=%s chat=%s",
+                "live-onboard: channel participant lookup failed peer=%s chat=%s",
                 peer,
                 chat_id,
             )
-            return False
+            return None
     if isinstance(entity, Chat):
         from telethon.tl.functions.messages import GetFullChatRequest
 
@@ -410,15 +482,47 @@ async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) 
             full = await client(GetFullChatRequest(entity.id))
         except Exception:
             logger.exception(
-                "form speaker: basic-group lookup failed peer=%s chat=%s",
+                "live-onboard: basic-group lookup failed peer=%s chat=%s",
                 peer,
                 chat_id,
             )
-            return False
+            return None
         parts = getattr(getattr(full, "full_chat", None), "participants", None)
         users = getattr(parts, "participants", None) or []
         return any(int(getattr(item, "user_id", 0) or 0) == uid for item in users)
-    return False
+    return None
+
+
+async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) -> bool:
+    """True when the other bot account is a member of this group."""
+    found = await lookup_peer_in_chat(client, chat_id, peer)
+    return bool(found)
+
+
+def merge_membership(
+    *,
+    self_key: str,
+    self_in: bool,
+    stored_roy: bool,
+    stored_josh: bool,
+    peer_live: bool | None,
+) -> tuple[bool, bool]:
+    """OR this account's live check with stored flags; apply peer live only if it answered."""
+    roy_in = bool(stored_roy)
+    josh_in = bool(stored_josh)
+    if self_key == "roy":
+        roy_in = roy_in or bool(self_in)
+        if peer_live is True:
+            josh_in = True
+        elif peer_live is False:
+            josh_in = False
+    else:
+        josh_in = josh_in or bool(self_in)
+        if peer_live is True:
+            roy_in = True
+        elif peer_live is False:
+            roy_in = False
+    return roy_in, josh_in
 
 
 async def _send_form_if_needed(
@@ -444,7 +548,17 @@ async def _send_form_if_needed(
     root = ROOT
     state_path = root / config.workflow_state_file
     sent = _load_state(state_path)
-    if rid in sent:
+    if form_already_sent(config, rid=rid, chat_id=chat_id) or rid in sent:
+        sent.add(rid)
+        _save_state(state_path, sent)
+        _mark_onboard_form_sent(
+            config,
+            rid,
+            by=owner,
+            chat_id=chat_id,
+            chat_title=chat_title,
+            project_name=name,
+        )
         finish_form_send(claim_path, rid, owner)
         return "already_sent"
     if chat_id in _chat_ids_already_sent_form(config):
@@ -532,12 +646,14 @@ async def _notify_lark(config: Any, entry: dict[str, Any], fields: dict[str, Any
     bd_field = str(getattr(config, "workflow_live_onboard_bd_field", "") or "BD")
     bd_open_id, bd_name = parse_bd_person(fields, bd_field)
     case = int(entry.get("case") or 4)
+    form_sent = bool(entry.get("form_sent")) or _form_ok(str(entry.get("form") or ""))
     text = build_onboard_message(
         case=case,
         project=str(entry.get("project_name") or ""),
         group=str(entry.get("chat_title") or ""),
         bd_name=bd_name,
         bd_open_id=bd_open_id,
+        form_sent=form_sent,
     )
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
@@ -578,55 +694,81 @@ async def _finalize_notify(
             return
         if entry.get("notify") == "sending":
             return
-        entry["notify"] = "sending"
-        chat_id = entry.get("chat_id")
-        form_status = str(entry.get("form") or "")
-        form_by = str(entry.get("form_by") or "")
+        chat_id_raw = entry.get("chat_id")
         try:
-            chat_id_int = int(chat_id) if chat_id is not None else None
+            chat_id = int(chat_id_raw) if chat_id_raw not in (None, "") else None
         except (TypeError, ValueError):
-            chat_id_int = None
-    if client is None or chat_id_int is None:
-        logger.warning(
-            "live-onboard: defer Lark ping until membership can be checked rid=%s chat=%s",
-            rid,
-            chat_id,
+            chat_id = None
+        stored_roy = bool(entry.get("roy_in"))
+        stored_josh = bool(entry.get("josh_in"))
+        form_sent = _form_ok(str(entry.get("form") or "")) or form_already_sent(
+            config, rid=rid, chat_id=chat_id
         )
+        snapshot = {
+            "chat_id": chat_id,
+            "chat_title": str(entry.get("chat_title") or ""),
+            "project_name": str(entry.get("project_name") or ""),
+            "stored_roy": stored_roy,
+            "stored_josh": stored_josh,
+            "form_sent": form_sent,
+        }
+    self_in = False
+    peer_live: bool | None = None
+    if client is not None and snapshot["chat_id"] is not None:
+        self_in, live_title = await account_in_chat(client, int(snapshot["chat_id"]))
+        if live_title:
+            snapshot["chat_title"] = live_title
+        peer = "josh" if account_key(config) == "roy" else "roy"
+        peer_live = await lookup_peer_in_chat(
+            client, int(snapshot["chat_id"]), peer
+        )
+    roy_in, josh_in = merge_membership(
+        self_key=account_key(config),
+        self_in=self_in,
+        stored_roy=bool(snapshot["stored_roy"]),
+        stored_josh=bool(snapshot["stored_josh"]),
+        peer_live=peer_live,
+    )
+    peer_known = peer_live is not None or (
+        bool(snapshot["stored_josh"])
+        if account_key(config) == "roy"
+        else bool(snapshot["stored_roy"])
+    )
+    if snapshot["chat_id"] is not None and not peer_known:
         with _locked_state(path) as data:
             entry = _project_entry(data, rid)
             if entry.get("notify") != "sent":
                 entry["notify"] = "scheduled"
+                entry["roy_in"] = roy_in
+                entry["josh_in"] = josh_in
+                if snapshot["form_sent"]:
+                    entry["form"] = "already_sent"
+                    entry["form_sent"] = True
+                if snapshot["chat_title"]:
+                    entry["chat_title"] = snapshot["chat_title"]
+        logger.info(
+            "live-onboard defer notify %s until peer membership is confirmed",
+            rid,
+        )
         return
-    roy_in, josh_in = await lookup_live_membership(
-        client, chat_id_int, config=config
-    )
-    roy_in, josh_in = merge_form_sender_into_membership(
-        roy_in,
-        josh_in,
-        form_status=form_status,
-        form_by=form_by,
-    )
     case = classify_case(roy_in, josh_in)
-    if not _form_ok(form_status):
-        case = 4
+    form_sent = bool(snapshot["form_sent"])
     with _locked_state(path) as data:
         entry = _project_entry(data, rid)
         if entry.get("notify") == "sent":
             return
         entry["roy_in"] = roy_in
         entry["josh_in"] = josh_in
-        entry["membership_checked_at"] = time.time()
         entry["case"] = case
-        snapshot = dict(entry)
-    logger.info(
-        "live-onboard notify membership rid=%s roy_in=%s josh_in=%s case=%s",
-        rid,
-        roy_in,
-        josh_in,
-        case,
-    )
+        entry["form_sent"] = form_sent
+        if form_sent and not _form_ok(str(entry.get("form") or "")):
+            entry["form"] = "already_sent"
+        if snapshot["chat_title"]:
+            entry["chat_title"] = snapshot["chat_title"]
+        entry["notify"] = "sending"
+        snapshot_entry = dict(entry)
     try:
-        notify = await _notify_lark(config, snapshot, fields)
+        notify = await _notify_lark(config, snapshot_entry, fields)
     except Exception:
         logger.exception("live-onboard Lark notify failed for %s", rid)
         notify = "failed"
@@ -706,6 +848,11 @@ async def run_live_onboard(
     now = time.time()
     path = _state_path(config)
     should_notify = False
+    key = account_key(config)
+    peer_live: bool | None = None
+    if chat_id is not None:
+        peer = "josh" if key == "roy" else "roy"
+        peer_live = await lookup_peer_in_chat(client, chat_id, peer)
     with _locked_state(path) as data:
         entry = _project_entry(data, rid)
         entry["project_name"] = name
@@ -713,18 +860,28 @@ async def run_live_onboard(
             entry["chat_id"] = chat_id
         if chat_title:
             entry["chat_title"] = chat_title
-        entry[f"{key}_in"] = bool(in_group)
+        roy_in, josh_in = merge_membership(
+            self_key=key,
+            self_in=in_group,
+            stored_roy=bool(entry.get("roy_in")),
+            stored_josh=bool(entry.get("josh_in")),
+            peer_live=peer_live,
+        )
+        entry["roy_in"] = roy_in
+        entry["josh_in"] = josh_in
         entry[f"{key}_checked_at"] = now
-        if _form_ok(form_status):
-            entry["form"] = form_status
+        if _form_ok(form_status) or form_already_sent(
+            config, rid=rid, chat_id=chat_id
+        ):
+            entry["form"] = (
+                form_status if _form_ok(form_status) else "already_sent"
+            )
             entry["form_by"] = key
+            entry["form_sent"] = True
         elif not _form_ok(str(entry.get("form") or "")):
             entry["form"] = form_status
-        roy_in = bool(entry.get("roy_in"))
-        josh_in = bool(entry.get("josh_in"))
+            entry["form_sent"] = False
         case = classify_case(roy_in, josh_in)
-        if not _form_ok(str(entry.get("form") or "")):
-            case = 4
         entry["case"] = case
         if source not in _SKIP_NOTIFY_SOURCES and entry.get("notify") != "sent":
             if sends_lark_notify(config):
@@ -739,14 +896,20 @@ async def run_live_onboard(
     if should_notify:
         asyncio.create_task(
             _finalize_notify(
-                config, rid=rid, fields=fields, source=source, client=client
+                config,
+                rid=rid,
+                fields=fields,
+                source=source,
+                client=client,
             ),
             name=f"live-onboard-notify-{rid}",
         )
     return out
 
 
-async def drain_pending_roy_notifies(client: TelegramClient, config: Any) -> int:
+async def drain_pending_roy_notifies(
+    config: Any, client: TelegramClient | None = None
+) -> int:
     """Roy号补发 Josh 留下的通知，以及重启后停在 scheduled/sending 的条目。"""
     if not sends_lark_notify(config):
         return 0
