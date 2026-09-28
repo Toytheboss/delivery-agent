@@ -56,3 +56,15 @@ def append_event(
                 fh.write(line)
     except OSError:
         logger.exception("workflow events: failed appending %s", kind)
+
+
+def log_delivery(
+    kind: str,
+    source: str,
+    **kwargs: Any,
+) -> None:
+    """Same as append_event, but never raises into the caller."""
+    try:
+        append_event(kind, source, **kwargs)
+    except Exception:
+        logger.exception("delivery log failed kind=%s", kind)

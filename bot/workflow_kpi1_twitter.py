@@ -805,6 +805,18 @@ def audit_kpi1_for_fields(
         rid,
         {copy_field: copy, result_field: result},
     )
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_result_written",
+            "kpi1",
+            project_name=name,
+            record_id=rid,
+            text=f"进度表写入 KPI 1 Twitter：{result}",
+        )
+    except Exception:
+        pass
     return {
         "result": result,
         "passed": result == _PASS,

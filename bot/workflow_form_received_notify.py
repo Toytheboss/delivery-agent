@@ -167,11 +167,11 @@ def _send_one(
         group,
     )
     try:
-        from bot.workflow_events import append_event
+        from bot.workflow_events import log_delivery
 
-        append_event(
-            "form_received_notified",
-            "form_received_notify",
+        log_delivery(
+            "verification_push_form",
+            "Project verification push",
             project_name=project,
             text=f"{project} 的 Google 表单已回收，已推 Project verification push",
             status="success",

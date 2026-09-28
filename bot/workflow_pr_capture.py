@@ -440,6 +440,19 @@ async def capture_pr_tweet(
         )
     except Exception:  # noqa: BLE001
         logger.exception("pr_capture: saved KPI 2 but failed to log weekly event")
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "pr_support_written",
+            "pr support",
+            project_name=project_name,
+            record_id=record_id,
+            text=f"pr support：已将 PR 链接覆盖写入飞书进度表 KPI 2：{url}",
+            url=url,
+        )
+    except Exception:
+        pass
 
     logger.info(
         "PR KPI 2 link and result saved chat=%s project=%r record=%s url=%s",

@@ -580,6 +580,22 @@ async def run_form_chase_once(
             max_reminders,
         )
         try:
+            from bot.workflow_events import log_delivery
+
+            log_delivery(
+                "form_chase_reminder",
+                "form_chase",
+                project_name=project_name,
+                record_id=rid,
+                chat_id=chat_id,
+                text=(
+                    f"表单催收第 {reminders + 1} 次已发到项目群"
+                    + (f"（缺 {', '.join(missing)}）" if missing else "")
+                ),
+            )
+        except Exception:
+            pass
+        try:
             from bot.metrics import record_form_outcome
 
             record_form_outcome("chase_reminded")

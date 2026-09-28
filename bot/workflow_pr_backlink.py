@@ -238,6 +238,19 @@ async def dispatch_backlinks(
             chat_id,
             item["url"][:120],
         )
+        try:
+            from bot.workflow_events import log_delivery
+
+            log_delivery(
+                "pr_backlink_sent",
+                "pr_backlink",
+                project_name=item["project"],
+                record_id=item["record_id"],
+                chat_id=chat_id,
+                text=f"回链已发到项目群：{item['url']}",
+            )
+        except Exception:
+            pass
         results.append(outcome)
     return results
 

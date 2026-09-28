@@ -446,6 +446,18 @@ def upsert_week_rows(
             )
         if rid:
             kept.append(rid)
+            try:
+                from bot.workflow_events import log_delivery
+
+                log_delivery(
+                    "frontend_weekly_row",
+                    "frontend_weekly",
+                    project_name=name,
+                    record_id=rid,
+                    text=f"已写入前端周报表（{period}）",
+                )
+            except Exception:
+                pass
     return kept
 
 

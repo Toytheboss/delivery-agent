@@ -192,6 +192,18 @@ def maybe_send_verify_alert(
         result["skipped"] = True
         result["reason"] = "send_failed"
         return result
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "verify_alert",
+            "lark",
+            project_name=str(result.get("project_name") or ""),
+            chat_id=chat_id,
+            text=f"{result.get('project_name') or '项目'} 的 verify 请求已告警交付群",
+        )
+    except Exception:
+        pass
 
     last_map[key] = now
     # prune old keys (>30d)

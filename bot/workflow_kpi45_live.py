@@ -146,6 +146,18 @@ def fill_kpi45_for_fields(
             "kpi45: failed to write pass project=%r record=%s", project_name, rid
         )
         return "write_failed"
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_result_written",
+            "kpi45",
+            project_name=project_name,
+            record_id=rid,
+            text="进度表写入 KPI 4 产品可用 / KPI 5 独立性：通过",
+        )
+    except Exception:
+        pass
     state[rid] = _PASS
     _save_state(path, state)
     logger.info(

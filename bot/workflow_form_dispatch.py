@@ -871,6 +871,19 @@ async def run_form_dispatch_once(
 
         finish_form_send(claim_path, record_id, claim_owner)
         try:
+            from bot.workflow_events import log_delivery
+
+            log_delivery(
+                "form_sent",
+                "form_dispatch",
+                project_name=project_name,
+                record_id=record_id,
+                chat_id=chat_id,
+                text=f"Google 表单已发到项目群 {title_by_chat.get(chat_id) or chat_id}",
+            )
+        except Exception:
+            pass
+        try:
             from bot.workflow_live_onboard import _mark_onboard_form_sent
 
             _mark_onboard_form_sent(

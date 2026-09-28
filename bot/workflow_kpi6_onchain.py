@@ -268,6 +268,18 @@ def audit_kpi6_for_fields(
         rid,
         {copy_field: copy, result_field: result},
     )
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_result_written",
+            "kpi6",
+            project_name=name,
+            record_id=rid,
+            text=f"进度表写入 KPI 6 链上交互：{result}",
+        )
+    except Exception:
+        pass
     logger.info(
         "kpi6: %s project=%r record=%s ca=%s wallets=%s txs=%s",
         result,

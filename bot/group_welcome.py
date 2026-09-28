@@ -266,6 +266,18 @@ async def _send_welcome_sequence(
                 inc("welcome_messages_sent")
             except Exception:  # noqa: BLE001
                 pass
+            try:
+                from bot.workflow_events import log_delivery
+
+                log_delivery(
+                    "welcome_sequence_sent",
+                    "telegram",
+                    project_name=title,
+                    chat_id=chat_id,
+                    text=f"欢迎语第 {i}/{len(steps)} 条已发到项目群",
+                )
+            except Exception:
+                pass
             logger.info(
                 "Welcome step %d/%d (%s, +%ds) chat_id=%s title=%r",
                 i,

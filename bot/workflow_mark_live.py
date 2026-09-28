@@ -377,6 +377,22 @@ async def _apply_mark_live(
             f"Lark updated: {project_name}",
             f"Status: {_english_status_label(old_status)} → {_english_status_label(new_status)}",
         ]
+        try:
+            from bot.workflow_events import log_delivery
+
+            log_delivery(
+                "mark_live",
+                "telegram",
+                project_name=project_name,
+                record_id=record_id,
+                chat_id=chat_id,
+                text=(
+                    f"TG Mark live：进度表状态改为"
+                    f"{_english_status_label(new_status)}"
+                ),
+            )
+        except Exception:
+            pass
 
     note = await _maybe_write_tg_chat_id(
         loop,

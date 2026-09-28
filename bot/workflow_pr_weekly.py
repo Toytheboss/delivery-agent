@@ -407,6 +407,18 @@ def upsert_week_rows(
             existing[key] = {"record_id": rid, "fields": payload}
         if rid:
             kept.append(rid)
+            try:
+                from bot.workflow_events import log_delivery
+
+                log_delivery(
+                    "pr_weekly_row",
+                    "pr_weekly",
+                    project_name=name,
+                    record_id=rid,
+                    text=f"已写入品宣周报表（{period}）PR：{project['url']}",
+                )
+            except Exception:
+                pass
     return kept
 
 

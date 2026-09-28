@@ -1184,6 +1184,20 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         logo_state = load_state(
             "workflow_logo_state_file", "data/logo_fill_state.json"
         )
+        onboard_state = load_state(
+            "workflow_live_onboard_state_file",
+            "/opt/botchain-shared/live_onboard_state.json",
+        )
+        onboard_by_id: dict[str, Any] = {}
+        if isinstance(onboard_state.get("projects"), dict):
+            onboard_by_id.update(onboard_state["projects"])
+        for extra in _load_peer_json_dicts("live_onboard_state.json"):
+            extra_projects = extra.get("projects")
+            if not isinstance(extra_projects, dict):
+                continue
+            for rid, meta in extra_projects.items():
+                if str(rid) not in onboard_by_id and isinstance(meta, dict):
+                    onboard_by_id[str(rid)] = meta
         wallet_digest_state = load_state(
             "workflow_lark_digest_state_file", "data/lark_wallet_digest_state.json"
         )
@@ -1242,28 +1256,35 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         # normalized project name.  Name matching here is intentionally exact;
         # fuzzy matching is used only when binding Lark projects to TG groups.
         indexed_events: list[dict[str, Any]] = []
-        workflow_events_path = _dashboard_path(
-            config, "workflow_events_file", "data/workflow_events.jsonl"
-        )
-        for item in _read_jsonl(workflow_events_path, max_days=3650):
-            kind = str(item.get("kind") or "automation")
-            event_text = str(item.get("text") or "").strip()
-            if not event_text and kind == "wallet_collected":
-                address_count = int(item.get("address_count") or 0)
-                count_text = f"（{address_count} 个地址字段）" if address_count else ""
-                event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包地址已自动收集到 Lark{count_text}"
-            elif not event_text and kind == "wallet_notified":
-                event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包资料已推送至部门群"
-            indexed_events.append(
-                {
-                    **item,
-                    "kind": kind,
-                    "text": event_text,
-                    "ts": event_iso(item.get("ts")),
-                    "source": str(item.get("source") or "workflow_events"),
-                    "status": str(item.get("status") or "success"),
-                }
-            )
+        seen_workflow_keys: set[tuple[str, str, str]] = set()
+        for workflow_events_path in _peer_data_files("workflow_events.jsonl"):
+            for item in _read_jsonl(workflow_events_path, max_days=3650):
+                kind = str(item.get("kind") or "automation")
+                event_text = str(item.get("text") or "").strip()
+                if not event_text and kind == "wallet_collected":
+                    address_count = int(item.get("address_count") or 0)
+                    count_text = f"（{address_count} 个地址字段）" if address_count else ""
+                    event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包地址已自动收集到 Lark{count_text}"
+                elif not event_text and kind == "wallet_notified":
+                    event_text = f"{item.get('project_name') or item.get('record_id') or '项目'} 的钱包资料已推送至部门群"
+                key = (
+                    kind,
+                    str(item.get("ts") or ""),
+                    event_text or str(item.get("record_id") or ""),
+                )
+                if key in seen_workflow_keys:
+                    continue
+                seen_workflow_keys.add(key)
+                indexed_events.append(
+                    {
+                        **item,
+                        "kind": kind,
+                        "text": event_text,
+                        "ts": event_iso(item.get("ts")),
+                        "source": str(item.get("source") or "workflow_events"),
+                        "status": str(item.get("status") or "success"),
+                    }
+                )
 
         logo_events_path = _dashboard_path(
             config, "workflow_logo_events_file", "data/logo_fill_events.jsonl"
@@ -1395,7 +1416,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                 "events": deque(maxlen=120),
             }
         )
-        for day in _day_list(30):
+        for day in _day_list(180):
             for log_dir in _message_log_dirs(config):
                 message_path = log_dir / f"messages-{day}.jsonl"
                 if not message_path.is_file():
@@ -1421,12 +1442,17 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                             for outbound_item in outbound_items:
                                 evidence["sent"] += 1
                                 outbound_text = str(outbound_item.get("text") or "").strip()
+                                account = (
+                                    "Roy号"
+                                    if "botchain-qa" in str(message_path).lower()
+                                    else "交付号"
+                                )
                                 evidence["events"].append(
                                     {
                                         "kind": "telegram_outbound",
                                         "event_id": str(outbound_item.get("event_id") or ""),
-                                        "text": "Bot 发出一条消息"
-                                        + (f"：{outbound_text[:120]}" if outbound_text else ""),
+                                        "text": f"{account}在项目群发出"
+                                        + (f"：{outbound_text[:160]}" if outbound_text else ""),
                                         "ts": event_iso(outbound_item.get("ts")),
                                         "source": "telegram_outbound",
                                         "status": "success",
@@ -1714,6 +1740,17 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                         "status": str(item.get("status") or "success"),
                     }
                 )
+
+            onboard_entry = onboard_by_id.get(record_id)
+            for extra in _project_state_events(
+                record_id=record_id,
+                name=name,
+                fields=fields,
+                updated=event_iso(updated),
+                onboard_entry=onboard_entry if isinstance(onboard_entry, dict) else {},
+                chase_meta=chase_meta,
+            ):
+                add_unique_event(extra)
 
             def latest_event(*kinds: str) -> dict[str, Any] | None:
                 wanted = set(kinds)
@@ -2052,11 +2089,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                     "department_notified": wallet_digest_completed,
                     "logo_status": logo_status,
                     "delivery_steps": delivery_steps,
-                    "project_events": [
-                        ev
-                        for ev in unique_events
-                        if str(ev.get("ts") or "").strip()
-                    ],
+                    "project_events": _timeline_events(unique_events),
                     "issues": issues,
                 }
             )
@@ -3054,13 +3087,133 @@ def build_workflow_overview(
 
 
 
-def _delivery_automation_events(unique_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Newest first, full automation history, no Telegram chatter, no 30-cap."""
-    chatter = {"telegram_outbound", "qa_silent", "qa_replied"}
+_KPI_TIMELINE_FIELDS = (
+    ("推特验证结果", "KPI 1 Twitter 运营"),
+    ("新闻验证结果", "KPI 2 新闻/PR"),
+    ("官网验证结果", "KPI 3 官网"),
+    ("产品可用验证结果", "KPI 4 产品可用"),
+    ("独立性验证结果", "KPI 5 独立性"),
+    ("交互验证结果", "KPI 6 链上交互"),
+    ("持续运营要求验证结果", "KPI 7 持续运营"),
+    ("KPI 统筹", "KPI 统筹"),
+)
+
+
+def _project_state_events(
+    *,
+    record_id: str,
+    name: str,
+    fields: dict[str, Any],
+    updated: str,
+    onboard_entry: dict[str, Any] | None,
+    chase_meta: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    """Rebuild delivery actions from Lark + durable state when jsonl is thin."""
+    from bot.workflow_form_dispatch import _field_text
+
+    events: list[dict[str, Any]] = []
+    chase_meta = chase_meta if isinstance(chase_meta, dict) else {}
+    onboard_entry = onboard_entry if isinstance(onboard_entry, dict) else {}
+    judge_ts = ""
+    parsed_judge = _event_datetime(fields.get("KPI 判定时间"))
+    if parsed_judge is not None:
+        judge_ts = parsed_judge.isoformat(timespec="seconds")
+    fallback_ts = str(updated or "").strip()
+
+    if str(onboard_entry.get("notify") or "") == "sent":
+        ts = (
+            _event_datetime(
+                onboard_entry.get("roy_checked_at")
+                or onboard_entry.get("josh_checked_at")
+            )
+        )
+        events.append(
+            {
+                "kind": "verification_push_onboard",
+                "event_id": f"onboard-ping-{record_id}",
+                "text": (
+                    f"已向 Project verification push 发送上线核对"
+                    f"（case {onboard_entry.get('case') or '?'}）"
+                ),
+                "ts": ts.isoformat(timespec="seconds") if ts else fallback_ts,
+                "source": "Project verification push",
+            }
+        )
+
+    first_sent = _event_datetime(chase_meta.get("first_sent_at"))
+    if first_sent is not None:
+        events.append(
+            {
+                "kind": "form_sent",
+                "event_id": f"chase-first-{record_id}",
+                "text": "Google 表单已发送至项目群",
+                "ts": first_sent.isoformat(timespec="seconds"),
+                "source": "form_chase",
+            }
+        )
+    reminders = int(chase_meta.get("reminders_sent") or 0)
+    last_sent = _event_datetime(chase_meta.get("last_sent_at"))
+    if reminders > 0 and last_sent is not None:
+        events.append(
+            {
+                "kind": "form_chase_reminder",
+                "event_id": f"chase-last-{record_id}-{reminders}",
+                "text": f"表单催收已发送（累计 {reminders} 次）",
+                "ts": last_sent.isoformat(timespec="seconds"),
+                "source": "form_chase",
+            }
+        )
+    if chase_meta.get("done"):
+        done_ts = _event_datetime(chase_meta.get("completed_at"))
+        events.append(
+            {
+                "kind": "form_completed",
+                "event_id": f"chase-done-{record_id}",
+                "text": "Google 表单资料已回收",
+                "ts": (
+                    done_ts.isoformat(timespec="seconds")
+                    if done_ts
+                    else fallback_ts
+                ),
+                "source": "form_chase",
+            }
+        )
+
+    pr_url = _field_text(fields, "KPI 2 - PR 新闻链接验证")
+    if pr_url:
+        events.append(
+            {
+                "kind": "pr_support_written",
+                "event_id": f"kpi2-link-{record_id}",
+                "text": f"进度表 KPI 2 PR 链接：{pr_url[:180]}",
+                "ts": judge_ts or fallback_ts,
+                "source": "pr support",
+            }
+        )
+
+    for field, label in _KPI_TIMELINE_FIELDS:
+        result = _field_text(fields, field)
+        if not result:
+            continue
+        events.append(
+            {
+                "kind": "kpi_result_written",
+                "event_id": f"kpi-{record_id}-{field}",
+                "text": f"进度表写入{label}：{result[:80]}",
+                "ts": judge_ts or fallback_ts,
+                "source": "kpi",
+            }
+        )
+    return events
+
+
+def _timeline_events(unique_events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Full delivery history. Keep TG outbound; drop FAQ session wrappers."""
+    skip = {"qa_silent", "qa_replied"}
     events = [
         ev
         for ev in unique_events
-        if str(ev.get("kind") or "") not in chatter
+        if str(ev.get("kind") or "") not in skip and str(ev.get("ts") or "").strip()
     ]
     events.sort(key=lambda ev: str(ev.get("ts") or ""), reverse=True)
     return events

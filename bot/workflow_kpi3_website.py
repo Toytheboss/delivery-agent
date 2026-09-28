@@ -443,6 +443,18 @@ def audit_kpi3_for_fields(
             "reason": "write_failed",
             "project": name,
         }
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_result_written",
+            "kpi3",
+            project_name=name,
+            record_id=rid,
+            text=f"进度表写入 KPI 3 官网：{result}",
+        )
+    except Exception:
+        pass
     state[rid] = result
     try:
         _save_state(path, state)

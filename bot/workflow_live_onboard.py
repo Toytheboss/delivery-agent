@@ -708,6 +708,23 @@ async def _notify_lark(config: Any, entry: dict[str, Any], fields: dict[str, Any
         entry.get("project_name"),
         bd_name,
     )
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "verification_push_onboard",
+            "Project verification push",
+            project_name=str(entry.get("project_name") or ""),
+            record_id=str(entry.get("record_id") or ""),
+            text=(
+                f"{entry.get('project_name') or '项目'} 已推送上线核对到 "
+                f"Project verification push（case {case}）"
+            ),
+            case=case,
+            lark_chat_id=chat_id,
+        )
+    except Exception:
+        pass
     return "sent"
 
 

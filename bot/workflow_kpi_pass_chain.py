@@ -273,4 +273,17 @@ def apply_pass_chain_records(
         if done:
             wrote += 1
             logger.info("kpi pass-chain %s record=%s", ",".join(done), rid)
+            try:
+                from bot.workflow_events import log_delivery
+
+                name = _field_text(fields, "项目名称 Project Name")
+                log_delivery(
+                    "kpi_result_written",
+                    "kpi_pass_chain",
+                    project_name=name,
+                    record_id=rid,
+                    text=f"进度表自动补写 KPI：{', '.join(done)}",
+                )
+            except Exception:
+                pass
     return wrote

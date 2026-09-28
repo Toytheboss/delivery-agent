@@ -438,6 +438,18 @@ async def ensure_chat_in_folders(
         inc("folder_auto_add_success")
     except Exception:  # noqa: BLE001
         pass
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "folder_chat_added",
+            "folder_auto_add",
+            project_name=str(chat_title or ""),
+            chat_id=chat_id,
+            text=f"已将项目群加入 Folder：{chat_title}",
+        )
+    except Exception:
+        pass
     return name
 
 
