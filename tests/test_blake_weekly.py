@@ -91,6 +91,7 @@ def test_collect_filters_status_and_live_week():
                 "主网上线时间": live_ms,
                 "已上线链接🔗": {"link": "https://neon.example/", "text": "https://neon.example/"},
                 "项目简介（1-2句话）": "A cyberpunk arcade",
+                "赛道Category": ["GameFi"],
             },
         },
         {
@@ -121,6 +122,7 @@ def test_collect_filters_status_and_live_week():
     assert [r["name"] for r in rows] == ["Neon Arcade"]
     assert rows[0]["site"] == "https://neon.example/"
     assert rows[0]["intro_source"] == "A cyberpunk arcade"
+    assert rows[0]["category"] == "GameFi"
 
 
 def test_collect_includes_sunday_afternoon_in_iso_week():
@@ -204,3 +206,14 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         ping = run_blake_weekly_once(cfg, now=mon, send=True)
         assert ping["sent"] is True
         send.assert_called_once()
+
+
+def test_period_and_track_cells():
+    from bot.workflow_blake_weekly import period_cell, track_name
+
+    assert (
+        period_cell({"统计周期 （主网上线）": "2026-09-21 ~ 2026-09-27"})
+        == "2026-09-21 ~ 2026-09-27"
+    )
+    assert period_cell({"统计周期": "legacy"}) == "legacy"
+    assert track_name({"赛道Category": ["Tool"]}) == "Tool"

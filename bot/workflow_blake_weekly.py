@@ -45,12 +45,15 @@ _DEFAULT_TABLE_ID = "tblsPBJW1HUmkM6X"
 _DEFAULT_VIEW_ID = "vewVJL9hzD"
 _DEFAULT_AT_NAME = "Blake-APP-Android (布莱克)"
 
-FIELD_PERIOD = "统计周期"
+FIELD_PERIOD = "统计周期 （主网上线）"
+_PERIOD_ALIASES = (FIELD_PERIOD, "统计周期")
 FIELD_NAME = "项目"
 FIELD_SITE = "官网"
 FIELD_INTRO_ZH = "简介 中"
 FIELD_INTRO_EN = "简介 英"
 FIELD_LOGO = "logo"
+FIELD_TRACK = "赛道"
+SRC_TRACK_FIELD = "赛道Category"
 
 
 def week_monday(now: datetime | None = None) -> datetime:
@@ -114,6 +117,18 @@ def period_short(monday: datetime) -> str:
 
 def looks_chinese(text: str) -> bool:
     return bool(_CJK_RE.search(text or ""))
+
+
+def period_cell(fields: dict[str, Any]) -> str:
+    for key in _PERIOD_ALIASES:
+        text = _field_text(fields, key)
+        if text:
+            return text
+    return ""
+
+
+def track_name(fields: dict[str, Any], field: str = SRC_TRACK_FIELD) -> str:
+    return _field_text(fields, field).strip()
 
 
 def _ms_to_dt(value: Any) -> datetime | None:
@@ -350,6 +365,7 @@ def collect_week_projects(
                 "name": name,
                 "site": link_str(fields.get(live_link_field)),
                 "intro_source": intro,
+                "category": track_name(fields),
                 "logo_fields": fields,
                 "live_at": live_at,
             }
@@ -364,7 +380,7 @@ def _dest_index(
     out: dict[str, dict[str, Any]] = {}
     for record in dest_records:
         fields = record.get("fields") or {}
-        if _field_text(fields, FIELD_PERIOD) != period:
+        if period_cell(fields) != period:
             continue
         name = _field_text(fields, FIELD_NAME)
         if name:
@@ -413,6 +429,11 @@ def upsert_week_rows(
             payload[FIELD_INTRO_ZH] = zh
         if en:
             payload[FIELD_INTRO_EN] = en
+        category = str(project.get("category") or "").strip() or track_name(
+            dest_fields, FIELD_TRACK
+        )
+        if category:
+            payload[FIELD_TRACK] = category
         if dest:
             rid = str(dest.get("record_id") or "")
             update_record(token, app, dest_table, rid, payload)
