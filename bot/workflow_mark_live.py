@@ -221,14 +221,14 @@ async def _maybe_write_tg_chat_id(
             record_id,
             chat_id,
         )
-        return f"Could not save TG chat id to Lark field {field!r}."
+        return "Couldn't link this group on the sheet."
     logger.info(
         "mark_live: wrote tg chat id field=%r record=%s chat=%s",
         field,
         record_id,
         chat_id,
     )
-    return f"Saved TG chat id {chat_id} to Lark."
+    return "Linked this group on the sheet."
 
 
 def _speaker_label(speaker: str) -> str:
@@ -346,10 +346,7 @@ async def _apply_mark_live(
             new_status,
             chat_id,
         )
-        lines = [
-            f"Lark already live: {project_name}",
-            f"Status: {_english_status_label(new_status)}",
-        ]
+        lines = [f"{project_name} is already live on mainnet."]
     else:
         try:
             await loop.run_in_executor(
@@ -363,7 +360,7 @@ async def _apply_mark_live(
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("mark_live: failed to update Lark status")
-            return f"Matched {project_name!r} but failed to update Lark: {exc}"
+            return f"Couldn't mark {project_name} live: {exc}"
 
         logger.info(
             "Marked live via TG: project=%r record=%s %r -> %r chat=%s",
@@ -373,10 +370,7 @@ async def _apply_mark_live(
             new_status,
             chat_id,
         )
-        lines = [
-            f"Lark updated: {project_name}",
-            f"Status: {_english_status_label(old_status)} → {_english_status_label(new_status)}",
-        ]
+        lines = [f"{project_name} is live on BOT Chain mainnet now."]
         try:
             from bot.workflow_events import log_delivery
 
@@ -421,27 +415,27 @@ async def _apply_mark_live(
         )
         form = outcome.get("form")
         if form == "sent":
-            lines.append(
-                f"Google Form sent to {outcome.get('chat_title') or 'matched group'}."
-            )
+            lines.append("Onboarding form is in this group.")
         elif form == "deferred" and speaker:
-            lines.append(f"Live form will be sent by {_speaker_label(speaker)}.")
+            lines.append(
+                f"{_speaker_label(speaker)} will send the onboarding form in this group."
+            )
         elif form == "already_sent":
-            lines.append("Google Form already sent earlier (skipped).")
+            lines.append("Onboarding form was already sent.")
         elif form and str(form).startswith("no_group"):
-            lines.append(f"Status updated, but no TG group match ({form}).")
+            lines.append("Marked live, but I couldn't match a Telegram group.")
         elif form and form not in {"skipped", "no_form_url"}:
-            lines.append(f"Form result: {form}")
+            lines.append(f"Couldn't send the onboarding form ({form}).")
 
         logo_status = str(outcome.get("logo") or "")
         if logo_status.startswith("ok"):
-            lines.append("Project logo uploaded to Lark.")
+            lines.append("Logo is on the sheet.")
         elif logo_status in {"already_has_logo", "already_processed", "baseline_has_logo"}:
-            lines.append("Project logo already set (skipped).")
+            lines.append("Logo is already on the sheet.")
         elif logo_status in {"disabled", "skipped"}:
             pass
         else:
-            lines.append(f"Logo fill skipped/failed ({logo_status}); will not retry.")
+            lines.append(f"Couldn't put the logo on the sheet ({logo_status}).")
 
     return "\n".join(lines)
 
