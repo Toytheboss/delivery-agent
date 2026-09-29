@@ -260,10 +260,11 @@ def format_result_post(
     if valid:
         lines.append("**Summary:** This is a valid KPI. There is no rectification item.")
     else:
-        clause = "; ".join(part for part in fixes if part)
+        del fixes
         lines.append(
             "**Summary:** This is held for rectification under the new standard. "
-            f"Fix within `2` weeks: {clause}. The second review is final."
+            "Quote this message and submit the missing items within `2` weeks. "
+            "The second review is final."
         )
     return "\n".join(lines).rstrip() + "\n"
 

@@ -79,7 +79,8 @@ def test_held_post_omits_kpi7_and_lists_only_the_failed_fix():
     assert "KPI 7" not in text
     assert text.index("**Failed**") < text.index("**Passed**")
     assert "**KPI 2 PR:** Not submitted" in text
-    assert "Fix within `2` weeks: share the Twitter PR link in the Telegram group." in text
+    assert "Quote this message and submit the missing items within `2` weeks." in text
+    assert "share the Twitter PR link" not in text
     assert "The second review is final." in text
     assert "Day `1`" in text
 
