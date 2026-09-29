@@ -1,11 +1,14 @@
 from datetime import datetime, timezone
 
 from bot.workflow_kpi_result_push import (
+    audit_first_check,
     format_result_post,
     is_september_2026_live,
+    onchain_line_from_copy,
     onchain_post_line,
     pending_september_rows,
     pr_post_line,
+    twitter_line_from_copy,
     twitter_post_line,
     website_fix,
 )
@@ -143,3 +146,89 @@ def test_pending_rows_skip_posted_and_non_september():
     assert [row["record_id"] for row in rows] == ["rec-new"]
     assert is_september_2026_live(records[1]["fields"])
     assert not is_september_2026_live(records[2]["fields"])
+
+
+def test_stored_pass_copy_keeps_the_numbers():
+    twitter = (
+        "Twitter operations verification: official account @demo posted 7 "
+        "original posts in the last 30 days (threshold ≥5); "
+        "Twitter operations verification passed"
+    )
+    chain = (
+        "User and interaction verification: 6 unique wallets, "
+        "7 successful core txs (threshold ≥3 wallets and ≥5 txs); "
+        "user and interaction verification passed"
+    )
+    assert twitter_line_from_copy(twitter).startswith("`7` original posts.")
+    assert onchain_line_from_copy(chain).startswith("`6` wallets, `7` txs.")
+
+
+def test_audit_skips_passed_items_and_writes_held_coord(monkeypatch):
+    called = {"twitter": 0, "website": 0, "onchain": 0, "held": 0, "pass_chain": 0}
+
+    def boom_twitter(*_a, **_k):
+        called["twitter"] += 1
+        raise AssertionError("passed twitter must not be rechecked")
+
+    def boom_website(*_a, **_k):
+        called["website"] += 1
+        raise AssertionError("passed website must not be rechecked")
+
+    def onchain(*_a, **_k):
+        called["onchain"] += 1
+        return {
+            "contract": "",
+            "wallets": 0,
+            "txs": 0,
+            "reason": "no_contract",
+            "copy": "",
+            "passed": False,
+        }
+
+    monkeypatch.setattr("bot.workflow_kpi1_twitter.audit_kpi1_for_fields", boom_twitter)
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter.fill_kpi2_pr_from_twitter",
+        lambda *a, **k: "https://x.com/demo/status/9",
+    )
+    monkeypatch.setattr("bot.workflow_kpi3_website.audit_kpi3_for_fields", boom_website)
+    monkeypatch.setattr("bot.workflow_kpi6_onchain.audit_kpi6_for_fields", onchain)
+    monkeypatch.setattr(
+        "bot.workflow_kpi45_live.fill_kpi45_for_fields",
+        lambda *a, **k: "already_filled",
+    )
+    monkeypatch.setattr(
+        "bot.workflow_kpi_pass_chain.write_kpi2_result",
+        lambda *a, **k: None,
+    )
+    monkeypatch.setattr(
+        "bot.workflow_kpi_pass_chain.apply_pass_chain",
+        lambda *a, **k: called.__setitem__("pass_chain", called["pass_chain"] + 1),
+    )
+
+    def held(*_a, **_k):
+        called["held"] += 1
+
+    monkeypatch.setattr("bot.workflow_kpi_result_push.write_held_coord", held)
+
+    class Cfg:
+        workflow_base_app_token = "app"
+        workflow_progress_table_id = "tbl"
+        workflow_live_onboard_bd_field = "BD"
+
+    fields = {
+        "推特验证结果": "通过",
+        "KPI 1 - Twitter运营验证": "posted 7 original posts",
+        "官网验证结果": "通过",
+        "KPI 3 - 官网展示验证": "Website display verification passed",
+        "产品可用验证结果": "通过",
+        "独立性验证结果": "通过",
+        "交互验证结果": "不通过",
+        "主网上线时间": "2026-09-14",
+        "BD": [{"id": "ou_bd", "name": "Ada"}],
+    }
+    built = audit_first_check("tok", Cfg(), "rec1", fields, project_name="Swing")
+    assert called == {"twitter": 0, "website": 0, "onchain": 1, "held": 1, "pass_chain": 0}
+    assert built["valid"] is False
+    assert "Held for rectification" in built["markdown"]
+    assert "`7` original posts." in built["markdown"]
+    assert "KPI 7" not in built["markdown"]

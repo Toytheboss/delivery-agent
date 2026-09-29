@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -17,6 +18,7 @@ from bot.workflow_kpi_diag import latest_copy
 from bot.workflow_kpi_pass_chain import KPI7_PASS_COPY
 from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
+    field_result,
     now_shanghai,
     parse_live_start,
 )
@@ -55,6 +57,21 @@ _ONCHAIN_MISSING = (
 _ONCHAIN_SHORT = "reach `≥3` unique wallets and `≥5` successful core txs"
 _VALID = "Valid KPI"
 _HELD = "Held for rectification"
+_PASS = "通过"
+_HELD_COORD = "暂扣整改"
+_COORD_FIELD = "KPI 统筹"
+_JUDGE_FIELD = "KPI 判定时间"
+_KPI1_RESULT = "推特验证结果"
+_KPI1_COPY = "KPI 1 - Twitter运营验证"
+_KPI2_RESULT = "新闻验证结果"
+_KPI3_RESULT = "官网验证结果"
+_KPI3_COPY = "KPI 3 - 官网展示验证"
+_KPI4_RESULT = "产品可用验证结果"
+_KPI5_RESULT = "独立性验证结果"
+_KPI6_RESULT = "交互验证结果"
+_KPI6_COPY = "KPI 6 - 链上交互验证"
+_POSTED_RE = re.compile(r"posted (\d+) original", re.I)
+_WALLETS_RE = re.compile(r"(\d+) unique wallets, (\d+) successful", re.I)
 
 
 def posted_ids(path: Path | None = None) -> set[str]:
@@ -251,6 +268,42 @@ def format_result_post(
     return "\n".join(lines).rstrip() + "\n"
 
 
+def _passed(fields: dict[str, Any], result_field: str) -> bool:
+    return field_result(fields, result_field) == _PASS
+
+
+def twitter_line_from_copy(copy: str) -> str:
+    match = _POSTED_RE.search(latest_copy(copy))
+    if not match:
+        return "Meets the Twitter requirement."
+    return twitter_post_line(handle="kept", count=int(match.group(1)), unread=False)[1]
+
+
+def onchain_line_from_copy(copy: str) -> str:
+    match = _WALLETS_RE.search(latest_copy(copy))
+    if not match:
+        return "Meets the wallet and on-chain requirement."
+    return onchain_post_line(
+        contract="kept",
+        wallets=int(match.group(1)),
+        txs=int(match.group(2)),
+    )[1]
+
+
+def write_held_coord(token: str, config: AppConfig, record_id: str) -> None:
+    """First-check hold. The coordination cell is 暂扣整改, never 不通过."""
+    from bot.lark_bitable import update_record
+    from bot.workflow_kpi_pass_chain import judge_time_ms
+
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        record_id,
+        {_COORD_FIELD: _HELD_COORD, _JUDGE_FIELD: judge_time_ms()},
+    )
+
+
 def _pr_url(fields: dict[str, Any], written: str) -> str:
     from bot.project_logo import link_str
 
@@ -268,63 +321,135 @@ def audit_first_check(
     *,
     project_name: str,
 ) -> dict[str, Any]:
-    """Run KPI 1–7 writes and return the English post. Does not send it."""
-    from bot.workflow_kpi1_twitter import audit_kpi1_for_fields
+    """Re-check items that are not already passed, then write coordination.
+
+    Passed cells are left untouched. A hold writes 暂扣整改 and does not mark
+    KPI 7 passed. A full pass writes KPI 7 and 通过.
+    """
+    from bot.lark_bitable import update_record
+    from bot.workflow_kpi1_twitter import audit_kpi1_for_fields, fill_kpi2_pr_from_twitter
     from bot.workflow_kpi3_website import audit_kpi3_for_fields
-    from bot.workflow_kpi45_live import fill_kpi45_for_fields
+    from bot.workflow_kpi45_live import fill_kpi45_for_fields, kpi45_pass_fields
     from bot.workflow_kpi6_onchain import audit_kpi6_for_fields
-    from bot.workflow_kpi_pass_chain import apply_pass_chain, planned_kpi2_result, write_kpi2_result
+    from bot.workflow_kpi_pass_chain import (
+        apply_pass_chain,
+        planned_kpi2_result,
+        write_kpi2_result,
+    )
     from bot.workflow_live_onboard import parse_bd_person
 
     rid = (record_id or "").strip()
     name = (project_name or "").strip()
-    twitter = audit_kpi1_for_fields(
-        token, config, rid, fields, project_name=name
-    )
     current = dict(fields)
-    pr = _pr_url(current, str(twitter.get("pr_url") or ""))
-    if pr:
-        current[_KPI2_LINK] = pr
-    kpi2_write = planned_kpi2_result(current)
-    if kpi2_write:
-        write_kpi2_result(token, config, rid, kpi2_write)
-    website = audit_kpi3_for_fields(
-        token,
-        config,
-        rid,
-        current,
-        project_name=name,
-        skip_if_audited=False,
+    twitter_passed = _passed(current, _KPI1_RESULT)
+    pr_passed = _passed(current, _KPI2_RESULT)
+    website_passed = _passed(current, _KPI3_RESULT)
+    onchain_passed = _passed(current, _KPI6_RESULT)
+    kpi1_copy_field = str(
+        getattr(config, "workflow_kpi1_copy_field", "") or _KPI1_COPY
     )
-    if not isinstance(website, dict) or website.get("result") == "write_failed":
-        raise RuntimeError(f"website write failed for {name}")
-    filled = fill_kpi45_for_fields(
-        token, config, rid, current, project_name=name
+    kpi3_copy_field = str(
+        getattr(config, "workflow_kpi3_copy_field", "") or _KPI3_COPY
     )
-    if filled == "write_failed":
-        raise RuntimeError(f"product and independence write failed for {name}")
-    onchain = audit_kpi6_for_fields(
-        token, config, rid, current, project_name=name
+    kpi6_copy_field = str(
+        getattr(config, "workflow_kpi6_copy_field", "") or _KPI6_COPY
     )
 
-    handle = str(twitter.get("handle") or "")
-    count = twitter.get("count")
-    unread = str(twitter.get("reason") or "") == "unread"
-    if not isinstance(count, int):
-        count = None
-    twitter_ok, twitter_line = twitter_post_line(
-        handle=handle, count=count, unread=unread
-    )
-    pr_ok, pr_line = pr_post_line(pr)
-    site_copy = latest_copy(str(website.get("copy") or ""))
-    site_reason = str(website.get("reason") or "")
-    website_ok = site_reason == "passed"
-    chain_contract = str(onchain.get("contract") or "")
-    wallets = int(onchain.get("wallets") or 0)
-    txs = int(onchain.get("txs") or 0)
-    onchain_ok, onchain_line = onchain_post_line(
-        contract=chain_contract, wallets=wallets, txs=txs
-    )
+    fresh_pr = ""
+    if not twitter_passed:
+        twitter = audit_kpi1_for_fields(
+            token, config, rid, current, project_name=name
+        )
+        fresh_pr = str(twitter.get("pr_url") or "")
+        handle = str(twitter.get("handle") or "")
+        count = twitter.get("count")
+        unread = str(twitter.get("reason") or "") == "unread"
+        if not isinstance(count, int):
+            count = None
+        twitter_ok, twitter_line = twitter_post_line(
+            handle=handle, count=count, unread=unread
+        )
+    else:
+        twitter_ok = True
+        twitter_line = twitter_line_from_copy(_field_text(current, kpi1_copy_field))
+        handle = "kept"
+        count = 5
+        unread = False
+
+    pr = _pr_url(current, fresh_pr)
+    if pr and not pr_passed:
+        current[_KPI2_LINK] = pr
+    if not pr_passed:
+        if twitter_passed:
+            fresh_pr = fill_kpi2_pr_from_twitter(
+                token, config, rid, current, project_name=name
+            )
+            pr = _pr_url(current, fresh_pr)
+            if pr:
+                current[_KPI2_LINK] = pr
+        kpi2_write = planned_kpi2_result(current)
+        if kpi2_write:
+            write_kpi2_result(token, config, rid, kpi2_write)
+            current[_KPI2_RESULT] = kpi2_write
+        pr_ok, pr_line = pr_post_line(pr)
+    else:
+        pr_ok = True
+        pr_line = pr_post_line(pr)[1] if pr else "Meets the PR requirement."
+
+    if not website_passed:
+        website = audit_kpi3_for_fields(
+            token,
+            config,
+            rid,
+            current,
+            project_name=name,
+            skip_if_audited=False,
+        )
+        if not isinstance(website, dict) or website.get("result") == "write_failed":
+            raise RuntimeError(f"website write failed for {name}")
+        site_copy = latest_copy(str(website.get("copy") or ""))
+        site_reason = str(website.get("reason") or "")
+        website_ok = site_reason == "passed"
+    else:
+        website_ok = True
+        site_copy = latest_copy(_field_text(current, kpi3_copy_field))
+        site_reason = "passed"
+
+    kpi4_passed = _passed(current, _KPI4_RESULT)
+    kpi5_passed = _passed(current, _KPI5_RESULT)
+    if not kpi4_passed or not kpi5_passed:
+        filled = fill_kpi45_for_fields(
+            token, config, rid, current, project_name=name
+        )
+        if filled == "write_failed":
+            raise RuntimeError(f"product and independence write failed for {name}")
+        if filled == "already_filled":
+            update_record(
+                token,
+                config.workflow_base_app_token,
+                config.workflow_progress_table_id,
+                rid,
+                kpi45_pass_fields(
+                    include_kpi4=not kpi4_passed,
+                    include_kpi5=not kpi5_passed,
+                ),
+            )
+
+    if not onchain_passed:
+        onchain = audit_kpi6_for_fields(
+            token, config, rid, current, project_name=name
+        )
+        chain_contract = str(onchain.get("contract") or "")
+        wallets = int(onchain.get("wallets") or 0)
+        txs = int(onchain.get("txs") or 0)
+        onchain_ok, onchain_line = onchain_post_line(
+            contract=chain_contract, wallets=wallets, txs=txs
+        )
+    else:
+        onchain_ok = True
+        onchain_line = onchain_line_from_copy(_field_text(current, kpi6_copy_field))
+        chain_contract = "kept"
+
     fixes: list[str] = []
     if not twitter_ok:
         fixes.append(twitter_fix(handle=handle, count=count, unread=unread))
@@ -334,21 +459,24 @@ def audit_first_check(
         fixes.append(website_fix(site_reason, site_copy))
     if not onchain_ok:
         fixes.append(onchain_fix(contract=chain_contract))
-    if twitter_ok and pr_ok and website_ok and onchain_ok:
+    all_ok = twitter_ok and pr_ok and website_ok and onchain_ok
+    if all_ok:
         apply_pass_chain(
             token,
             config,
             rid,
             {
                 **current,
-                "推特验证结果": "通过",
-                "新闻验证结果": "通过",
-                "官网验证结果": "通过",
-                "产品可用验证结果": "通过",
-                "独立性验证结果": "通过",
-                "交互验证结果": "通过",
+                _KPI1_RESULT: _PASS,
+                _KPI2_RESULT: _PASS,
+                _KPI3_RESULT: _PASS,
+                _KPI4_RESULT: _PASS,
+                _KPI5_RESULT: _PASS,
+                _KPI6_RESULT: _PASS,
             },
         )
+    else:
+        write_held_coord(token, config, rid)
     live = parse_live_start(fields)
     live_date = live.strftime("%Y-%m-%d") if live else ""
     bd_field = str(getattr(config, "workflow_live_onboard_bd_field", "") or "BD")
