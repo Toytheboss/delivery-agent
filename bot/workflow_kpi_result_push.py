@@ -57,8 +57,10 @@ _ONCHAIN_MISSING = (
 _ONCHAIN_SHORT = "reach `≥3` unique wallets and `≥5` successful core txs"
 _VALID = "Valid KPI"
 _HELD = "Held for rectification"
+_FAILED = "KPI failed"
 _PASS = "通过"
 _HELD_COORD = "暂扣整改"
+_FAIL_COORD = "不通过"
 _COORD_FIELD = "KPI 统筹"
 _JUDGE_FIELD = "KPI 判定时间"
 _KPI1_RESULT = "推特验证结果"
@@ -216,8 +218,9 @@ def format_result_post(
     onchain_ok: bool,
     onchain_line: str,
     fixes: list[str],
+    final: bool = False,
 ) -> str:
-    """English first-check post. Held posts omit KPI 7. Never says KPI failed."""
+    """English result post. The first check never says KPI failed."""
     name = (bd_name or "").strip() or "BD"
     at = (
         f'<at user_id="{bd_open_id}">{name}</at>'
@@ -225,7 +228,10 @@ def format_result_post(
         else f"@{name}"
     )
     valid = twitter_ok and pr_ok and website_ok and onchain_ok
-    result = _VALID if valid else _HELD
+    if final:
+        result = _VALID if valid else _FAILED
+    else:
+        result = _VALID if valid else _HELD
     items: list[tuple[int, str, bool, str]] = [
         (1, "KPI 1 Twitter", twitter_ok, twitter_line),
         (2, "KPI 2 PR", pr_ok, pr_line),
@@ -244,7 +250,11 @@ def format_result_post(
         f"**Project:** `{project}`",
         f"**BD:** {name}",
         f"**Live date:** `{live_date}` Day `1`",
-        f"**First check:** `{check_date}` · {result}",
+        (
+            f"**Second check:** `{check_date}` · final"
+            if final
+            else f"**First check:** `{check_date}` · {result}"
+        ),
         "",
         f"**Result:** {result}",
         "",
@@ -259,6 +269,12 @@ def format_result_post(
         lines.append("")
     if valid:
         lines.append("**Summary:** This is a valid KPI. There is no rectification item.")
+    elif final:
+        del fixes
+        lines.append(
+            "**Summary:** Any held item still failed, so this is a final fail "
+            "under the new standard. There is no further rectification."
+        )
     else:
         del fixes
         lines.append(
@@ -291,6 +307,29 @@ def onchain_line_from_copy(copy: str) -> str:
     )[1]
 
 
+def write_final_fail_coord(token: str, config: AppConfig, record_id: str) -> None:
+    """Second check. Still-failing items become 不通过. There is no further hold."""
+    from bot.lark_bitable import update_record
+    from bot.workflow_kpi_pass_chain import judge_time_ms
+
+    stamp = judge_time_ms()
+    last_error: Exception | None = None
+    for coord in (_FAIL_COORD, "KPI未通过"):
+        try:
+            update_record(
+                token,
+                config.workflow_base_app_token,
+                config.workflow_progress_table_id,
+                record_id,
+                {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
+            )
+            return
+        except Exception as exc:  # noqa: BLE001
+            last_error = exc
+    if last_error:
+        raise last_error
+
+
 def write_held_coord(token: str, config: AppConfig, record_id: str) -> None:
     """First-check hold. The coordination cell is 暂扣整改, never 不通过."""
     from bot.lark_bitable import update_record
@@ -321,11 +360,13 @@ def audit_first_check(
     fields: dict[str, Any],
     *,
     project_name: str,
+    final: bool = False,
 ) -> dict[str, Any]:
     """Re-check items that are not already passed, then write coordination.
 
-    Passed cells are left untouched. A hold writes 暂扣整改 and does not mark
-    KPI 7 passed. A full pass writes KPI 7 and 通过.
+    Passed cells are left untouched. The first check writes 暂扣整改 and does
+    not mark KPI 7 passed. The second check writes 不通过 instead. A full pass
+    writes KPI 7 and 通过.
     """
     from bot.lark_bitable import update_record
     from bot.workflow_kpi1_twitter import audit_kpi1_for_fields, fill_kpi2_pr_from_twitter
@@ -476,6 +517,8 @@ def audit_first_check(
                 _KPI6_RESULT: _PASS,
             },
         )
+    elif final:
+        write_final_fail_coord(token, config, rid)
     else:
         write_held_coord(token, config, rid)
     live = parse_live_start(fields)
@@ -498,6 +541,7 @@ def audit_first_check(
         onchain_ok=onchain_ok,
         onchain_line=onchain_line,
         fixes=fixes,
+        final=final,
     )
     return {
         "project": name,

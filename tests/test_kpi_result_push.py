@@ -111,6 +111,32 @@ def test_valid_post_includes_kpi7_and_the_fixed_summary():
     assert "independence verification passed" in text
 
 
+def test_final_fail_post_is_not_a_hold():
+    text = format_result_post(
+        project="example",
+        bd_name="Ada",
+        bd_open_id="ou_ada",
+        live_date="2026-10-01",
+        check_date="2026-10-22",
+        twitter_ok=False,
+        twitter_line="`2` original posts. Does not meet the Twitter requirement.",
+        pr_ok=True,
+        pr_line="https://x.com/example/status/1",
+        website_ok=True,
+        website_line="Website display verification: website display verification passed",
+        onchain_ok=True,
+        onchain_line="`3` wallets, `5` txs. Meets the wallet and on-chain requirement.",
+        fixes=[],
+        final=True,
+    )
+    assert "**Second check:** `2026-10-22` · final" in text
+    assert "**Result:** KPI failed" in text
+    assert "KPI 7" not in text
+    assert "Held for rectification" not in text
+    assert "no further rectification" in text
+    assert "First check" not in text
+
+
 def test_pending_rows_skip_posted_and_non_september():
     live = datetime(2026, 9, 14, tzinfo=timezone.utc)
     october = datetime(2026, 10, 1, tzinfo=timezone.utc)

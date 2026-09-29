@@ -49,6 +49,7 @@ from bot.workflow_blake_weekly import blake_weekly_loop
 from bot.workflow_pr_weekly import pr_weekly_loop
 from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loop
 from bot.workflow_form_chase import form_chase_loop
+from bot.workflow_kpi_schedule import kpi_schedule_loop, runs_on_this_host
 from bot.workflow_logo_link_sync import logo_link_sync_loop
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -404,6 +405,11 @@ async def main() -> None:
                 config.workflow_wallet_table_id,
                 config.workflow_notify_chat_ids,
                 config.workflow_notify_group_titles,
+            )
+        if runs_on_this_host():
+            asyncio.create_task(kpi_schedule_loop(config))
+            logger.info(
+                "KPI schedule enabled (live from 2026-09-30, first +7d, second +21d)"
             )
         if getattr(config, "workflow_form_chase_enabled", False):
             asyncio.create_task(form_chase_loop(client, config, scope))
