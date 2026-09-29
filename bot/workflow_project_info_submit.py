@@ -58,11 +58,19 @@ def clean_project_label(raw: str) -> str:
 
 
 def project_name_from_quoted(text: str) -> str:
-    for line in (text or "").splitlines():
+    raw = text or ""
+    for line in raw.splitlines():
         plain = line.replace("*", "").strip()
         if plain.lower().startswith("project:"):
             return clean_project_label(plain.split(":", 1)[1])
-    return ""
+    # A markdown post can come back as one block, with the label still bold.
+    plain = raw.replace("*", "")
+    match = re.search(r"(?i)\bproject:\s*`?([^\n`]+)", plain)
+    if not match:
+        return ""
+    label = match.group(1).strip()
+    label = re.split(r"\s{2,}|\s+(?:BD|Live date|First check|Result):", label, maxsplit=1)[0]
+    return clean_project_label(label)
 
 
 def parse_submit_payload(text: str) -> tuple[str, str, str]:

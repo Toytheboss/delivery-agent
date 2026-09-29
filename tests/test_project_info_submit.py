@@ -6,6 +6,7 @@ from unittest.mock import patch
 from bot.workflow_project_info_submit import (
     format_submit_reply,
     is_project_info_submit,
+    message_text,
     parse_submit_payload,
     project_name_from_quoted,
     strip_command,
@@ -44,6 +45,33 @@ def test_tweet_alone_does_not_fill_twitter():
     assert pr == "https://x.com/Foo/status/9"
     _, handle_twitter, _ = parse_submit_payload("@BotChain_Polls")
     assert handle_twitter == "https://x.com/BotChain_Polls"
+
+
+def test_markdown_post_body_keeps_project_line():
+    import json
+
+    body = {
+        "msg_type": "post",
+        "body": {
+            "content": json.dumps(
+                {
+                    "content": [
+                        [
+                            {
+                                "tag": "md",
+                                "text": (
+                                    '<at user_id="ou_1"></at>\n\n'
+                                    "**Project:** `doubledouble`\n"
+                                    "**BD:** Daniel"
+                                ),
+                            }
+                        ]
+                    ]
+                }
+            )
+        },
+    }
+    assert project_name_from_quoted(message_text(body)) == "doubledouble"
 
 
 def test_project_name_from_result_post():

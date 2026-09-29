@@ -184,8 +184,16 @@ def _flatten_post_paragraphs(blocks):
                 name = str(span.get("user_name") or span.get("user_id") or "").strip()
                 if name:
                     line.append(f"@{name}")
+            elif tag == "md":
+                md = str(span.get("text") or "").strip()
+                if md:
+                    line.append(md)
             elif tag == "img":
                 line.append("[image]")
+            else:
+                extra = str(span.get("text") or "").strip()
+                if extra:
+                    line.append(extra)
         if line:
             parts.append("".join(line))
     return parts
