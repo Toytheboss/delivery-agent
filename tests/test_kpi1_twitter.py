@@ -287,6 +287,108 @@ def test_find_mainnet_pr_url_takes_newest_hit():
     )
 
 
+def test_parse_mainnet_pr_choice_keeps_listed_id():
+    from bot.workflow_kpi1_twitter import parse_mainnet_pr_choice
+
+    tweet_id, reason = parse_mainnet_pr_choice(
+        '```json\n{"id":"20","reason":"live on BOT Chain"}\n```',
+        {"20", "10"},
+    )
+    assert tweet_id == "20"
+    assert reason == "live on BOT Chain"
+
+
+def test_parse_mainnet_pr_choice_rejects_unknown_id():
+    from bot.workflow_kpi1_twitter import parse_mainnet_pr_choice
+
+    tweet_id, reason = parse_mainnet_pr_choice(
+        '{"id":"https://x.com/a/status/999","reason":"guess"}',
+        {"20"},
+    )
+    assert tweet_id == ""
+    assert reason == "guess"
+    empty, _reason = parse_mainnet_pr_choice(
+        '{"id":"","reason":"none announce a launch"}',
+        {"20"},
+    )
+    assert empty == ""
+
+
+def test_mainnet_pr_prompt_counts_live_and_partnership():
+    from bot.workflow_kpi1_twitter import mainnet_pr_prompt
+
+    text = mainnet_pr_prompt(
+        "BanshanBook",
+        "banshanbook",
+        [("20", "2026-09-20", "now live on BOT Chain")],
+    )
+    assert "live, go-live, or launched on BOT Chain" in text
+    assert "partnership with BOT Chain" in text
+    assert "id=20 date=2026-09-20" in text
+
+
+def test_judge_skips_without_credentials(monkeypatch):
+    from bot.workflow_kpi1_twitter import judge_mainnet_pr_url
+
+    monkeypatch.setattr("bot.rag.resolve_llm_credentials", lambda config: None)
+
+    class Cfg:
+        llm_provider = "deepseek"
+        llm_base_url = ""
+        llm_model = ""
+
+    url, reason = judge_mainnet_pr_url(
+        Cfg(),
+        project_name="BanshanBook",
+        handle="banshanbook",
+        rows=[
+            (
+                datetime(2026, 9, 20, tzinfo=timezone.utc),
+                "BanshanBook is live on Botchain",
+                {"id": "20"},
+            )
+        ],
+        since=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert url == ""
+    assert reason == ""
+
+
+def test_judge_api_failure_returns_empty(monkeypatch):
+    from bot.workflow_kpi1_twitter import judge_mainnet_pr_url
+
+    class Creds:
+        api_key = "k"
+        base_url = "https://example.invalid"
+        model = "test"
+
+    monkeypatch.setattr("bot.rag.resolve_llm_credentials", lambda config: Creds())
+
+    def boom():
+        raise RuntimeError("down")
+
+    monkeypatch.setattr("bot.rag._get_openai_client_class", boom)
+
+    class Cfg:
+        pass
+
+    url, reason = judge_mainnet_pr_url(
+        Cfg(),
+        project_name="BanshanBook",
+        handle="banshanbook",
+        rows=[
+            (
+                datetime(2026, 9, 20, tzinfo=timezone.utc),
+                "partnership with BOT Chain",
+                {"id": "20"},
+            )
+        ],
+        since=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert url == ""
+    assert reason == ""
+
+
 def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
     from bot.workflow_kpi1_twitter import maybe_write_kpi2_from_tweets
 
@@ -294,6 +396,14 @@ def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
     monkeypatch.setattr(
         "bot.workflow_kpi1_twitter.update_record",
         lambda *args, **kwargs: called.append(args),
+    )
+
+    def judge_should_not_run(*_args, **_kwargs):
+        raise AssertionError("filled KPI 2 must not call the model")
+
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter.judge_mainnet_pr_url",
+        judge_should_not_run,
     )
 
     class Cfg:
@@ -335,6 +445,13 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
     monkeypatch.setattr(
         "bot.workflow_pr_weekly.log_capture_event", lambda *a, **k: None
     )
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter.judge_mainnet_pr_url",
+        lambda *args, **kwargs: (
+            "https://x.com/banshanbook/status/20",
+            "live on BOT Chain",
+        ),
+    )
 
     class Cfg:
         pr_capture_link_field = "KPI 2 - PR 新闻链接验证"
@@ -367,3 +484,41 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
             "新闻验证结果": "通过",
         }
     ]
+
+
+def test_maybe_write_kpi2_leaves_empty_when_model_declines(monkeypatch):
+    from bot.workflow_kpi1_twitter import maybe_write_kpi2_from_tweets
+
+    patches: list[dict] = []
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter.update_record",
+        lambda token, app, table, rid, fields: patches.append(fields),
+    )
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter.judge_mainnet_pr_url",
+        lambda *args, **kwargs: ("", "no launch tweet"),
+    )
+
+    class Cfg:
+        pr_capture_link_field = "KPI 2 - PR 新闻链接验证"
+        workflow_base_app_token = "app"
+        workflow_progress_table_id = "tbl"
+
+    url = maybe_write_kpi2_from_tweets(
+        "tok",
+        Cfg(),
+        "rec1",
+        {},
+        project_name="BanshanBook",
+        handle="banshanbook",
+        rows=[
+            (
+                datetime(2026, 9, 20, tzinfo=timezone.utc),
+                "gm",
+                {"id": "20"},
+            )
+        ],
+        since=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert url == ""
+    assert patches == []

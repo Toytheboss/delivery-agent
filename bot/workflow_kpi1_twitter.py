@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import logging
 import os
 import re
@@ -49,6 +50,8 @@ _PARTNERSHIP_CHAIN_RE = re.compile(
     rf"\bpartnership(?:\s+with)?\s+{_CHAIN}\b",
     re.I,
 )
+_PR_CANDIDATE_LIMIT = 40
+_PR_TEXT_LIMIT = 800
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
@@ -290,6 +293,143 @@ def find_mainnet_pr_url(
     return ranked[0][1] if ranked else ""
 
 
+def original_pr_candidates(
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    *,
+    since: datetime,
+) -> list[tuple[str, str, str]]:
+    """Newest original tweets as (id, YYYY-MM-DD, text). Retweets are omitted."""
+    ranked: list[tuple[datetime, str, dict[str, Any]]] = []
+    for dt, text, extra in rows:
+        if dt < since or is_retweet(text, extra):
+            continue
+        blob = extra if isinstance(extra, dict) else {}
+        if not _tweet_id(blob):
+            continue
+        ranked.append((dt, text, blob))
+    ranked.sort(key=lambda item: item[0], reverse=True)
+    out: list[tuple[str, str, str]] = []
+    seen: set[str] = set()
+    for dt, text, extra in ranked:
+        tweet_id = _tweet_id(extra)
+        if tweet_id in seen:
+            continue
+        seen.add(tweet_id)
+        when = dt if dt.tzinfo is not None else dt.replace(tzinfo=SH)
+        stamp = when.astimezone(SH).strftime("%Y-%m-%d")
+        body = str(extra.get("full_text") or extra.get("text") or text or "").strip()
+        if len(body) > _PR_TEXT_LIMIT:
+            body = body[:_PR_TEXT_LIMIT].rstrip() + "…"
+        out.append((tweet_id, stamp, body or "(no text)"))
+        if len(out) >= _PR_CANDIDATE_LIMIT:
+            break
+    return out
+
+
+def mainnet_pr_prompt(
+    project_name: str,
+    handle: str,
+    candidates: list[tuple[str, str, str]],
+) -> str:
+    lines = [
+        "Decide whether any original tweet announces that this project is live on BOT Chain.",
+        "Count a tweet when it is the project's own post and any of these is true:",
+        "- it says the project is live, go-live, or launched on BOT Chain or Botchain",
+        "- it announces a partnership with BOT Chain, including the same news in other words",
+        "- other wording means the same thing: mainnet launch, now on Botchain, deployed on BOT Chain, or 已上 BOT Chain 主网",
+        "Do not count testnet-only posts, recaps that are not the launch itself, or posts unrelated to this project going live on BOT Chain.",
+        "The list is already original posts, newest first. If several qualify, choose the newest launch announcement.",
+        "Copy id from the list. If none qualify, id must be an empty string.",
+        'Return JSON only: {"id":"<tweet id or empty>","reason":"<one short sentence>"}',
+        f"Project: {project_name}",
+        f"Handle: @{handle.lstrip('@')}",
+        "",
+        "Tweets:",
+    ]
+    for tweet_id, stamp, body in candidates:
+        lines.append(f"id={tweet_id} date={stamp}")
+        lines.append(body)
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def parse_mainnet_pr_choice(raw: str, allowed_ids: set[str]) -> tuple[str, str]:
+    """Return (tweet_id, reason). Unknown ids become an empty id."""
+    text = re.sub(r"^```(?:json)?\s*|\s*```$", "", (raw or "").strip(), flags=re.I).strip()
+    data: Any
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        match = re.search(r"\{.*\}", text, re.S)
+        if not match:
+            return "", ""
+        try:
+            data = json.loads(match.group(0))
+        except json.JSONDecodeError:
+            return "", ""
+    if not isinstance(data, dict):
+        return "", ""
+    reason = str(data.get("reason") or "").strip()
+    raw_id = str(data.get("id") or "").strip()
+    if not raw_id:
+        return "", reason
+    if raw_id in allowed_ids:
+        return raw_id, reason
+    found = re.search(r"/status/(\d+)", raw_id)
+    if found and found.group(1) in allowed_ids:
+        return found.group(1), reason
+    return "", reason
+
+
+def judge_mainnet_pr_url(
+    config: AppConfig,
+    *,
+    project_name: str,
+    handle: str,
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    since: datetime,
+) -> tuple[str, str]:
+    """Ask the model which original tweet is the mainnet launch. ('', '') on failure."""
+    who = (handle or "").strip().lstrip("@")
+    candidates = original_pr_candidates(rows, since=since)
+    if not who or not candidates:
+        return "", ""
+    try:
+        from bot.rag import _get_openai_client_class, resolve_llm_credentials
+
+        creds = resolve_llm_credentials(config)
+    except Exception:
+        logger.exception("kpi1: PR judge setup failed project=%r", project_name)
+        return "", ""
+    if creds is None:
+        logger.info("kpi1: PR judge skipped, no model credentials project=%r", project_name)
+        return "", ""
+    prompt = mainnet_pr_prompt(project_name, who, candidates)
+    try:
+        client = _get_openai_client_class()(api_key=creds.api_key, base_url=creds.base_url)
+        resp = client.chat.completions.create(
+            model=creds.model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=200,
+        )
+        raw = (resp.choices[0].message.content or "").strip()
+    except Exception:
+        logger.exception("kpi1: PR judge failed project=%r", project_name)
+        return "", ""
+    allowed = {tweet_id for tweet_id, _stamp, _body in candidates}
+    tweet_id, reason = parse_mainnet_pr_choice(raw, allowed)
+    logger.info(
+        "kpi1: PR judge project=%r id=%s reason=%s",
+        project_name,
+        tweet_id or "-",
+        (reason or "-")[:200],
+    )
+    if not tweet_id:
+        return "", reason
+    return f"https://x.com/{who}/status/{tweet_id}", reason
+
+
 def maybe_write_kpi2_from_tweets(
     token: str,
     config: AppConfig,
@@ -301,14 +441,18 @@ def maybe_write_kpi2_from_tweets(
     rows: list[tuple[datetime, str, dict[str, Any]]],
     since: datetime,
 ) -> str:
-    """Fill empty KPI 2 from a mainnet-PR tweet. Never overwrites a filled cell."""
+    """Fill empty KPI 2 from a model-picked launch tweet. Never overwrites a filled cell."""
     link_field = str(
         getattr(config, "pr_capture_link_field", "") or _KPI2_LINK
     )
     if field_is_filled(fields, link_field):
         return ""
-    url = find_mainnet_pr_url(
-        handle, rows, since=since, project_name=project_name
+    url, reason = judge_mainnet_pr_url(
+        config,
+        project_name=project_name,
+        handle=handle,
+        rows=rows,
+        since=since,
     )
     if not url:
         return ""
@@ -334,7 +478,12 @@ def maybe_write_kpi2_from_tweets(
         )
     except Exception:
         logger.exception("kpi1: PR event log failed project=%r", project_name)
-    logger.info("kpi1: filled KPI 2 from tweet project=%r url=%s", project_name, url)
+    logger.info(
+        "kpi1: filled KPI 2 from tweet project=%r url=%s reason=%s",
+        project_name,
+        url,
+        (reason or "-")[:200],
+    )
     return url
 
 
