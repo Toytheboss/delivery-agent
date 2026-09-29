@@ -1,8 +1,9 @@
-"""Reply to a verification result in Lark with ``Project info submit``.
+"""Reply to a verification result and paste a link.
 
-Official X and mainnet contract go to the wallet table. A tweet URL goes to
-the progress-tracker KPI 2 field. A missing wallet row is created only when
-X or a contract was sent.
+A profile URL (no ``/status/``) and a 40-hex contract go to the wallet table.
+A tweet URL goes to the progress-tracker KPI 2 field and is not treated as
+the official profile. A missing wallet row is created only when a profile
+or a contract was sent.
 """
 
 from __future__ import annotations
@@ -14,7 +15,6 @@ from typing import Any
 from bot.lark_bitable import create_record, get_tenant_access_token, list_records, update_record
 from bot.workflow_form_dispatch import _field_text, _normalize_name
 from bot.workflow_kpi1_twitter import _RESERVED_HANDLES, twitter_handle_from_url
-from bot.workflow_kpi_write import extract_contract
 from bot.workflow_lark_relay import claim_message
 from bot.workflow_pr_capture import (
     _display_pr_url,
@@ -30,7 +30,8 @@ _CMD_RE = re.compile(
     r"(?is)^\s*(?:@_user_\d+\s*)*(?:[/@])?project\s+info\s+submit\b(.*)$"
 )
 _MD_LINK_RE = re.compile(r"\[([^\]]+)\]\((https?://[^)]+)\)")
-_HANDLE_RE = re.compile(r"(?<![\w.])@([A-Za-z0-9_]{1,15})\b")
+# Exactly 40 hex digits. A 64-hex transaction hash must not match.
+_CONTRACT_RE = re.compile(r"(?<![0-9a-fA-F])0x[a-fA-F0-9]{40}(?![0-9a-fA-F])")
 _NAME_FIELD = "Project name"
 _CONTRACT_FIELD = "Mainnet Contract Addresss"
 _TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
@@ -74,9 +75,15 @@ def project_name_from_quoted(text: str) -> str:
 
 
 def parse_submit_payload(text: str) -> tuple[str, str, str]:
-    """Return (contract, twitter_profile_url, pr_url). Empty when missing."""
+    """Return (contract, twitter_profile_url, pr_url). Empty when missing.
+
+    ``/status/`` URLs are PR links. A profile URL has no status segment.
+    Bare ``@name`` mentions are ignored. A transaction hash (64 hex digits)
+    is not a contract.
+    """
     blob = _MD_LINK_RE.sub(lambda match: match.group(2), text or "")
-    contract = extract_contract(blob)
+    found = _CONTRACT_RE.search(blob)
+    contract = found.group(0).lower() if found else ""
     twitter = ""
     pr = ""
     for url in collect_urls_from_text(blob):
@@ -87,11 +94,6 @@ def parse_submit_payload(text: str) -> tuple[str, str, str]:
         handle = twitter_handle_from_url(url)
         if handle and handle.lower() not in _RESERVED_HANDLES and not twitter:
             twitter = f"https://x.com/{handle}"
-    if not twitter:
-        bare = re.sub(r"https?://\S+", " ", blob, flags=re.IGNORECASE)
-        found = _HANDLE_RE.search(bare)
-        if found and found.group(1).lower() not in _RESERVED_HANDLES:
-            twitter = f"https://x.com/{found.group(1)}"
     return contract, twitter, pr
 
 
@@ -261,13 +263,13 @@ def format_submit_reply(
     reason: str = "",
 ) -> str:
     if reason == "no_quote":
-        return "Reply to the project result post, then send `Project info submit`."
+        return "Reply to the project result post and paste the link."
     if reason == "no_project":
         return "Quoted message has no **Project:** line, so nothing was written."
     if reason == "empty_payload":
         return (
-            "Send the X profile, mainnet contract (0x…), and/or the PR tweet "
-            "link in the same message as `Project info submit`."
+            "Paste the X profile, the mainnet contract (0x plus 40 hex digits), "
+            "or the PR tweet link."
         )
     name = project or "this project"
     lines: list[str] = []
@@ -314,7 +316,7 @@ def _reply(token: str, message_id: str, text: str) -> None:
 def maybe_handle_project_info_submit(
     config: Any, event_data: dict[str, Any]
 ) -> dict[str, Any] | None:
-    """Handle Project info submit in the verification group. None = not this command."""
+    """Write links pasted in a reply to a verification result. None = ignore."""
     if not _enabled(config):
         return None
     if not isinstance(event_data, dict):
@@ -330,7 +332,9 @@ def maybe_handle_project_info_submit(
     if not expected or chat_id != expected:
         return None
     text = message_text(message)
-    if not is_project_info_submit(text):
+    payload_text = strip_command(text) if is_project_info_submit(text) else text
+    contract, twitter, pr_url = parse_submit_payload(payload_text)
+    if not contract and not twitter and not pr_url:
         return None
 
     from bot.lark_bitable import LarkBitableError
@@ -367,15 +371,6 @@ def maybe_handle_project_info_submit(
     if not project:
         _reply(token, message_id, format_submit_reply(project="", reason="no_project"))
         return {"ok": True, "project_info_submit": "no_project"}
-
-    contract, twitter, pr_url = parse_submit_payload(strip_command(text))
-    if not contract and not twitter and not pr_url:
-        _reply(
-            token,
-            message_id,
-            format_submit_reply(project=project, reason="empty_payload"),
-        )
-        return {"ok": True, "project_info_submit": "empty_payload"}
 
     wallet: dict[str, Any] = {"ok": True, "action": "skipped"}
     pr: dict[str, Any] = {"ok": True, "action": "skipped"}

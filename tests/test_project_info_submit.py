@@ -9,7 +9,6 @@ from bot.workflow_project_info_submit import (
     message_text,
     parse_submit_payload,
     project_name_from_quoted,
-    strip_command,
     upsert_wallet_row,
     write_pr_link,
 )
@@ -24,13 +23,11 @@ def test_command_accepts_first_line_only():
 
 
 def test_status_url_is_pr_not_profile():
-    body = strip_command(
-        "Project info submit\n"
+    contract, twitter, pr = parse_submit_payload(
         "https://x.com/OfficialHandle\n"
         "0x9a76DD1cf04C9142A8939a9b124f738e621BE249\n"
         "https://x.com/OfficialHandle/status/1234567890?s=20"
     )
-    contract, twitter, pr = parse_submit_payload(body)
     assert contract == "0x9a76dd1cf04c9142a8939a9b124f738e621be249"
     assert twitter == "https://x.com/OfficialHandle"
     assert pr == "https://x.com/OfficialHandle/status/1234567890"
@@ -43,8 +40,19 @@ def test_tweet_alone_does_not_fill_twitter():
     assert contract == ""
     assert twitter == ""
     assert pr == "https://x.com/Foo/status/9"
-    _, handle_twitter, _ = parse_submit_payload("@BotChain_Polls")
-    assert handle_twitter == "https://x.com/BotChain_Polls"
+    _, mention, _ = parse_submit_payload("thanks @Daniel")
+    assert mention == ""
+
+
+def test_transaction_hash_is_not_a_contract():
+    tx = "0x" + ("ab" * 32)
+    contract, twitter, pr = parse_submit_payload(tx)
+    assert contract == ""
+    assert twitter == ""
+    assert pr == ""
+    address = "0x" + ("cd" * 20)
+    contract, _, _ = parse_submit_payload(f"contract {address}")
+    assert contract == address
 
 
 def test_markdown_post_body_keeps_project_line():
