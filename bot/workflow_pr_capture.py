@@ -64,10 +64,6 @@ _DEFAULT_LINK_FIELD = "KPI 2 - PR 新闻链接验证"
 _DEFAULT_RESULT_FIELD = "新闻验证结果"
 _KPI2_PASSED = "通过"
 _DEFAULT_NOTIFY_CHAT = "oc_717a560011483216c49329fda5e43b41"
-_PROGRESS_BASE_URL = (
-    "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e"
-    "?table=tbl5wXOwCptng06w"
-)
 
 
 def is_pr_capture_command(text: str, commands: list[str] | None = None) -> bool:
@@ -309,6 +305,17 @@ def _collect_matches(
     return matches
 
 
+def _display_pr_url(url: str) -> str:
+    """Drop tracking query and fragment so Lark does not keep the share suffix."""
+    raw = _normalize_url(url)
+    if not raw:
+        return raw
+    parsed = urlparse(raw)
+    if not parsed.scheme or not parsed.netloc:
+        return raw
+    return parsed._replace(query="", fragment="").geturl()
+
+
 def build_pr_notify_text(
     *,
     project_name: str,
@@ -317,17 +324,11 @@ def build_pr_notify_text(
     operator: str = "",
     record_id: str = "",
 ) -> str:
-    lines = [
-        "[KPI-PR captured]",
-        f"Project: {project_name or 'unknown project'}",
-        f"TG group: {chat_title or 'unknown group'}",
-        f"Link: {url}",
-    ]
-    if operator:
-        lines.append(f"By: {operator}")
-    if record_id:
-        lines.append(f"Tracker: {_PROGRESS_BASE_URL}&record={record_id}")
-    return "\n".join(lines)
+    """Two-line Lark notice. Group title and tracker link are omitted on purpose."""
+    del chat_title, record_id
+    name = (project_name or "").strip() or "unknown project"
+    who = f" · {operator.strip()}" if (operator or "").strip() else ""
+    return f"KPI-PR · {name}{who}\n{_display_pr_url(url)}"
 
 
 def _notify_chat_id(config: AppConfig) -> str:

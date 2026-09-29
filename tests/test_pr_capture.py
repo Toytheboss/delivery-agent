@@ -92,16 +92,15 @@ def test_tg_message_link_strips_minus_100():
     assert tg_message_link(-5404824061, 7) == "https://t.me/c/5404824061/7"
 
 
-def test_notify_text_includes_project_and_url():
+def test_notify_text_is_two_lines():
     text = build_pr_notify_text(
         project_name="TipJar",
         chat_title="TipJar <> Botchain",
-        url="https://x.com/a/status/1",
+        url="https://x.com/a/status/1?s=20",
         operator="@trent_one",
         record_id="recABC",
     )
-    assert text.startswith("[KPI-PR captured]")
-    assert "TipJar" in text
-    assert "https://x.com/a/status/1" in text
-    assert "@trent_one" in text
-    assert "record=recABC" in text
+    assert text == "KPI-PR · TipJar · @trent_one\nhttps://x.com/a/status/1"
+    assert "TG group" not in text
+    assert "Tracker" not in text
+    assert "record=" not in text
