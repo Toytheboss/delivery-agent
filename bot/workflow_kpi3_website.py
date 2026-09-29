@@ -1,8 +1,9 @@
 """KPI 3 website check: run once when a project goes mainnet-live.
 
-Pass when the site opens, shows the BOT Chain / Botchain name, and has
-clickable https://botchain.ai and https://scan.botchain.ai links. A missing
-website URL is an automatic fail. Does not write KPI coordination or push groups.
+Pass when the site opens and has clickable https://botchain.ai and
+https://scan.botchain.ai links. Those two links are enough; the page does not
+also need the words BOT Chain. A missing website URL is an automatic fail.
+Does not write KPI coordination or push groups.
 """
 
 from __future__ import annotations
@@ -160,11 +161,6 @@ def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
             "website display verification failed"
         )
 
-    if verdict.has_name:
-        identity = "BOT Chain name is visible"
-    else:
-        identity = "BOT Chain name not found"
-
     bot = "https://botchain.ai"
     scan = "https://scan.botchain.ai"
     if verdict.has_botchain and verdict.has_scan:
@@ -176,7 +172,20 @@ def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
     else:
         links = f"no clickable {bot} or {scan}"
 
+    # Both required links already prove the page. Do not also demand the name.
+    if verdict.has_botchain and verdict.has_scan:
+        identity = "BOT Chain name is visible" if verdict.has_name else ""
+    elif verdict.has_name:
+        identity = "BOT Chain name is visible"
+    else:
+        identity = "BOT Chain name not found"
+
     suffix = "passed" if verdict.passed else "failed"
+    if not identity:
+        return (
+            f"Website display verification: website opened, {links}; "
+            f"website display verification {suffix}"
+        )
     return (
         f"Website display verification: website opened, {identity}, {links}; "
         f"website display verification {suffix}"
@@ -223,14 +232,8 @@ def evaluate_kpi3(
     has_scan = any(is_scan_href(h) for h in hrefs)
     has_name = page_has_botchain_name(probe.text)
     has_logo = bool(probe.has_logo)
-    identity_ok = has_name
-    passed = identity_ok and has_botchain and has_scan
-    if not identity_ok:
-        reason = "no_botchain_name"
-    elif not has_botchain or not has_scan:
-        reason = "missing_official_link"
-    else:
-        reason = "passed"
+    passed = has_botchain and has_scan
+    reason = "passed" if passed else "missing_official_link"
     verdict = Kpi3Verdict(
         passed=passed,
         result=_PASS if passed else _FAIL,

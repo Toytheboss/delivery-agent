@@ -64,7 +64,7 @@ def test_botchain_name_passes_even_if_lark_name_is_a_url():
     assert verdict.copy.endswith("website display verification passed")
 
 
-def test_project_name_alone_does_not_pass():
+def test_both_official_links_pass_without_the_name():
     probe = WebsiteProbe(
         url="https://novamint.example",
         opened=True,
@@ -73,10 +73,11 @@ def test_project_name_alone_does_not_pass():
         has_logo=True,
     )
     verdict = evaluate_kpi3(project_name="NovaMint", probe=probe, url=probe.url)
-    assert not verdict.passed
+    assert verdict.passed
     assert not verdict.has_name
-    assert verdict.reason == "no_botchain_name"
-    assert "BOT Chain name not found" in verdict.copy
+    assert verdict.reason == "passed"
+    assert "BOT Chain name not found" not in verdict.copy
+    assert "page has clickable https://botchain.ai and https://scan.botchain.ai" in verdict.copy
 
 
 def test_missing_one_official_link_fails():
