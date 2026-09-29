@@ -220,6 +220,11 @@ async def start_live_webhook_server(
             recall = maybe_handle_lark_recall(config, payload)
             if recall is not None:
                 return web.json_response(recall)
+            from bot.workflow_project_info_submit import maybe_handle_project_info_submit
+
+            submitted = maybe_handle_project_info_submit(config, payload)
+            if submitted is not None:
+                return web.json_response(submitted)
             relay = maybe_handle_lark_relay(config, payload)
             if relay is not None:
                 return web.json_response(relay)
