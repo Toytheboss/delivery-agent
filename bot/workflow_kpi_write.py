@@ -36,12 +36,21 @@ def now_shanghai() -> datetime:
 
 
 def merge_kpi_copy(existing: str, new_copy: str, when: datetime | None = None) -> str:
-    old = (existing or "").strip()
+    """Append one timed round. The first write is First check; later ones are Recheck.
+
+    Older cells that are a single untinned sentence stay as they are. The next
+    check adds a Recheck block under them instead of rewriting that sentence.
+    """
     fresh = (new_copy or "").strip()
-    if not old:
-        return fresh
+    old = (existing or "").strip()
+    if not fresh:
+        return old
     stamp = (when or now_shanghai()).astimezone(SH).strftime("%Y-%m-%d %H:%M")
-    return f"{old}\nRecheck {stamp}: {fresh}"
+    title = "First check" if not old else "Recheck"
+    block = f"{title} {stamp}\n{fresh}"
+    if not old:
+        return block
+    return f"{old}\n{block}"
 
 
 def merge_kpi_result(existing: str, *, passed: bool) -> str:

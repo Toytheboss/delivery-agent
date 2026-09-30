@@ -52,7 +52,8 @@ def test_diag_commands_match_plain_text_not_quote():
 def test_kpi6_no_contract_copy():
     verdict = evaluate_kpi6(contract="", txs=[], window_start=None)
     assert verdict["passed"] is False
-    assert "no contract detected" in verdict["copy"]
+    assert "Contract: not submitted" in verdict["copy"]
+    assert verdict["copy"].endswith("- Result: failed")
 
 
 def test_kpi6_counts_successful_to_contract_skips_create():
@@ -197,11 +198,40 @@ def test_kpi6_pass_lists_three_wallets_and_five_hashes():
     assert verdict["tx_count"] == 7
     assert "Meets the audit requirement" in verdict["copy"]
     assert verdict["copy"].count("0x") >= 3
-    listed_hashes = [line for line in verdict["copy"].splitlines() if line.startswith("h")]
+    listed_hashes = [
+        line.strip() for line in verdict["copy"].splitlines() if line.strip().startswith("h")
+    ]
     assert listed_hashes == ["h6", "h5", "h4", "h3", "h2"]
     wallet_block = verdict["copy"].split("Wallets:")[1].split("Tx hashes:")[0]
-    wallet_lines = [ln for ln in wallet_block.splitlines() if ln.startswith("0x")]
+    wallet_lines = [ln.strip() for ln in wallet_block.splitlines() if ln.strip().startswith("0x")]
     assert len(wallet_lines) == 3
+
+
+def test_new_check_log_stamps_every_round():
+    when = datetime(2026, 9, 30, 17, 24, tzinfo=timezone(timedelta(hours=8)))
+    first = merge_kpi_copy(
+        "",
+        "- Site opened: yes\n- https://botchain.ai: no\n- Result: failed",
+        when,
+    )
+    assert first.startswith("First check 2026-09-30 17:24\n")
+    second = merge_kpi_copy(
+        first,
+        "- Site opened: yes\n- https://botchain.ai: yes\n- Result: passed",
+        datetime(2026, 9, 30, 18, 0, tzinfo=timezone(timedelta(hours=8))),
+    )
+    assert "\nRecheck 2026-09-30 18:00\n" in second
+    assert second.startswith("First check 2026-09-30 17:24\n")
+    text = format_tg_check_reply(
+        label="Website",
+        project="Relay",
+        result="passed",
+        copy=second,
+        kind="website",
+    )
+    assert text.count("- Site opened: yes") == 2
+    assert "First check 2026-09-30 17:24" in text
+    assert "Recheck 2026-09-30 18:00" in text
 
 
 def test_recheck_appends_and_only_upgrades_pass():
@@ -213,7 +243,7 @@ def test_recheck_appends_and_only_upgrades_pass():
         when,
     )
     assert merged.startswith(first)
-    assert "Recheck 2026-09-26 09:30:" in merged
+    assert "\nRecheck 2026-09-26 09:30\n" in merged
     assert merge_kpi_result("不通过", passed=True) == "通过"
     assert merge_kpi_result("通过", passed=False) == "通过"
     assert merge_kpi_result("", passed=False) == "不通过"
@@ -226,10 +256,11 @@ def test_twitter_handle_and_no_account_copy():
     assert is_retweet("RT @foo hello")
     assert not is_retweet("mainnet is live")
     assert evaluate_kpi1(handle="", count=None, unread=False)["copy"] == (
-        "Twitter operations verification: no official account submitted; "
-        "Twitter operations verification failed"
+        "- Official account: not submitted\n- Result: failed"
     )
-    assert "posted 5 original posts" in build_kpi1_copy(handle="Foo", count=5, reason="ok")
+    assert "Original posts (30d): 5 (need ≥5)" in build_kpi1_copy(
+        handle="Foo", count=5, reason="ok"
+    )
     below = build_kpi1_copy(
         handle="Foo",
         count=3,
@@ -242,7 +273,9 @@ def test_twitter_handle_and_no_account_copy():
     )
     assert "Meets the audit requirement" not in below
     assert below.endswith(
-        "https://x.com/Foo/status/1\nhttps://x.com/Foo/status/2\nhttps://x.com/Foo/status/3"
+        "- https://x.com/Foo/status/1\n"
+        "- https://x.com/Foo/status/2\n"
+        "- https://x.com/Foo/status/3"
     )
     copy = build_kpi1_copy(
         handle="Foo",

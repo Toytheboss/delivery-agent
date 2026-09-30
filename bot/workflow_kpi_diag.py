@@ -113,18 +113,19 @@ def project_diag_audits_to_run(fields: dict[str, Any]) -> list[str]:
     return kinds
 
 
+_ROUND_SPLIT = re.compile(
+    r"\n(?=(?:First check|Recheck) \d{4}-\d{2}-\d{2} \d{2}:\d{2}(?:\n|: ))"
+)
+_ROUND_HEAD = re.compile(
+    r"^(First check|Recheck) (\d{4}-\d{2}-\d{2} \d{2}:\d{2})(?::[ \t]*|\n)([\s\S]*)$"
+)
+
+
 def latest_copy(copy: str) -> str:
-    text = (copy or "").strip()
-    marker = "\nRecheck "
-    if marker in text:
-        tail = text.rsplit(marker, 1)[-1]
-        if ": " in tail:
-            return tail.split(": ", 1)[1].strip() or text
-    return text
-
-
-_RECHECK_SPLIT = re.compile(r"\n(?=Recheck \d{4}-\d{2}-\d{2} \d{2}:\d{2}: )")
-_RECHECK_HEAD = re.compile(r"^Recheck (\d{4}-\d{2}-\d{2} \d{2}:\d{2}): ")
+    rounds = split_copy_rounds(copy)
+    if not rounds:
+        return (copy or "").strip()
+    return rounds[-1][1]
 _ITEM_KIND = {
     "Twitter": "twitter",
     "News/PR": "news",
@@ -137,18 +138,22 @@ _ITEM_KIND = {
 
 
 def split_copy_rounds(copy: str) -> list[tuple[str, str]]:
-    """Turn Lark copy (first block + Recheck stamps) into TG round titles."""
+    """Turn Lark copy into titled rounds.
+
+    New cells start with ``First check YYYY-MM-DD HH:MM``. Older cells are one
+    untinned sentence, with later rounds as ``Recheck`` plus a colon or a new line.
+    """
     text = (copy or "").strip()
     if not text:
         return []
     rounds: list[tuple[str, str]] = []
-    for chunk in _RECHECK_SPLIT.split(text):
+    for chunk in _ROUND_SPLIT.split(text):
         chunk = chunk.strip()
         if not chunk:
             continue
-        match = _RECHECK_HEAD.match(chunk)
+        match = _ROUND_HEAD.match(chunk)
         if match:
-            rounds.append((f"Recheck {match.group(1)}", chunk[match.end() :].strip()))
+            rounds.append((f"{match.group(1)} {match.group(2)}", match.group(3).strip()))
         else:
             rounds.append(("First check", chunk))
     return rounds
@@ -306,7 +311,14 @@ def _news_bullets(body: str) -> list[str]:
     return _generic_bullets(body)
 
 
+def _already_bullets(body: str) -> bool:
+    lines = [line.strip() for line in (body or "").splitlines() if line.strip()]
+    return bool(lines) and lines[0].startswith("- ")
+
+
 def format_check_bullets(kind: str, body: str) -> list[str]:
+    if _already_bullets(body):
+        return [line.rstrip() for line in body.splitlines() if line.strip()]
     key = (kind or "").lower()
     if key in {"website", "kpi3"}:
         return _website_bullets(body)

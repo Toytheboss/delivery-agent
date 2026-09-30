@@ -150,46 +150,22 @@ def page_has_botchain_name(text: str) -> bool:
 
 
 def build_kpi3_copy(verdict: Kpi3Verdict, project_name: str) -> str:
+    del project_name
     if verdict.reason == "no_url":
-        return (
-            "Website display verification: no official website URL submitted; "
-            "website display verification failed"
-        )
+        return "- Official website URL: not submitted\n- Result: failed"
     if not verdict.opened:
-        return (
-            "Website display verification: website could not be opened; "
-            "website display verification failed"
-        )
+        return "- Site opened: no\n- Result: failed"
 
     bot = "https://botchain.ai"
     scan = "https://scan.botchain.ai"
-    if verdict.has_botchain and verdict.has_scan:
-        links = f"page has clickable {bot} and {scan}"
-    elif verdict.has_scan and not verdict.has_botchain:
-        links = f"has clickable {scan}, but no clickable {bot}"
-    elif verdict.has_botchain and not verdict.has_scan:
-        links = f"has clickable {bot}, but no clickable {scan}"
-    else:
-        links = f"no clickable {bot} or {scan}"
-
-    # Both required links already prove the page. Do not also demand the name.
-    if verdict.has_botchain and verdict.has_scan:
-        identity = "BOT Chain name is visible" if verdict.has_name else ""
-    elif verdict.has_name:
-        identity = "BOT Chain name is visible"
-    else:
-        identity = "BOT Chain name not found"
-
-    suffix = "passed" if verdict.passed else "failed"
-    if not identity:
-        return (
-            f"Website display verification: website opened, {links}; "
-            f"website display verification {suffix}"
-        )
-    return (
-        f"Website display verification: website opened, {identity}, {links}; "
-        f"website display verification {suffix}"
-    )
+    lines = [
+        "- Site opened: yes",
+        f"- BOT Chain name: {'yes' if verdict.has_name else 'no'}",
+        f"- {bot}: {'yes' if verdict.has_botchain else 'no'}",
+        f"- {scan}: {'yes' if verdict.has_scan else 'no'}",
+        f"- Result: {'passed' if verdict.passed else 'failed'}",
+    ]
+    return "\n".join(lines)
 
 
 def evaluate_kpi3(

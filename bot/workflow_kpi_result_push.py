@@ -168,18 +168,29 @@ def pr_post_line(url: str) -> tuple[bool, str]:
 
 def website_fix(reason: str, copy: str) -> str:
     text = copy or ""
-    both = f"no clickable {_BOT} or {_SCAN}" in text
-    if reason == "no_url" or "no official website URL" in text:
+    if f"no clickable {_BOT} or {_SCAN}" in text:
+        return f"add a clickable {_BOT} and {_SCAN} on the website"
+    bot_missing = (
+        f"- {_BOT}: no" in text
+        or f"no clickable {_BOT}" in text
+        or f"but no clickable {_BOT}" in text
+    )
+    scan_missing = (
+        f"- {_SCAN}: no" in text
+        or f"no clickable {_SCAN}" in text
+        or f"but no clickable {_SCAN}" in text
+    )
+    if reason == "no_url" or "no official website URL" in text or "Official website URL: not submitted" in text:
         return "submit the official website URL"
-    if reason == "unreachable" or "could not be opened" in text:
+    if reason == "unreachable" or "could not be opened" in text or "- Site opened: no" in text:
         return "make the official website open"
     if reason == "no_botchain_name" or "BOT Chain name not found" in text:
         return "show the BOT Chain name on the website"
-    if both:
+    if bot_missing and scan_missing:
         return f"add a clickable {_BOT} and {_SCAN} on the website"
-    if f"but no clickable {_BOT}" in text:
+    if bot_missing:
         return f"add a clickable {_BOT} on the website"
-    if f"but no clickable {_SCAN}" in text:
+    if scan_missing:
         return f"add a clickable {_SCAN} on the website"
     return "fix the official website links"
 
@@ -290,21 +301,34 @@ def _passed(fields: dict[str, Any], result_field: str) -> bool:
 
 
 def twitter_line_from_copy(copy: str) -> str:
-    match = _POSTED_RE.search(latest_copy(copy))
+    body = latest_copy(copy)
+    low = body.lower()
+    if "official account: not submitted" in low or "no official account submitted" in low:
+        return "Not submitted"
+    if "original posts (30d): unread" in low or "could not be read" in low:
+        return "Official account could not be read."
+    match = _POSTED_RE.search(body) or re.search(
+        r"Original posts \(30d\): (\d+)", body
+    )
     if not match:
         return "Meets the Twitter requirement."
     return twitter_post_line(handle="kept", count=int(match.group(1)), unread=False)[1]
 
 
 def onchain_line_from_copy(copy: str) -> str:
-    match = _WALLETS_RE.search(latest_copy(copy))
-    if not match:
-        return "Meets the wallet and on-chain requirement."
-    return onchain_post_line(
-        contract="kept",
-        wallets=int(match.group(1)),
-        txs=int(match.group(2)),
-    )[1]
+    body = latest_copy(copy)
+    match = _WALLETS_RE.search(body)
+    if match:
+        wallets, txs = int(match.group(1)), int(match.group(2))
+    else:
+        wallets_match = re.search(r"Unique wallets: (\d+)", body)
+        txs_match = re.search(r"Core txs: (\d+)", body)
+        if not wallets_match or not txs_match:
+            if "contract: not submitted" in body.lower() or "no contract detected" in body.lower():
+                return "Not submitted"
+            return "Meets the wallet and on-chain requirement."
+        wallets, txs = int(wallets_match.group(1)), int(txs_match.group(1))
+    return onchain_post_line(contract="kept", wallets=wallets, txs=txs)[1]
 
 
 def write_final_fail_coord(token: str, config: AppConfig, record_id: str) -> None:

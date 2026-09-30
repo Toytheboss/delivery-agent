@@ -822,32 +822,24 @@ def build_kpi1_copy(
     links: list[str] | None = None,
 ) -> str:
     if reason == "no_account":
-        return (
-            "Twitter operations verification: no official account submitted; "
-            "Twitter operations verification failed"
-        )
-    who = f" @{handle}" if handle else ""
+        return "- Official account: not submitted\n- Result: failed"
+    lines: list[str] = []
+    if handle:
+        lines.append(f"- Official account: @{handle}")
     if reason == "unread" or count is None:
-        return (
-            f"Twitter operations verification: official account{who} could not be "
-            "read for original posts in the last 30 days; "
-            "Twitter operations verification failed"
-        )
+        lines.append("- Original posts (30d): unread")
+        lines.append("- Result: failed")
+        return "\n".join(lines)
     n = int(count)
     passed = n >= _THRESHOLD
-    suffix = "passed" if passed else "failed"
-    text = (
-        f"Twitter operations verification: official account{who} posted {n} "
-        f"original posts in the last 30 days (threshold ≥{_THRESHOLD}); "
-        f"Twitter operations verification {suffix}"
-    )
+    lines.append(f"- Original posts (30d): {n} (need ≥{_THRESHOLD})")
+    lines.append(f"- Result: {'passed' if passed else 'failed'}")
     urls = [str(url).strip() for url in (links or []) if str(url).strip()]
     if passed:
         urls = urls[:_LINK_LIMIT]
-        text = text + "\n" + _MEETS_AUDIT
-    if urls:
-        text = text + "\n" + "\n".join(urls)
-    return text
+        lines.append("- Meets the audit requirement")
+    lines.extend(f"- {url}" for url in urls)
+    return "\n".join(lines)
 
 
 def evaluate_kpi1(

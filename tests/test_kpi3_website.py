@@ -60,8 +60,8 @@ def test_botchain_name_passes_even_if_lark_name_is_a_url():
     )
     assert verdict.passed
     assert verdict.has_name
-    assert "BOT Chain name is visible" in verdict.copy
-    assert verdict.copy.endswith("website display verification passed")
+    assert "- BOT Chain name: yes" in verdict.copy
+    assert verdict.copy.endswith("- Result: passed")
 
 
 def test_both_official_links_pass_without_the_name():
@@ -76,8 +76,10 @@ def test_both_official_links_pass_without_the_name():
     assert verdict.passed
     assert not verdict.has_name
     assert verdict.reason == "passed"
-    assert "BOT Chain name not found" not in verdict.copy
-    assert "page has clickable https://botchain.ai and https://scan.botchain.ai" in verdict.copy
+    assert "- BOT Chain name: no" in verdict.copy
+    assert "- https://botchain.ai: yes" in verdict.copy
+    assert "- https://scan.botchain.ai: yes" in verdict.copy
+    assert verdict.copy.endswith("- Result: passed")
 
 
 def test_missing_one_official_link_fails():
@@ -91,24 +93,23 @@ def test_missing_one_official_link_fails():
     verdict = evaluate_kpi3(project_name="FIRMAMENT AI", probe=probe, url=probe.url)
     assert not verdict.passed
     assert verdict.has_name
-    assert "no clickable https://botchain.ai" in verdict.copy
+    assert "- https://botchain.ai: no" in verdict.copy
+    assert "- https://scan.botchain.ai: yes" in verdict.copy
+    assert verdict.copy.endswith("- Result: failed")
 
 
 def test_no_website_url_fails():
     verdict = evaluate_kpi3(project_name="Testing", probe=None, url="")
     assert not verdict.passed
     assert verdict.reason == "no_url"
-    assert verdict.copy == (
-        "Website display verification: no official website URL submitted; "
-        "website display verification failed"
-    )
+    assert verdict.copy == "- Official website URL: not submitted\n- Result: failed"
 
 
 def test_unreachable_site_fails():
     probe = WebsiteProbe(url="https://down.example", opened=False, hrefs=(), text="", has_logo=False, error="timeout")
     verdict = evaluate_kpi3(project_name="Testing", probe=probe, url=probe.url)
     assert not verdict.passed
-    assert "website could not be opened" in verdict.copy
+    assert verdict.copy == "- Site opened: no\n- Result: failed"
 
 
 def test_kpi3_result_fields_use_string_not_array():

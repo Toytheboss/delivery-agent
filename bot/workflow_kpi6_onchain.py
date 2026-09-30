@@ -160,29 +160,23 @@ def build_kpi6_copy(
     hashes: list[str] | None = None,
 ) -> str:
     if reason == "no_contract":
-        return (
-            "User and interaction verification: no contract detected; "
-            "user and interaction verification failed"
-        )
+        return "- Contract: not submitted\n- Result: failed"
     n = len(wallets)
-    suffix = "passed" if passed else "failed"
     lines = [
-        (
-            f"User and interaction verification: {n} unique wallets, "
-            f"{tx_count} successful core txs (threshold ≥3 wallets and ≥5 txs); "
-            f"user and interaction verification {suffix}"
-        )
+        f"- Unique wallets: {n} (need ≥3)",
+        f"- Core txs: {tx_count} (need ≥5)",
+        f"- Result: {'passed' if passed else 'failed'}",
     ]
     show_wallets = list(wallets[:_WALLET_SHOW] if passed else wallets)
     show_hashes = list((hashes or [])[:_TX_SHOW] if passed else (hashes or []))
     if passed:
-        lines.append(_MEETS_AUDIT)
+        lines.append(f"- {_MEETS_AUDIT}")
     if show_wallets:
-        lines.append("Wallets:")
-        lines.extend(show_wallets)
+        lines.append("- Wallets:")
+        lines.extend(f"  {addr}" for addr in show_wallets)
     if show_hashes:
-        lines.append("Tx hashes:")
-        lines.extend(show_hashes)
+        lines.append("- Tx hashes:")
+        lines.extend(f"  {item}" for item in show_hashes)
     return "\n".join(lines)
 
 
