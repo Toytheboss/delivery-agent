@@ -122,6 +122,55 @@ def test_kpi6_counts_successful_to_contract_skips_create():
     assert "old" in verdict["copy"]
 
 
+def test_wallet_row_keeps_both_contracts():
+    from bot.workflow_kpi_write import wallet_contracts
+
+    first = "0x" + ("11" * 20)
+    second = "0x" + ("22" * 20)
+    tx = "0x" + ("33" * 32)
+    assert wallet_contracts(
+        {"Mainnet Contract Addresss": f"{first}\n{tx}\n{second}"}
+    ) == [first, second]
+
+
+def test_kpi6_combines_two_contracts():
+    from bot.workflow_kpi6_onchain import evaluate_kpi6_contracts
+
+    start = datetime(2026, 9, 26, tzinfo=timezone(timedelta(hours=8)))
+    first = "0xabc0000000000000000000000000000000000001"
+    second = "0xabc0000000000000000000000000000000000002"
+    senders = [
+        "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "0xcccccccccccccccccccccccccccccccccccccccc",
+    ]
+
+    def tx(hash_id: str, sender: str, ca: str, offset: int) -> dict:
+        return {
+            "hash": hash_id,
+            "from": sender,
+            "to": ca,
+            "contractAddress": "",
+            "isError": "0",
+            "timeStamp": str(int(start.timestamp()) + offset),
+        }
+
+    verdict = evaluate_kpi6_contracts(
+        contracts=[first, second],
+        txs_by_contract={
+            first: [tx("a1", senders[0], first, 1), tx("a2", senders[0], first, 2)],
+            second: [
+                tx("b1", senders[1], second, 3),
+                tx("b2", senders[1], second, 4),
+                tx("b3", senders[2], second, 5),
+            ],
+        },
+    )
+    assert verdict["passed"] is True
+    assert verdict["tx_count"] == 5
+    assert set(verdict["wallets"]) == set(senders)
+
+
 def test_kpi6_pass_lists_three_wallets_and_five_hashes():
     start = datetime(2026, 9, 26, tzinfo=timezone(timedelta(hours=8)))
     ca = "0xabc0000000000000000000000000000000000001"

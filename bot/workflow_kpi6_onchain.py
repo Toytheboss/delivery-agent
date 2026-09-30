@@ -12,13 +12,13 @@ from bot.lark_bitable import update_record
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_write import (
     SH,
-    extract_contract,
+    extract_contracts,
     field_result,
     find_wallet_row,
     merge_kpi_copy,
     merge_kpi_result,
     now_shanghai,
-    wallet_contract,
+    wallet_contracts,
 )
 
 if TYPE_CHECKING:
@@ -186,6 +186,52 @@ def build_kpi6_copy(
     return "\n".join(lines)
 
 
+def evaluate_kpi6_contracts(
+    *,
+    contracts: list[str],
+    txs_by_contract: dict[str, list[dict[str, Any]]] | None = None,
+) -> dict[str, Any]:
+    """Combine core txs from every mainnet contract on the wallet row."""
+    addrs = []
+    seen: set[str] = set()
+    for raw in contracts or []:
+        addr = (raw or "").strip().lower()
+        if not addr or addr in seen:
+            continue
+        seen.add(addr)
+        addrs.append(addr)
+    if not addrs:
+        return evaluate_kpi6(contract="", txs=[])
+    if len(addrs) == 1:
+        rows = (txs_by_contract or {}).get(addrs[0])
+        return evaluate_kpi6(contract=addrs[0], txs=rows)
+    blocked = set(addrs)
+    core_all: list[dict[str, Any]] = []
+    for addr in addrs:
+        rows = (txs_by_contract or {}).get(addr) or []
+        core, _skipped = classify_core_txs(rows, contract=addr, window_start=None)
+        core_all.extend(core)
+    wallets = [w for w in unique_wallets(core_all, "") if w not in blocked]
+    hashes = core_tx_hashes(core_all)
+    tx_count = len(hashes)
+    passed = len(wallets) >= 3 and tx_count >= 5
+    return {
+        "passed": passed,
+        "result": _PASS if passed else _FAIL,
+        "reason": "pass" if passed else "below_threshold",
+        "wallets": wallets,
+        "tx_count": tx_count,
+        "hashes": hashes,
+        "copy": build_kpi6_copy(
+            passed=passed,
+            reason="ok",
+            wallets=wallets,
+            tx_count=tx_count,
+            hashes=hashes,
+        ),
+    }
+
+
 def evaluate_kpi6(
     *,
     contract: str,
@@ -247,16 +293,19 @@ def audit_kpi6_for_fields(
         getattr(config, "workflow_kpi6_result_field", "") or _DEFAULT_RESULT_FIELD
     )
     wallet = find_wallet_row(token, config, name)
-    contract = wallet_contract(wallet[1]) if wallet else ""
-    if not contract:
-        contract = extract_contract(
+    contracts = wallet_contracts(wallet[1]) if wallet else []
+    if not contracts:
+        contracts = extract_contracts(
             _field_text(fields, "主网合约")
             or _field_text(fields, "Contract Addresss/主网合约")
         )
-    txs: list[dict[str, Any]] = []
-    if contract:
-        txs = fetch_txlist(contract)
-    verdict = evaluate_kpi6(contract=contract, txs=txs)
+    txs_by_contract: dict[str, list[dict[str, Any]]] = {}
+    for addr in contracts:
+        txs_by_contract[addr] = fetch_txlist(addr)
+    verdict = evaluate_kpi6_contracts(
+        contracts=contracts, txs_by_contract=txs_by_contract
+    )
+    contract = "\n".join(contracts)
     existing_copy = _field_text(fields, copy_field)
     existing_result = field_result(fields, result_field)
     copy = merge_kpi_copy(existing_copy, str(verdict["copy"]))

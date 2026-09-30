@@ -44,6 +44,24 @@ def test_tweet_alone_does_not_fill_twitter():
     assert mention == ""
 
 
+def test_two_contracts_are_both_kept():
+    first = "0x" + ("ab" * 20)
+    second = "0x" + ("cd" * 20)
+    tx = "0x" + ("ef" * 32)
+    contract, twitter, pr = parse_submit_payload(
+        f"0x{'CD' * 20}\n{tx}\n{first}\n{first}"
+    )
+    assert contract == f"{second}\n{first}"
+    assert twitter == ""
+    assert pr == ""
+    text = format_submit_reply(
+        project="Relay",
+        wallet={"action": "updated", "contract": contract, "record_ids": ["rec"]},
+    )
+    assert f"Contract: {second}" in text
+    assert f"Contract: {first}" in text
+
+
 def test_transaction_hash_is_not_a_contract():
     tx = "0x" + ("ab" * 32)
     contract, twitter, pr = parse_submit_payload(tx)

@@ -74,16 +74,28 @@ def project_name_from_quoted(text: str) -> str:
     return clean_project_label(label)
 
 
+def _submitted_contracts(text: str) -> list[str]:
+    """Every 40-hex address, in order. A 64-hex hash is not a contract."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for match in _CONTRACT_RE.finditer(text or ""):
+        addr = match.group(0).lower()
+        if addr in seen:
+            continue
+        seen.add(addr)
+        out.append(addr)
+    return out
+
+
 def parse_submit_payload(text: str) -> tuple[str, str, str]:
     """Return (contract, twitter_profile_url, pr_url). Empty when missing.
 
     ``/status/`` URLs are PR links. A profile URL has no status segment.
     Bare ``@name`` mentions are ignored. A transaction hash (64 hex digits)
-    is not a contract.
+    is not a contract. Several 40-hex addresses are kept, one per line.
     """
     blob = _MD_LINK_RE.sub(lambda match: match.group(2), text or "")
-    found = _CONTRACT_RE.search(blob)
-    contract = found.group(0).lower() if found else ""
+    contract = "\n".join(_submitted_contracts(blob))
     twitter = ""
     pr = ""
     for url in collect_urls_from_text(blob):
@@ -283,8 +295,9 @@ def format_submit_reply(
         lines.append(f"{name}: info form write failed ({wallet['reason']}).")
     if wallet.get("twitter"):
         lines.append(f"Twitter: {wallet['twitter']}")
-    if wallet.get("contract"):
-        lines.append(f"Contract: {wallet['contract']}")
+    for addr in str(wallet.get("contract") or "").splitlines():
+        if addr.strip():
+            lines.append(f"Contract: {addr.strip()}")
     if wallet.get("duplicate_rows"):
         count = len(wallet.get("record_ids") or [])
         lines.append(

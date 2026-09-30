@@ -23,6 +23,12 @@ _LIVE_TIME_FIELD = "主网上线时间"
 _STATUS_FIELD = "项目状态"
 _MIN_LIVE_DATE = datetime(2026, 9, 1, tzinfo=SH).date()
 _ADDR_RE = re.compile(r"0x[a-fA-F0-9]{40}")
+_CONTRACT_RE = re.compile(r"(?<![0-9a-fA-F])0x[a-fA-F0-9]{40}(?![0-9a-fA-F])")
+_CONTRACT_FIELDS = (
+    "Contract Addresss/主网合约",
+    "Mainnet Contract Addresss",
+    "Mainnet Contract Address",
+)
 
 
 def now_shanghai() -> datetime:
@@ -115,6 +121,19 @@ def extract_contract(value: Any) -> str:
     return match.group(0).lower() if match else ""
 
 
+def extract_contracts(value: Any) -> list[str]:
+    """Every distinct 40-hex address, in order. A 64-hex hash is not included."""
+    out: list[str] = []
+    seen: set[str] = set()
+    for match in _CONTRACT_RE.finditer(str(value or "")):
+        addr = match.group(0).lower()
+        if addr in seen:
+            continue
+        seen.add(addr)
+        out.append(addr)
+    return out
+
+
 def find_wallet_row(
     token: str,
     config: Any,
@@ -143,18 +162,30 @@ def find_wallet_row(
     return None
 
 
-def wallet_contract(fields: dict[str, Any]) -> str:
-    for name in (
-        "Contract Addresss/主网合约",
-        "Mainnet Contract Addresss",
-        "Mainnet Contract Address",
-    ):
-        if field_is_filled(fields, name):
-            found = extract_contract(_field_text(fields, name) or fields.get(name))
-            if found:
-                return found
+def wallet_contracts(fields: dict[str, Any]) -> list[str]:
+    """All mainnet contracts on the wallet row. Named columns win over a scan."""
+    out: list[str] = []
+    seen: set[str] = set()
+    named = False
+    for name in _CONTRACT_FIELDS:
+        if not field_is_filled(fields, name):
+            continue
+        named = True
+        for addr in extract_contracts(_field_text(fields, name) or fields.get(name)):
+            if addr in seen:
+                continue
+            seen.add(addr)
+            out.append(addr)
+    if named:
+        return out
     for value in (fields or {}).values():
-        found = extract_contract(value)
-        if found:
-            return found
-    return ""
+        found = extract_contracts(value)
+        if not found:
+            continue
+        return found
+    return []
+
+
+def wallet_contract(fields: dict[str, Any]) -> str:
+    found = wallet_contracts(fields)
+    return found[0] if found else ""
