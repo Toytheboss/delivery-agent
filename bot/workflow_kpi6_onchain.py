@@ -12,7 +12,6 @@ from bot.lark_bitable import update_record
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_write import (
     SH,
-    extract_contracts,
     field_result,
     find_wallet_row,
     merge_kpi_copy,
@@ -288,11 +287,6 @@ def audit_kpi6_for_fields(
     )
     wallet = find_wallet_row(token, config, name)
     contracts = wallet_contracts(wallet[1]) if wallet else []
-    if not contracts:
-        contracts = extract_contracts(
-            _field_text(fields, "主网合约")
-            or _field_text(fields, "Contract Addresss/主网合约")
-        )
     txs_by_contract: dict[str, list[dict[str, Any]]] = {}
     for addr in contracts:
         txs_by_contract[addr] = fetch_txlist(addr)

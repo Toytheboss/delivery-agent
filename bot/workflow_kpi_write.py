@@ -172,27 +172,18 @@ def find_wallet_row(
 
 
 def wallet_contracts(fields: dict[str, Any]) -> list[str]:
-    """All mainnet contracts on the wallet row. Named columns win over a scan."""
+    """Addresses in the mainnet-contract cell only. Other wallet columns are ignored."""
     out: list[str] = []
     seen: set[str] = set()
-    named = False
     for name in _CONTRACT_FIELDS:
         if not field_is_filled(fields, name):
             continue
-        named = True
         for addr in extract_contracts(_field_text(fields, name) or fields.get(name)):
             if addr in seen:
                 continue
             seen.add(addr)
             out.append(addr)
-    if named:
-        return out
-    for value in (fields or {}).values():
-        found = extract_contracts(value)
-        if not found:
-            continue
-        return found
-    return []
+    return out
 
 
 def wallet_contract(fields: dict[str, Any]) -> str:

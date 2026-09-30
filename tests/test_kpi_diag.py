@@ -134,6 +134,20 @@ def test_wallet_row_keeps_both_contracts():
     ) == [first, second]
 
 
+def test_wallet_row_ignores_addresses_outside_the_contract_cell():
+    from bot.workflow_kpi_write import wallet_contracts
+
+    grant = "0x" + ("ab" * 20)
+    assert wallet_contracts(
+        {
+            "Mainnet Contract Addresss": "N/A",
+            "Grant Receiving Wallet": grant,
+            "Treasury Address": grant,
+        }
+    ) == []
+    assert wallet_contracts({"Grant Receiving Wallet": grant}) == []
+
+
 def test_kpi6_combines_two_contracts():
     from bot.workflow_kpi6_onchain import evaluate_kpi6_contracts
 
