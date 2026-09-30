@@ -18,18 +18,20 @@ except ImportError:  # Python < 3.9
 from bot.lark_bitable import get_tenant_access_token, list_records
 from bot.lark_im import send_text_to_chat
 from bot.workflow_form_dispatch import _field_text
+from bot.workflow_kpi_write import extract_contracts
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
-ADDRESS_FIELDS = [
-    "Mainnet Contract Addresss",
-    "Treasury Address",
-    "Fee Collector / Revenue Wallet Address",
-    "Grant Receiving Wallet (Optional)",
-    "MM / LP Wallet （Optional）",
-    "Bridge Pool / Relayer Wallet (Optional)",
-]
+ADDRESS_COLUMNS = (
+    ("Mainnet Contract Addresss", "主网合约"),
+    ("Grant Receiving Wallet", "收款地址"),
+    ("Treasury Address", "国库"),
+    ("Fee Collector / Revenue Wallet Address", "手续费地址"),
+    ("MM / LP Wallet （Optional）", "做市钱包"),
+    ("Bridge Pool / Relayer Wallet (Optional)", "跨链钱包"),
+)
+ADDRESS_FIELDS = [name for name, _label in ADDRESS_COLUMNS]
 
 # Fall back to fixed offset if ZoneInfo missing Asia/Shanghai data
 try:
@@ -83,40 +85,62 @@ def midnight_digest_sent_ts(digest_date: str) -> str:
     return f"{day.strftime('%Y-%m-%d')}T00:00:02+08:00"
 
 
+def address_parts(fields: dict[str, Any]) -> list[tuple[str, int]]:
+    """Filled address types in display order. One cell can hold several addresses."""
+    parts: list[tuple[str, int]] = []
+    for name, label in ADDRESS_COLUMNS:
+        count = len(extract_contracts(_field_text(fields, name)))
+        if count:
+            parts.append((label, count))
+    return parts
+
+
 def _count_addresses(fields: dict[str, Any]) -> int:
-    return sum(1 for name in ADDRESS_FIELDS if _field_text(fields, name))
+    return sum(count for _label, count in address_parts(fields))
+
+
+def _format_part(label: str, count: int) -> str:
+    if count == 1:
+        return label
+    return f"{label} {count} 个"
 
 
 def _build_digest_text(
     date_str: str,
-    projects: list[tuple[str, int]],
+    projects: list[tuple[str, list[tuple[str, int]]]],
     *,
     title: str | None = None,
     at_open_id: str = "",
     at_name: str = "Angela-财务",
 ) -> str:
-    project_count = len(projects)
-    address_total = sum(n for _, n in projects)
     lines: list[str] = []
     oid = (at_open_id or "").strip()
     name = (at_name or "Angela-财务").strip()
     if oid:
         lines.append(f'<at user_id="{oid}">{name}</at>')
-    lines.extend(
-        [
-            title or f"【项目方地址日报】{date_str}",
-            f"今日新增项目：{project_count} 个",
-            f"地址填写数量：{address_total} 个",
-            "",
-        ]
-    )
+    lines.append(title or f"【项目方地址日报】{date_str}")
+    lines.append(f"今日新增项目：{len(projects)} 个")
     if not projects:
+        lines.append("")
         lines.append("今日暂无新的项目方地址写入。")
         return "\n".join(lines)
 
+    totals: dict[str, int] = {}
+    for _name, parts in projects:
+        for label, count in parts:
+            totals[label] = totals.get(label, 0) + count
+    summary = [
+        f"{label} {totals[label]}"
+        for _name, label in ADDRESS_COLUMNS
+        if totals.get(label)
+    ]
+    if summary:
+        lines.append("，".join(summary))
+    lines.append("")
     lines.append("项目明细：")
-    for i, (name, addr_n) in enumerate(projects, 1):
-        lines.append(f"{i}. {name} — 地址字段 {addr_n} 个")
+    for i, (project_name, parts) in enumerate(projects, 1):
+        body = "、".join(_format_part(label, count) for label, count in parts)
+        lines.append(f"{i}. {project_name}：{body}" if body else f"{i}. {project_name}")
     return "\n".join(lines)
 
 
@@ -259,7 +283,7 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
     )
     by_id = {str(r.get("record_id") or ""): r for r in records}
 
-    projects: list[tuple[str, int]] = []
+    projects: list[tuple[str, list[tuple[str, int]]]] = []
     included_ids: list[str] = []
     for rid, seen_day in first_seen.items():
         if seen_day != date_str:
@@ -270,8 +294,11 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
         if not rec:
             continue
         fields = rec.get("fields") or {}
+        parts = address_parts(fields)
+        if not parts:
+            continue
         name = _field_text(fields, "Project name") or rid
-        projects.append((name, _count_addresses(fields)))
+        projects.append((name, parts))
         included_ids.append(rid)
 
     # force_date path: include all rows for that date even if already digested
@@ -285,8 +312,11 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
             if not rec:
                 continue
             fields = rec.get("fields") or {}
+            parts = address_parts(fields)
+            if not parts:
+                continue
             name = _field_text(fields, "Project name") or rid
-            projects.append((name, _count_addresses(fields)))
+            projects.append((name, parts))
             included_ids.append(rid)
 
     projects.sort(key=lambda x: x[0].lower())
