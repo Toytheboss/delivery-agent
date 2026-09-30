@@ -264,7 +264,9 @@ async def kpi_schedule_loop(config: AppConfig) -> None:
             await asyncio.sleep(_seconds_until_hour(RUN_HOUR))
             continue
         try:
-            stats = await asyncio.to_thread(run_due_once, config)
+            stats = await asyncio.get_running_loop().run_in_executor(
+                None, lambda: run_due_once(config)
+            )
             logger.info("kpi schedule cycle %s", stats)
         except Exception:
             logger.exception("kpi schedule cycle failed")
