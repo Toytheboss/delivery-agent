@@ -1,7 +1,8 @@
-"""Telegram group commands that run one KPI check and write Lark.
+"""Telegram commands that run one KPI check and write Lark.
 
 `onchain diag` / `twitter diag` / `website diag` / `project diag` —
-send in the project group, no quote. Enabled only on Roy号.
+send in the project group, no quote. In Roy号's own chat, add the project
+name: `project diag Project Name`. Enabled only on Roy号.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from bot.workflow_kpi_write import (
     diag_not_eligible_reason,
     field_result,
 )
+from bot.workflow_form_dispatch import _field_text, _normalize_name
 from bot.workflow_pr_capture import _collect_matches
 
 if TYPE_CHECKING:
@@ -37,7 +39,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _DIAG_RE = re.compile(
-    r"(?is)^\s*(?:[/@])?(onchain|twitter|website|project)\s+diag\s*[!.。！]*\s*$"
+    r"(?is)^\s*(?:[/@])?(onchain|twitter|website|project)\s+diag\s*[!.。！]*\s*(.*?)\s*$"
 )
 _KIND_LABEL = {
     "onchain": "On-chain",
@@ -71,15 +73,48 @@ _SKIPPED_COPY = {
 }
 
 
-def parse_kpi_diag_command(text: str) -> str | None:
+def parse_kpi_diag_request(text: str) -> tuple[str, str] | None:
+    """Return (kind, project name). The name is empty when the command is bare."""
     match = _DIAG_RE.match(text or "")
     if not match:
         return None
-    return match.group(1).lower()
+    kind = match.group(1).lower()
+    name = (match.group(2) or "").strip(" \t!.。！")
+    return kind, name
+
+
+def parse_kpi_diag_command(text: str) -> str | None:
+    parsed = parse_kpi_diag_request(text)
+    if not parsed:
+        return None
+    return parsed[0]
 
 
 def is_kpi_diag_command(text: str) -> bool:
     return parse_kpi_diag_command(text) is not None
+
+
+def match_projects_by_name(
+    config: Any,
+    records: list[dict[str, Any]],
+    query: str,
+) -> list[tuple[str, str, dict[str, Any]]]:
+    """Exact normalized project-name hits. Zero or several means do not run."""
+    key = _normalize_name(query)
+    if not key:
+        return []
+    hits: list[tuple[str, str, dict[str, Any]]] = []
+    name_field = str(getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name")
+    for record in records:
+        record_id = str(record.get("record_id") or "")
+        fields = record.get("fields") or {}
+        project_name = _field_text(fields, name_field)
+        if not record_id or not project_name:
+            continue
+        if _normalize_name(project_name) != key:
+            continue
+        hits.append((record_id, project_name, fields))
+    return hits
 
 
 def _cell_passed(fields: dict[str, Any], result_field: str) -> bool:
@@ -748,13 +783,21 @@ async def run_kpi_diag(
     command_message: Message,
     chat_id: int,
     chat_title: str,
+    *,
+    private: bool = False,
 ) -> str:
     del client
     if not getattr(config, "workflow_kpi_diag_enabled", False):
         return "This check is disabled on this bot."
-    kind = parse_kpi_diag_command(getattr(command_message, "raw_text", None) or "")
-    if not kind:
+    parsed = parse_kpi_diag_request(getattr(command_message, "raw_text", None) or "")
+    if not parsed:
         return "Unknown diag command."
+    kind, project_query = parsed
+    if private and not project_query:
+        return (
+            "Send the project name after diag. "
+            "Example: project diag Project Name"
+        )
 
     app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()
     table_id = str(getattr(config, "workflow_progress_table_id", "") or "").strip()
@@ -777,17 +820,23 @@ async def run_kpi_diag(
         logger.exception("kpi_diag: failed to read Lark chat=%s", chat_id)
         return f"Failed to read Lark: {exc}"
 
-    matches = _collect_matches(config, records, chat_id, chat_title)
+    if project_query:
+        matches = match_projects_by_name(config, records, project_query)
+    else:
+        matches = _collect_matches(config, records, chat_id, chat_title)
     if not matches:
+        if project_query:
+            return f"No Lark project matched {project_query!r}."
         return (
             f"No Lark project matched this group title ({chat_title!r}). "
             "Align Progress Tracker project name with the TG group name."
         )
     if len(matches) > 1:
         names = ", ".join(name for _rid, name, _fields in matches)
+        where = "name" if project_query else "group"
         return (
             f"Ambiguous ({len(matches)} projects): {names}. "
-            "Not running this check until the group maps to one project."
+            f"Not running this check until the {where} maps to one project."
         )
 
     record_id, project_name, fields = matches[0]

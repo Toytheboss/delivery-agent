@@ -20,8 +20,10 @@ from bot.workflow_kpi_diag import (
     format_project_diag_reply,
     format_tg_check_reply,
     is_kpi_diag_command,
+    match_projects_by_name,
     onchain_fail_note,
     parse_kpi_diag_command,
+    parse_kpi_diag_request,
     project_diag_audits_to_run,
     twitter_fail_note,
     website_fail_note,
@@ -47,6 +49,30 @@ def test_diag_commands_match_plain_text_not_quote():
     assert is_kpi_diag_command("ONCHAIN DIAG")
     assert not is_kpi_diag_command("pr support")
     assert not is_kpi_diag_command("please onchain diag this")
+    assert parse_kpi_diag_request("project diag BOT Multisender") == (
+        "project",
+        "BOT Multisender",
+    )
+    assert parse_kpi_diag_request("onchain diag BOT Multisender") == (
+        "onchain",
+        "BOT Multisender",
+    )
+    assert parse_kpi_diag_request("website diag!") == ("website", "")
+
+
+def test_private_diag_matches_one_normalized_project_name():
+    class Config:
+        workflow_project_name_field = "项目名称 Project Name"
+
+    records = [
+        {"record_id": "a", "fields": {"项目名称 Project Name": "BOT Multisender"}},
+        {"record_id": "b", "fields": {"项目名称 Project Name": "BOT MULTISENDER"}},
+        {"record_id": "c", "fields": {"项目名称 Project Name": "swing"}},
+    ]
+    one = match_projects_by_name(Config(), records[:1] + records[2:], "bot multisender")
+    assert [item[0] for item in one] == ["a"]
+    two = match_projects_by_name(Config(), records, "BOT Multisender")
+    assert len(two) == 2
 
 
 def test_kpi6_no_contract_copy():

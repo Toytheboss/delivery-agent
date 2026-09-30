@@ -502,18 +502,16 @@ class MessageHandler:
                 self._processing.discard(msg_id)
             return
 
-        # KPI diag: send `onchain diag` / `twitter diag` / `website diag` in the
-        # project group (no quote). Roy号 only — gated by kpi_diag.enabled.
+        # KPI diag. In a project group, the group title selects the project.
+        # In Roy号's own chat, the project name follows the command.
+        # Other people's private messages never run it.
         if (
             getattr(self.config, "workflow_kpi_diag_enabled", False)
-            and not event.is_private
             and is_diag_cmd
         ):
-            if not (
-                message.out
-                or (self.my_id is not None and sender_id == self.my_id)
-                or can_ops
-            ):
+            if event.is_private and not delivery_account:
+                return
+            if not event.is_private and not (delivery_account or can_ops):
                 return
             msg_id = message.id
             if msg_id in self._processing:
@@ -528,6 +526,7 @@ class MessageHandler:
                     command_message=message,
                     chat_id=chat_id,
                     chat_title=title,
+                    private=bool(event.is_private),
                 )
                 await message.reply(result)
             except Exception:
