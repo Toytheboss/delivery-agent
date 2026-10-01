@@ -295,7 +295,17 @@ async def start_live_webhook_server(
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, host=host, port=port)
-    await site.start()
+    try:
+        await site.start()
+    except OSError as exc:
+        await runner.cleanup()
+        if getattr(exc, "errno", None) == 98:
+            logger.error(
+                "Lark HTTP port %s is already in use; this account stays up without the webhook",
+                port,
+            )
+            return None
+        raise
     routes = []
     if live_on:
         routes.append(path)
