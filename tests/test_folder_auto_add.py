@@ -4,7 +4,26 @@ import asyncio
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from bot.folder_auto_add import _is_stale_upgraded_chat, _resolve_live_chat
+from datetime import datetime, timezone
+
+from bot.folder_auto_add import (
+    _is_stale_upgraded_chat,
+    _resolve_live_chat,
+    inactive_on_or_before,
+)
+
+
+def test_inactive_cutoff_uses_shanghai_date():
+    assert inactive_on_or_before(
+        datetime(2026, 8, 20, 15, 59, tzinfo=timezone.utc), "2026-08-20"
+    )
+    assert not inactive_on_or_before(
+        datetime(2026, 8, 20, 16, 0, tzinfo=timezone.utc), "2026-08-20"
+    )
+    assert inactive_on_or_before(None, "2026-08-20") is False
+    assert inactive_on_or_before(
+        datetime(2026, 8, 1, tzinfo=timezone.utc), ""
+    ) is False
 
 
 def test_live_megagroup_is_not_stale():

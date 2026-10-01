@@ -18,6 +18,8 @@ scope:
   max_chats_per_folder: 100
   # Backup catch-up only; join still uses ChatAction for instant folder add
   auto_add_scan_minutes: 15
+  # 最后一条消息在这天或更早（UTC+8）的群不再自动加入 folder。空着表示不限制。
+  # inactive_before: "2026-08-20"
   refresh_interval_minutes: 30
   # 是否在 Delivery 分组内的项目群自动回复（测试阶段建议 false）
   group_replies_enabled: false

@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -80,6 +81,23 @@ def _is_stale_upgraded_chat(entity: object) -> bool:
     a different peer and is what belongs in the Folder.
     """
     return bool(getattr(entity, "deactivated", False))
+
+
+def inactive_on_or_before(when: datetime | None, cutoff: str) -> bool:
+    """True when the last message falls on the cutoff date or earlier (UTC+8)."""
+    text = (cutoff or "").strip()
+    if not text or when is None:
+        return False
+    limit = datetime.strptime(text[:10], "%Y-%m-%d").date()
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+    try:
+        from zoneinfo import ZoneInfo
+
+        local = when.astimezone(ZoneInfo("Asia/Shanghai"))
+    except Exception:  # noqa: BLE001
+        local = when.astimezone(timezone(timedelta(hours=8)))
+    return local.date() <= limit
 
 
 def _folder_sort_key(name: str) -> tuple:
@@ -313,6 +331,7 @@ async def ensure_chat_in_folders(
     *,
     scope: FolderScope | None = None,
     title: str | None = None,
+    last_message_at: datetime | None = None,
 ) -> str | None:
     """Add chat to first free Delivery folder; create a new folder if all are full."""
     if not config.folder_auto_add_enabled:
@@ -321,6 +340,14 @@ async def ensure_chat_in_folders(
     chat_title = title if title is not None else (getattr(chat, "title", None) or "")
     keywords = config.folder_auto_add_keywords or config.welcome_name_keywords
     if not title_matches_project(chat_title, keywords):
+        return None
+    cutoff = str(getattr(config, "folder_inactive_before", "") or "")
+    if inactive_on_or_before(last_message_at, cutoff):
+        logger.info(
+            "folder_auto_add: skip inactive %r cutoff=%s",
+            chat_title,
+            cutoff,
+        )
         return None
     if _is_stale_upgraded_chat(chat) and getattr(chat, "migrated_to", None) is None:
         logger.debug(
@@ -485,7 +512,12 @@ async def scan_and_add_missing(
             except Exception:  # noqa: BLE001
                 pass
             name = await ensure_chat_in_folders(
-                client, config, entity, scope=None, title=title
+                client,
+                config,
+                entity,
+                scope=None,
+                title=title,
+                last_message_at=getattr(dialog, "date", None),
             )
             if name:
                 added += 1
@@ -531,8 +563,15 @@ def register_folder_auto_add_handlers(
             return
         title = getattr(chat, "title", None) or ""
         await asyncio.sleep(0.5)
+        last_at = None
+        try:
+            latest = await client.get_messages(chat, limit=1)
+            if latest:
+                last_at = getattr(latest[0], "date", None)
+        except Exception:  # noqa: BLE001
+            logger.debug("folder_auto_add: last message lookup failed for %r", title)
         await ensure_chat_in_folders(
-            client, config, chat, scope=scope, title=title
+            client, config, chat, scope=scope, title=title, last_message_at=last_at
         )
 
 

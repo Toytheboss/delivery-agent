@@ -63,6 +63,7 @@ class AppConfig:
     folder_auto_add_keywords: list[str]
     folder_max_chats: int
     folder_auto_add_scan_minutes: int
+    folder_inactive_before: str
     pilot_enabled: bool
     pilot_group_ids: set[int]
     pilot_group_titles: set[str]
@@ -572,6 +573,7 @@ def load_config() -> AppConfig:
         ],
         folder_max_chats=int(scope.get("max_chats_per_folder", 100)),
         folder_auto_add_scan_minutes=int(scope.get("auto_add_scan_minutes", 2)),
+        folder_inactive_before=str(scope.get("inactive_before") or "").strip()[:10],
         pilot_enabled=bool(scope.get("pilot_enabled", False)),
         pilot_group_ids=pilot_group_ids,
         pilot_group_titles=pilot_group_titles,
