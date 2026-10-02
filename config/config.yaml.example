@@ -112,7 +112,7 @@ workflow:
   live_webhook_secret: ""
   live_startup_scan: false
   # Backup when Feishu automation HTTP is missing: detect NEW live status only
-  # Roy号开。交付号关，避免两边同时跑 KPI 互相覆盖。发表单仍走 form drain。
+  # 两边都可开。KPI 检测仍只由 Roy号写入结果。
   live_status_watch_enabled: true
   live_status_watch_seconds: 60
   live_watch_state_file: "data/live_status_watch_state.json"

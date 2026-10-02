@@ -347,10 +347,6 @@ async def capture_pr_tweet(
     chat_title: str,
 ) -> str:
     del client  # signature matches other workflow handlers
-    from bot.workflow_kpi_write import kpi_checks_on_this_host
-
-    if not kpi_checks_on_this_host():
-        return "KPI checks run on Roy号 only. Ask Roy号 to save the PR link."
     if not getattr(config, "pr_capture_enabled", False):
         return "PR capture is disabled."
 
