@@ -333,7 +333,12 @@ async def process_live_project(
     else:
         result["logo"] = "disabled"
 
-    if getattr(config, "workflow_kpi3_enabled", True):
+    # KPI 写入只由 Roy号做。交付号没有完整浏览器时会把已通过的官网结果盖掉。
+    writes_kpi = "botchain-qa" in str(root).lower()
+    if not writes_kpi:
+        result["kpi3"] = "skipped_non_roy"
+        result["kpi45"] = "skipped_non_roy"
+    elif getattr(config, "workflow_kpi3_enabled", True):
         try:
             from bot.workflow_kpi3_website import audit_kpi3_for_live_record
 
@@ -346,7 +351,7 @@ async def process_live_project(
     else:
         result["kpi3"] = "disabled"
 
-    if getattr(config, "workflow_kpi45_enabled", True):
+    if writes_kpi and getattr(config, "workflow_kpi45_enabled", True):
         try:
             from bot.workflow_kpi45_live import fill_kpi45_for_live_record
 
@@ -356,7 +361,7 @@ async def process_live_project(
         except Exception as exc:  # noqa: BLE001
             logger.exception("live-trigger kpi45 failed for %r", name)
             result["kpi45"] = f"err:{exc}"
-    else:
+    elif writes_kpi:
         result["kpi45"] = "disabled"
 
     result["ok"] = result["form"] in {
