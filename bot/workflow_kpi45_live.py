@@ -105,6 +105,10 @@ def fill_kpi45_for_fields(
     project_name: str = "",
 ) -> str:
     """Write KPI 4/5 pass copy + result. Skip filled cells. No fail path."""
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return "skipped_non_roy"
     if not getattr(config, "workflow_kpi45_enabled", True):
         return "disabled"
     rid = (record_id or "").strip()

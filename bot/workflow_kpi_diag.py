@@ -787,6 +787,10 @@ async def run_kpi_diag(
     private: bool = False,
 ) -> str:
     del client
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return "KPI checks run on Roy号 only."
     if not getattr(config, "workflow_kpi_diag_enabled", False):
         return "This check is disabled on this bot."
     parsed = parse_kpi_diag_request(getattr(command_message, "raw_text", None) or "")

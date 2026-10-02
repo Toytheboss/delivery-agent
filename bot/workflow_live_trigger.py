@@ -333,8 +333,10 @@ async def process_live_project(
     else:
         result["logo"] = "disabled"
 
-    # KPI 写入只由 Roy号做。交付号没有完整浏览器时会把已通过的官网结果盖掉。
-    writes_kpi = "botchain-qa" in str(root).lower()
+    # KPI 检测与结果写入只由 Roy号做。
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    writes_kpi = kpi_checks_on_this_host()
     if not writes_kpi:
         result["kpi3"] = "skipped_non_roy"
         result["kpi45"] = "skipped_non_roy"

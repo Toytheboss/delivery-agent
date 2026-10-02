@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from bot.lark_bitable import list_records
@@ -17,6 +18,7 @@ try:
 except Exception:  # noqa: BLE001
     SH = timezone(timedelta(hours=8))
 
+_ROOT = Path(__file__).resolve().parent.parent
 _PASS = "通过"
 _FAIL = "不通过"
 _LIVE_TIME_FIELD = "主网上线时间"
@@ -29,6 +31,18 @@ _CONTRACT_FIELDS = (
     "Mainnet Contract Addresss",
     "Mainnet Contract Address",
 )
+
+
+def kpi_checks_on_this_host() -> bool:
+    """KPI checks and result-cell writes run on Roy号 only.
+
+    The delivery-agent install at ``/opt/delivery-agent`` never writes KPI
+    cells. Local checkouts and Roy号 (``botchain-qa-tg-bot``) still can.
+    """
+    root = str(_ROOT).replace("\\", "/").lower().rstrip("/")
+    return root != "/opt/delivery-agent" and not root.startswith(
+        "/opt/delivery-agent/"
+    )
 
 
 def now_shanghai() -> datetime:

@@ -142,6 +142,10 @@ def judge_time_ms(when: Any = None) -> int:
 
 
 def write_kpi2_result(token: str, config: Any, record_id: str, result: str) -> None:
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return
     update_record(
         token,
         config.workflow_base_app_token,
@@ -215,6 +219,10 @@ def apply_pass_chain(
     record_id: str,
     fields: dict[str, Any],
 ) -> list[str]:
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return []
     status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
     plan = pass_chain_plan(fields, status_field)
     done: list[str] = []

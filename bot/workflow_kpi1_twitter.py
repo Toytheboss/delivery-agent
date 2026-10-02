@@ -442,6 +442,10 @@ def maybe_write_kpi2_from_tweets(
     since: datetime,
 ) -> str:
     """Fill empty KPI 2 from a model-picked launch tweet. Never overwrites a filled cell."""
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return ""
     link_field = str(
         getattr(config, "pr_capture_link_field", "") or _KPI2_LINK
     )
@@ -884,6 +888,19 @@ def audit_kpi1_for_fields(
     *,
     project_name: str = "",
 ) -> dict[str, Any]:
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return {
+            "result": "skipped_non_roy",
+            "passed": False,
+            "reason": "skipped_non_roy",
+            "copy": "",
+            "handle": "",
+            "count": None,
+            "project": project_name,
+            "pr_url": "",
+        }
     rid = (record_id or "").strip()
     name = (project_name or "").strip() or _field_text(
         fields, config.workflow_project_name_field

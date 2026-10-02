@@ -275,6 +275,19 @@ def audit_kpi6_for_fields(
     *,
     project_name: str = "",
 ) -> dict[str, Any]:
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return {
+            "result": "skipped_non_roy",
+            "passed": False,
+            "reason": "skipped_non_roy",
+            "copy": "",
+            "contract": "",
+            "wallets": 0,
+            "txs": 0,
+            "project": project_name,
+        }
     rid = (record_id or "").strip()
     name = (project_name or "").strip() or _field_text(
         fields, config.workflow_project_name_field

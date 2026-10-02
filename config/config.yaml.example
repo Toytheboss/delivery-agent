@@ -230,6 +230,10 @@ workflow:
   verify_alert_cooldown_hours: 0  # 0 = no same-chat cooldown
   verify_alert_state_file: "data/verify_alert_state.json"
 
+  # KPI 检测与结果写入只在 Roy号（botchain-qa）执行；交付号代码层会跳过。
+  # kpi_diag:
+  #   enabled: true
+
 llm:
   provider: "deepseek"
   base_url: "https://api.deepseek.com"

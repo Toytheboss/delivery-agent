@@ -232,6 +232,15 @@ def write_pr_link(
     pr_url: str,
     rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return {
+            "ok": True,
+            "action": "skipped_non_roy",
+            "project": project_name,
+            "record_ids": [],
+        }
     if not pr_url:
         return {"ok": True, "action": "skipped", "project": project_name, "record_ids": []}
     app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()

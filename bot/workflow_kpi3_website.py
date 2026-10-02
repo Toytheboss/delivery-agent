@@ -361,6 +361,15 @@ def audit_kpi3_for_fields(
     skip_if_audited: bool = True,
 ) -> str:
     """Write KPI 3 copy + result. Live hook skips repeats; diag always re-runs."""
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return {
+            "result": "skipped_non_roy",
+            "passed": False,
+            "reason": "skipped_non_roy",
+            "project": project_name,
+        }
     if not getattr(config, "workflow_kpi3_enabled", True):
         return {"result": "disabled", "passed": False, "reason": "disabled", "project": project_name}
     rid = (record_id or "").strip()
