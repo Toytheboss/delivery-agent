@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-10-06 · README Architecture 收成单张拓扑图
+
+### 优化
+- 三张 Mermaid 合并为一张；FAQ 与项目主链路改用图下短句说明
+
+---
+
 ## 2026-10-06 · README Architecture 补上 LLM 与 TG userbot
 
 ### 优化

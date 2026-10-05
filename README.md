@@ -222,8 +222,6 @@ Scheduled **Lark** weekly pings are separate (section 8).
 
 Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
 
-### Runtime topology
-
 ```mermaid
 flowchart TB
   subgraph Channel["Telegram"]
@@ -233,7 +231,7 @@ flowchart TB
   end
 
   subgraph Brain["Model layer"]
-    RAG["knowledge/ RAG retrieve"]
+    RAG["knowledge/ RAG"]
     LLM["LLM API<br/>DeepSeek / OpenAI-compatible"]
   end
 
@@ -245,24 +243,23 @@ flowchart TB
     KB["Agent glossary optional"]
   end
 
-  subgraph Edge["Ingress / side paths"]
-    WH["Live webhook HTTP"]
-    SW["Status-watch poller backup"]
-    GF["Google Form"]
-    AS["Apps Script"]
+  subgraph Edge["Ingress"]
+    WH["Live webhook"]
+    SW["Status-watch backup"]
+    GF["Google Form → Apps Script"]
   end
 
-  OC["Operator console<br/>disk snapshots"]
+  OC["Operator console · disk snapshots"]
 
-  UG <--> UA
-  UG <--> UD
-  UD --> RAG --> LLM
-  UA -.-> LLM
+  UG <-->|"Q&A / forms / diag / chase"| UA
+  UG <-->|"Q&A / forms / welcome"| UD
+  UD -->|"gate → retrieve → compose"| RAG --> LLM
+  UA -.->|"optional KPI assist"| LLM
   WH --> UD
   WH --> UA
   SW --> UD
   SW --> UA
-  GF --> AS --> WT
+  GF --> WT
   UA --> PT
   UD --> PT
   UD --> WT
@@ -273,29 +270,9 @@ flowchart TB
   UD --> OC
 ```
 
-### FAQ reply path
+Main path for one partner project: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
 
-```mermaid
-flowchart LR
-  M["TG group message"] --> G["Scope / trigger / rate-limit gate"]
-  G --> R["RAG retrieve knowledge/"]
-  R --> L["LLM compose"]
-  L --> A{"Answerable?"}
-  A -->|yes| S["Userbot multi-bubble reply"]
-  A -->|no / NEEDS_HUMAN| H["Stay silent or human-review queue"]
-```
-
-### Project lifecycle
-
-```mermaid
-flowchart LR
-  P1["1 Group ready"] --> P2["2 Mainnet live"]
-  P2 --> P3["3 Form + logo + wallet"]
-  P3 --> P4["4 Chase missing fields"]
-  P4 --> P5["5 KPI +7d / +21d"]
-  P5 --> P6["6 PR weekly + backlink"]
-  P6 --> P7["7 Tech support / learn"]
-```
+Group FAQ path (on the userbot that is answering): **message → scope/trigger gate → RAG → LLM → reply bubbles**, or stay silent / queue for human review when the model returns `NEEDS_HUMAN`.
 
 ### Who does what
 
