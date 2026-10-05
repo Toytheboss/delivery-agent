@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-06 · README Architecture 改回双账号流程图
+
+### 优化
+- 去掉 Channel/Brain 拓扑分层，改回 External + Lark + Audit/Delivery Runtime 流程图
+- 仍保留 LLM、TG userbot、单张图、无人名无项目路径
+
+---
+
 ## 2026-10-06 · README Architecture 收成单张拓扑图
 
 ### 优化

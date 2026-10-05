@@ -224,55 +224,68 @@ Same git repo, two production Telethon **userbots** (`python -m bot.main`) — p
 
 ```mermaid
 flowchart TB
-  subgraph Channel["Telegram"]
-    UG["Partner project groups<br/>Projects-folder scope"]
-    UA["Audit account userbot<br/>Telethon session"]
-    UD["Delivery account userbot<br/>Telethon session"]
-  end
-
-  subgraph Brain["Model layer"]
-    RAG["knowledge/ RAG"]
+  subgraph External["External"]
+    TG["Telegram partner groups<br/>Projects-folder scope"]
+    GF["Google Form"]
+    AS["Apps Script"]
     LLM["LLM API<br/>DeepSeek / OpenAI-compatible"]
   end
 
-  subgraph Lark["Lark / Feishu Base"]
-    PT["Progress Tracker<br/>status · live time · KPI cells"]
+  subgraph Lark["Lark Base"]
+    PT["Progress Tracker"]
     WT["Wallet table"]
     PR["PR weekly table"]
     FE["Frontend weekly table"]
     KB["Agent glossary optional"]
   end
 
-  subgraph Edge["Ingress"]
-    WH["Live webhook"]
-    SW["Status-watch backup"]
-    GF["Google Form → Apps Script"]
+  subgraph Runtime["Same repo · two Telethon userbots"]
+    direction LR
+
+    subgraph Audit["Audit account"]
+      A1["KPI checks + writes ONLY"]
+      A2["Auto schedule +7d / +21d"]
+      A3["Live-onboard Lark ping"]
+      A4["Weekly PR + frontend<br/>Sun 23:55 prepare · Mon 00:00 send"]
+      A5["PR backlink → TG"]
+      A6["Optional LLM for KPI assist"]
+    end
+
+    subgraph Delivery["Delivery account"]
+      D1["FAQ: gate → RAG → LLM → reply"]
+      D2["Welcome / folder auto-add"]
+      D3["Live → Form → logo"]
+      D4["Form chase / wallet notify"]
+      D5["Tech support bridge"]
+      D6["Live / deploy watch<br/>KPI gated OFF"]
+    end
   end
 
-  OC["Operator console · disk snapshots"]
+  WH["Live webhook"]
+  SW["Status-watch backup"]
+  OC["Operator console"]
 
-  UG <-->|"Q&A / forms / diag / chase"| UA
-  UG <-->|"Q&A / forms / welcome"| UD
-  UD -->|"gate → retrieve → compose"| RAG --> LLM
-  UA -.->|"optional KPI assist"| LLM
-  WH --> UD
-  WH --> UA
-  SW --> UD
-  SW --> UA
-  GF --> WT
-  UA --> PT
-  UD --> PT
-  UD --> WT
-  UA --> PR
-  UA --> FE
-  UD --> KB
-  UA --> OC
-  UD --> OC
+  TG <--> Audit
+  TG <--> Delivery
+  Delivery --> LLM
+  Audit -.-> LLM
+  GF --> AS --> WT
+  WH --> Delivery
+  WH --> Audit
+  SW --> Delivery
+  SW --> Audit
+  Delivery --> PT
+  Audit --> PT
+  Delivery --> WT
+  Audit --> PR
+  Audit --> FE
+  Delivery --> KB
+  Audit --> TG
+  Audit --> OC
+  Delivery --> OC
 ```
 
 Main path for one partner project: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
-
-Group FAQ path (on the userbot that is answering): **message → scope/trigger gate → RAG → LLM → reply bubbles**, or stay silent / queue for human review when the model returns `NEEDS_HUMAN`.
 
 ### Who does what
 
