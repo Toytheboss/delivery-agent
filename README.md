@@ -222,70 +222,42 @@ Scheduled **Lark** weekly pings are separate (section 8).
 
 Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
 
-```mermaid
-flowchart TB
-  subgraph External["External"]
-    TG["Telegram partner groups<br/>Projects-folder scope"]
-    GF["Google Form"]
-    AS["Apps Script"]
-    LLM["LLM API<br/>DeepSeek / OpenAI-compatible"]
-  end
-
-  subgraph Lark["Lark Base"]
-    PT["Progress Tracker"]
-    WT["Wallet table"]
-    PR["PR weekly table"]
-    FE["Frontend weekly table"]
-    KB["Agent glossary optional"]
-  end
-
-  subgraph Runtime["Same repo · two Telethon userbots"]
-    direction LR
-
-    subgraph Audit["Audit account"]
-      A1["KPI checks + writes ONLY"]
-      A2["Auto schedule +7d / +21d"]
-      A3["Live-onboard Lark ping"]
-      A4["Weekly PR + frontend<br/>Sun 23:55 prepare · Mon 00:00 send"]
-      A5["PR backlink → TG"]
-      A6["Optional LLM for KPI assist"]
-    end
-
-    subgraph Delivery["Delivery account"]
-      D1["FAQ: gate → RAG → LLM → reply"]
-      D2["Welcome / folder auto-add"]
-      D3["Live → Form → logo"]
-      D4["Form chase / wallet notify"]
-      D5["Tech support bridge"]
-      D6["Live / deploy watch<br/>KPI gated OFF"]
-    end
-  end
-
-  WH["Live webhook"]
-  SW["Status-watch backup"]
-  OC["Operator console"]
-
-  TG <--> Audit
-  TG <--> Delivery
-  Delivery --> LLM
-  Audit -.-> LLM
-  GF --> AS --> WT
-  WH --> Delivery
-  WH --> Audit
-  SW --> Delivery
-  SW --> Audit
-  Delivery --> PT
-  Audit --> PT
-  Delivery --> WT
-  Audit --> PR
-  Audit --> FE
-  Delivery --> KB
-  Audit --> TG
-  Audit --> OC
-  Delivery --> OC
+```text
+                         ┌──────────────────────────────────────┐
+                         │  Lark Base                           │
+                         │  Progress Tracker · Wallet table     │
+                         │  PR weekly · Frontend weekly         │
+                         │  Agent glossary optional             │
+                         └──────────────────▲───────────────────┘
+                                            │ OpenAPI
+              ┌─────────────────────────────┴─────────────────────────────┐
+              │                                                           │
+   ┌──────────┴───────────┐                                 ┌─────────────┴────────────┐
+   │ Audit account        │                                 │ Delivery account         │
+   │                      │                                 │                          │
+   │ KPI checks ONLY      │                                 │ FAQ: RAG → LLM → reply   │
+   │ auto schedule        │                                 │ welcome / folder         │
+   │   +7d / +21d         │                                 │ live → form → logo       │
+   │ live-onboard ping    │                                 │ form chase / wallet      │
+   │ PR + frontend weekly │                                 │ tech support             │
+   │   Sun 23:55 prepare  │                                 │ live / deploy watch      │
+   │   Mon 00:00 send     │                                 │ (KPI checks gated off)   │
+   │ PR backlink → TG     │                                 │                          │
+   │ optional LLM assist  │                                 │                          │
+   └──────────▲───────────┘                                 └─────────────▲────────────┘
+              │          Telethon userbot × 2 (same codebase)             │
+              └──────────────────────────┬────────────────────────────────┘
+                                         │
+                              Telegram project folders / groups
+                                         ▲
+              LLM API (DeepSeek / OpenAI-compatible) · knowledge/ RAG
+                                         ▲
+                    Google Form → Apps Script → Wallet table
+                                         │
+                         Live webhook + status-watch backup
 ```
 
-Main path for one partner project: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
+Main path: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
 
 ### Who does what
 

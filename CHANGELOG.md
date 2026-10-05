@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-06 · README Architecture 改回 ASCII 双栏框图
+
+### 优化
+- 按 Lark → Audit/Delivery → Telegram 的 ASCII 框图重画，不再用 Mermaid
+- 保留 LLM / RAG、无人名、无安装路径项目名
+
+---
+
 ## 2026-10-06 · README Architecture 改回双账号流程图
 
 ### 优化
