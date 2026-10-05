@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-06 · README Architecture 补上 LLM 与 TG userbot
+
+### 优化
+- Architecture 改为 Mermaid：Telegram userbot、RAG/LLM、Lark、Form/webhook 一等公民
+- 去掉安装路径里的项目名；账号只写 Audit / Delivery account
+
+---
+
 ## 2026-10-06 · README Architecture 去掉人名
 
 ### 优化

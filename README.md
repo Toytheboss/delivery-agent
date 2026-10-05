@@ -220,74 +220,100 @@ Scheduled **Lark** weekly pings are separate (section 8).
 
 ## Architecture (high level)
 
-Same git repo, two production Telethon **userbots** (`python -m bot.main`). Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
+Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
 
 ### Runtime topology
 
-```text
-                         ┌──────────────────────────────────────────┐
-                         │  Lark / Feishu Base                      │
-                         │                                          │
-                         │  Progress Tracker   (project status,     │
-                         │                      KPI cells, live ts) │
-                         │  Wallet table       (form submissions)   │
-                         │  PR weekly table    (brand/ops PR feed)  │
-                         │  Frontend weekly    (site / logo pack)   │
-                         │  Agent glossary     (optional learned QA)│
-                         └────────────────────▲─────────────────────┘
-                                              │ OpenAPI
-                ┌─────────────────────────────┴─────────────────────────────┐
-                │                                                           │
-     ┌──────────┴──────────────┐                             ┌──────────────┴─────────────┐
-     │ Audit account           │                             │ Delivery account          │
-     │ e.g. /opt/botchain-…    │                             │ e.g. /opt/delivery-agent   │
-     │                         │                             │                            │
-     │ • KPI diag / schedule   │                             │ • FAQ RAG + LLM            │
-     │   (+7d first, +21d      │                             │ • Social / welcome         │
-     │    final; calendar day) │                             │ • Folder auto-add          │
-     │ • Live-onboard Lark ping│                             │ • Live detect → Form/logo  │
-     │ • PR + frontend weekly  │                             │ • Form chase / wallet TG   │
-     │   (Sun 23:55 prepare,   │                             │ • Tech support → Lark      │
-     │    Mon 00:00 send)      │                             │ • Live / deploy status     │
-     │ • PR backlink → TG group│                             │   watch (no KPI writes)    │
-     │ • Ops reports on demand │                             │ • Ops reports on demand    │
-     └──────────▲──────────────┘                             └──────────────▲─────────────┘
-                │              Telethon userbot × 2                         │
-                └────────────────────────┬──────────────────────────────────┘
-                                         │ scoped to Telegram Projects folders
-                                         ▼
-                              Partner Telegram project groups
-                                         ▲
-                    Google Form ──Apps Script──► Wallet table
-                                         │
-                              Lark live webhook (HTTP :8787)
-                              + optional status-watch poller
+```mermaid
+flowchart TB
+  subgraph Channel["Telegram"]
+    UG["Partner project groups<br/>Projects-folder scope"]
+    UA["Audit account userbot<br/>Telethon session"]
+    UD["Delivery account userbot<br/>Telethon session"]
+  end
+
+  subgraph Brain["Model layer"]
+    RAG["knowledge/ RAG retrieve"]
+    LLM["LLM API<br/>DeepSeek / OpenAI-compatible"]
+  end
+
+  subgraph Lark["Lark / Feishu Base"]
+    PT["Progress Tracker<br/>status · live time · KPI cells"]
+    WT["Wallet table"]
+    PR["PR weekly table"]
+    FE["Frontend weekly table"]
+    KB["Agent glossary optional"]
+  end
+
+  subgraph Edge["Ingress / side paths"]
+    WH["Live webhook HTTP"]
+    SW["Status-watch poller backup"]
+    GF["Google Form"]
+    AS["Apps Script"]
+  end
+
+  OC["Operator console<br/>disk snapshots"]
+
+  UG <--> UA
+  UG <--> UD
+  UD --> RAG --> LLM
+  UA -.-> LLM
+  WH --> UD
+  WH --> UA
+  SW --> UD
+  SW --> UA
+  GF --> AS --> WT
+  UA --> PT
+  UD --> PT
+  UD --> WT
+  UA --> PR
+  UA --> FE
+  UD --> KB
+  UA --> OC
+  UD --> OC
+```
+
+### FAQ reply path
+
+```mermaid
+flowchart LR
+  M["TG group message"] --> G["Scope / trigger / rate-limit gate"]
+  G --> R["RAG retrieve knowledge/"]
+  R --> L["LLM compose"]
+  L --> A{"Answerable?"}
+  A -->|yes| S["Userbot multi-bubble reply"]
+  A -->|no / NEEDS_HUMAN| H["Stay silent or human-review queue"]
+```
+
+### Project lifecycle
+
+```mermaid
+flowchart LR
+  P1["1 Group ready"] --> P2["2 Mainnet live"]
+  P2 --> P3["3 Form + logo + wallet"]
+  P3 --> P4["4 Chase missing fields"]
+  P4 --> P5["5 KPI +7d / +21d"]
+  P5 --> P6["6 PR weekly + backlink"]
+  P6 --> P7["7 Tech support / learn"]
 ```
 
 ### Who does what
 
 | Concern | Audit account | Delivery account |
 |---------|---------------|------------------|
+| Telegram userbot presence in partner groups | yes | yes |
 | Partner FAQ / welcome / folder filing | optional | primary |
+| RAG + LLM compose for group Q&A | optional | primary |
 | Live → Google Form → logo fill | may assist | primary |
 | Form chase / wallet digest notify | often primary for digest | configurable |
 | KPI cell checks & writes | **only** | gated off |
 | KPI auto schedule (+7 / +21) | **only** | off |
+| LLM assist inside KPI flows when configured | **only** | gated off |
 | Official verification push copy | drafted outside this console | — |
 | Weekly PR / frontend Lark pings | **only** | off |
 | PR `pr support` capture / backlink | audit writes KPI 2; backlink ping | capture may stay on |
 | Tech-support ticket bridge | either | either |
 | Operator console snapshots | either host’s disk | either host’s disk |
-
-### End-to-end path (one project)
-
-1. **Group** — project Telegram group exists; title aligned with Progress Tracker name; accounts joined.
-2. **Live** — Progress status → mainnet live (webhook, status watch, or ops `mark live`).
-3. **Collect** — Google Form to the group; logo best-effort into Progress; Apps Script upserts wallet row.
-4. **Chase** — missing required fields reminded on a daily cadence until complete or cap hit.
-5. **Audit** — from live date (calendar day): **+7** first check, **+21** final; held items only on the second pass. Manual `project diag` / `twitter` / `website` / `onchain` still available on the audit account.
-6. **Amplify** — `pr support` → KPI 2 / PR weekly table; Monday ping to brand/ops chat; backlink field → original TG group.
-7. **Support** — quote + `tech support` → Lark ticket; reply relays back to TG; optional learn → Agent KB.
 
 ### Shared inputs / outputs
 
@@ -296,17 +322,18 @@ Same git repo, two production Telethon **userbots** (`python -m bot.main`). Each
 | Progress Tracker | Source of truth for status, live time, KPI 1–7, coordination |
 | Wallet Bitable | Form field mirror; digest “new since last run” |
 | PR / frontend weekly tables | Derived weekly rows; ping targets, not the Progress source |
-| `knowledge/` (+ optional Lark wiki sync) | FAQ RAG corpus |
+| `knowledge/` (+ optional Lark wiki sync) | FAQ RAG corpus fed into the LLM path |
+| LLM API | Answer composition; optional assist in selected KPI checks |
 | `data/*` on each host | Counters, watch state, chase state, message JSONL — **not** in git |
 | Optional shared dir (e.g. PR capture events) | Cross-host event files when configured — **not** in git |
 
 ### Control plane notes
 
-- **Not** BotFather bots — Telethon personal sessions.
+- **Userbots**, not BotFather bots — each account is a Telethon personal session.
 - Folder scope, ignore lists, QA testers, and operator allowlists bound who the bots listen to and who may run ops keywords.
-- Monitor mode can queue group questions for the operator console instead of auto-replying.
-- Live webhook should be reachable (default path `/workflow/live`); status watch is the backup for missed automations.
-- Secrets: `.env`, `*.session`, real `config/*.yaml` stay on the hosts only.
+- Monitor mode can queue group questions for the operator console instead of calling the LLM reply path.
+- Live webhook is the preferred live trigger; status watch is the backup for missed automations.
+- Secrets: `.env`, `*.session`, real `config/*.yaml`, and LLM API keys stay on the hosts only.
 
 Detail for each capability is in **Features** below; deploy wiring is in [`deploy/README.md`](deploy/README.md).
 
