@@ -11,11 +11,11 @@
 
 ---
 
-## 2026-10-06 · README Architecture 改为双账号英文示意
+## 2026-10-06 · README Architecture 写细为双机拓扑
 
 ### 优化
-- Architecture 段改为全英文，按 Audit（Roy）/ Delivery（Josh）双机分工重画
-- 补上 KPI 门控、主链路（live → form → wallet → KPI → weekly/backlink）与 Lark Base 表
+- Architecture 段扩成拓扑图 + 分工表 + 端到端链路 + 数据落点 + 控制面说明（全英文）
+- 明确 KPI 仅审核号写入、+7/+21 调度、周报备稿/发送与 webhook/watch 备份关系
 
 ---
 
