@@ -125,7 +125,7 @@ End-to-end path when a project goes **Mainnet Live**:
 
 ### 7. KPI audit (audit account)
 
-Standard product checks on the Progress Tracker. Eligible rows: already mainnet-live, live date on or after `2026-09-01`. Official cadence is **Day 1** (live) → **Day 4** first check → **Day 7** recheck of held items only.
+Standard product checks on the Progress Tracker. Eligible rows: already mainnet-live, live date on or after `2026-09-01`. Auto cadence is **live day 0** → **+7 days** first check → **+21 days** final recheck of held items only (calendar days; audit host daily scan).
 
 Telegram replies in the project group use English labels (Twitter / News/PR / Website / …), not the word “KPI”.
 
@@ -138,7 +138,7 @@ Telegram replies in the project group use English labels (Twitter / News/PR / We
 | **Live hook (3 / 4 / 5)** | On live: website check plus product-available and independence copy when those cells are empty. Live hook does **not** call the X API. |
 | **News/PR (`pr support`)** | Quote a PR post in the project group and send `pr support` to overwrite the News/PR URL cell (and mark news verification passed). |
 
-Coordination outcomes: **Valid KPI** / **Held for rectification** (Day 4) / **KPI failed** (Day 7 only). Group copy for official pushes is drafted separately; this repo does not auto-post those verification messages from the delivery console.
+Coordination outcomes: **Valid KPI** / **Held for rectification** (first check) / **KPI failed** (final only). Group copy for official pushes is drafted separately; this repo does not auto-post those verification messages from the delivery console.
 
 ---
 
@@ -252,23 +252,41 @@ KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this
               ┌────────────┴─────────────────────────────────┴──────────────┐
               │              same process per host (bot.main)               │
               │                                                             │
-   ┌──────────┴───────────┐                                 ┌───────────────┴────────┐
-   │ Audit account        │                                 │ Delivery account       │
-   │ Telethon userbot     │                                 │ Telethon userbot       │
-   │                      │                                 │                        │
-   │ KPI checks ONLY      │                                 │ FAQ: gate → RAG → LLM  │
-   │ auto schedule        │                                 │   → reply bubbles      │
-   │   +7d first check    │                                 │ social / welcome       │
-   │   +21d final         │                                 │ folder auto-add        │
-   │ live-onboard → IM    │                                 │ live → Form → logo     │
-   │ weekly tables→Base   │                                 │ form chase             │
-   │ weekly ping → IM     │                                 │ wallet notify / digest │
-   │ PR backlink → TG     │                                 │ tech support → IM      │
-   │ optional LLM assist  │                                 │ live / deploy watch    │
-   │ ops reports on demand│                                 │ (KPI checks gated off) │
-   └──────────▲───────────┘                                 └──────────▲─────────────┘
-              │          Telethon userbot × 2 (same codebase)          │
-              └──────────────────────────┬─────────────────────────────┘
+   ┌──────────┴────────────────────┐                     ┌──────────────────┴──────────┐
+   │ Audit account                 │                     │ Delivery account            │
+   │ Telethon userbot              │                     │ Telethon userbot            │
+   │                               │                     │                             │
+   │ KPI checks + writes ONLY      │                     │ FAQ: gate → RAG → LLM       │
+   │                               │                     │   → reply bubbles           │
+   │ Schedule (calendar day):      │                     │ social / welcome            │
+   │   live = day 0                │                     │ folder auto-add             │
+   │   +7d  first check            │                     │ live → Form → logo          │
+   │   +21d final / recheck held   │                     │ form chase                  │
+   │   daily scan ~10:00 local tz  │                     │ wallet notify / digest      │
+   │                               │                     │ tech support → IM           │
+   │ Checks (write Progress):      │                     │ live / deploy watch         │
+   │   1 Twitter ops               │                     │ (KPI checks gated OFF)      │
+   │   2 News / PR link            │                     │                             │
+   │   3 Website                   │                     │                             │
+   │   4 Product available         │                     │                             │
+   │   5 Independence              │                     │                             │
+   │   6 On-chain interact         │                     │                             │
+   │   7 Continuity (auto if 1–6)  │                     │                             │
+   │                               │                     │                             │
+   │ Outcomes → coordination cell: │                     │                             │
+   │   Valid KPI                   │                     │                             │
+   │   Held for rectification      │                     │                             │
+   │   KPI failed (final only)     │                     │                             │
+   │                               │                     │                             │
+   │ Also: live-onboard → IM       │                     │                             │
+   │       weekly tables → Base    │                     │                             │
+   │       weekly ping → IM        │                     │                             │
+   │       PR backlink → TG        │                     │                             │
+   │       manual * diag commands  │                     │                             │
+   │       optional LLM assist     │                     │                             │
+   └──────────▲────────────────────┘                     └──────────▲──────────────────┘
+              │          Telethon userbot × 2 (same codebase)       │
+              └──────────────────────────┬──────────────────────────┘
                                          │ Projects-folder scope
                                          ▼
                               Telegram partner project groups
@@ -282,6 +300,8 @@ KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this
 ```
 
 Main path: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
+
+KPI path (audit host only): **mainnet live (day 0) → daily schedule scan → run due checks 1–6 (skip already-passed) → write cells → if 1–6 pass then auto 7 + coordination → +7 Held/Valid · +21 Valid/Failed on held items only**. Manual `project` / `twitter` / `website` / `onchain diag` can run the same writers on demand. Official verification-group copy is drafted outside this console.
 
 FAQ path (answering userbot): **group message → scope/trigger/rate-limit gate → RAG (`knowledge/`) → LLM compose → multi-bubble reply**, or stay silent / queue for human review on `NEEDS_HUMAN`.
 
