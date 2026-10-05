@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-06 · README Architecture 补上 Lark IM app
+
+### 优化
+- ASCII 图把 Lark Base 与 Lark IM app 分开：表格走 OpenAPI，群消息走 IM API
+- Shared inputs 表同步加上 Lark IM app 一行（不写个人应用名）
+
+---
+
 ## 2026-10-06 · README Architecture 改回 ASCII 双栏框图
 
 ### 优化

@@ -223,30 +223,31 @@ Scheduled **Lark** weekly pings are separate (section 8).
 Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
 
 ```text
-                         ┌──────────────────────────────────────┐
-                         │  Lark Base                           │
-                         │  Progress Tracker · Wallet table     │
-                         │  PR weekly · Frontend weekly         │
-                         │  Agent glossary optional             │
-                         └──────────────────▲───────────────────┘
-                                            │ OpenAPI
-              ┌─────────────────────────────┴─────────────────────────────┐
-              │                                                           │
-   ┌──────────┴───────────┐                                 ┌─────────────┴────────────┐
-   │ Audit account        │                                 │ Delivery account         │
-   │                      │                                 │                          │
-   │ KPI checks ONLY      │                                 │ FAQ: RAG → LLM → reply   │
-   │ auto schedule        │                                 │ welcome / folder         │
-   │   +7d / +21d         │                                 │ live → form → logo       │
-   │ live-onboard ping    │                                 │ form chase / wallet      │
-   │ PR + frontend weekly │                                 │ tech support             │
-   │   Sun 23:55 prepare  │                                 │ live / deploy watch      │
-   │   Mon 00:00 send     │                                 │ (KPI checks gated off)   │
-   │ PR backlink → TG     │                                 │                          │
-   │ optional LLM assist  │                                 │                          │
-   └──────────▲───────────┘                                 └─────────────▲────────────┘
-              │          Telethon userbot × 2 (same codebase)             │
-              └──────────────────────────┬────────────────────────────────┘
+              ┌─────────────────────────┐     ┌─────────────────────────┐
+              │  Lark Base              │     │  Lark IM app            │
+              │  Progress Tracker       │     │  group posts / @ /      │
+              │  Wallet table           │     │  Markdown / send-to /   │
+              │  PR · Frontend weekly   │     │  recall                 │
+              │  Agent glossary opt.    │     │                         │
+              └────────────▲────────────┘     └────────────▲────────────┘
+                           │ OpenAPI                       │ IM API
+              ┌────────────┴───────────────────────────────┴────────────┐
+              │                                                         │
+   ┌──────────┴───────────┐                                 ┌───────────┴──────────┐
+   │ Audit account        │                                 │ Delivery account     │
+   │                      │                                 │                      │
+   │ KPI checks ONLY      │                                 │ FAQ: RAG → LLM→reply │
+   │ auto schedule        │                                 │ welcome / folder     │
+   │   +7d / +21d         │                                 │ live → form → logo   │
+   │ live-onboard ping    │                                 │ form chase / wallet  │
+   │ PR + frontend weekly │                                 │ tech support         │
+   │   Sun 23:55 prepare  │                                 │ live / deploy watch  │
+   │   Mon 00:00 send     │                                 │ (KPI checks gated    │
+   │ PR backlink → TG     │                                 │  off)                │
+   │ optional LLM assist  │                                 │                      │
+   └──────────▲───────────┘                                 └──────────▲───────────┘
+              │          Telethon userbot × 2 (same codebase)          │
+              └──────────────────────────┬─────────────────────────────┘
                                          │
                               Telegram project folders / groups
                                          ▲
@@ -284,6 +285,7 @@ Main path: **group ready → mainnet live → form + logo + wallet → chase →
 | Progress Tracker | Source of truth for status, live time, KPI 1–7, coordination |
 | Wallet Bitable | Form field mirror; digest “new since last run” |
 | PR / frontend weekly tables | Derived weekly rows; ping targets, not the Progress source |
+| Lark IM app | Posts to Lark chats (weekly pings, digests, onboard, tech support, send-to / recall) |
 | `knowledge/` (+ optional Lark wiki sync) | FAQ RAG corpus fed into the LLM path |
 | LLM API | Answer composition; optional assist in selected KPI checks |
 | `data/*` on each host | Counters, watch state, chase state, message JSONL — **not** in git |
