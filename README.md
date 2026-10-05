@@ -220,34 +220,38 @@ Scheduled **Lark** weekly pings are separate (section 8).
 
 ## Architecture (high level)
 
-```text
-Telegram project folders
-        │
-        ├─ 交付号  FAQ / welcome / form / logo / wallet / tech support
-        └─ 审核号  KPI diag / live onboard ping / weekly Lark pings
-        │
-        ▼
- Telethon Userbot (bot.main)  ×  two production processes
-        │
-        ├─ FAQ RAG (knowledge/ + LLM)
-        ├─ Social / Welcome / Folder auto-add
-        ├─ Ops commands (stats / daily / weekly)
-        ├─ Learn → knowledge/learned (+ optional Lark Agent KB)
-        │
-        ├─ Delivery workflow
-        │     ├─ Lark webhook / status watch / mark-live
-        │     ├─ Send Google Form → partner group
-        │     ├─ Logo fill → Progress Tracker
-        │     ├─ Form chase (missing fields)
-        │     └─ Wallet table → digest
-        │
-        ├─ KPI audit → Progress Tracker cells
-        ├─ Weekly PR / frontend pings → Lark groups
-        │
-        └─ Disk snapshots → operator console (funnel / projects / review queue)
+Same repo, two production Telethon userbots (`bot.main`), separate session/config/systemd units.
 
-Lark Progress Tracker + wallet table
+```text
+                         ┌──────────────────────────────────────┐
+                         │  Lark Base                           │
+                         │  Progress Tracker · Wallet table     │
+                         │  PR weekly · Frontend weekly         │
+                         └──────────────────▲───────────────────┘
+                                            │ OpenAPI
+              ┌─────────────────────────────┴─────────────────────────────┐
+              │                                                           │
+   ┌──────────┴───────────┐                                 ┌─────────────┴────────────┐
+   │ Audit account (Roy)  │                                 │ Delivery account (Josh)  │
+   │                      │                                 │                          │
+   │ KPI checks ONLY      │                                 │ FAQ / welcome / folder   │
+   │ auto schedule        │                                 │ live → form → logo       │
+   │ live-onboard ping    │                                 │ form chase / wallet      │
+   │ PR + frontend weekly │                                 │ tech support             │
+   │ PR backlink → TG     │                                 │ live / deploy watch      │
+   │                      │                                 │ (KPI checks gated off)   │
+   └──────────▲───────────┘                                 └─────────────▲────────────┘
+              │  Telethon userbot × 2 (same codebase)                     │
+              └──────────────────────────┬────────────────────────────────┘
+                                         │
+                              Telegram project folders / groups
+                                         ▲
+                    Google Form → Apps Script → Wallet table
 ```
+
+Main path: **live detect → Google Form → logo → wallet → KPI schedule (+7 / +21 days) → weekly pings / PR backlink**.
+
+Disk snapshots feed the operator console (funnel / projects / human-review queue). Secrets and runtime state stay off git.
 
 ---
 
