@@ -220,45 +220,72 @@ Scheduled **Lark** weekly pings are separate (section 8).
 
 ## Architecture (high level)
 
-Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`. KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`); the delivery host may still run live watch, PR capture, and partner-facing flows.
+Same git repo, two production Telethon **userbots** (`python -m bot.main`) — personal Telegram accounts, **not** BotFather bots. Each host has its own systemd unit, `.env`, Telethon session, and `config/*.yaml`.
+
+There are **four** integration planes:
+
+| Plane | What it is | Typical traffic |
+|-------|------------|-----------------|
+| Telegram userbots | Two Telethon personal sessions | Partner-group chat, forms, diag, chase |
+| Lark Base | Bitable tables via OpenAPI | Progress / wallet / weekly rows, KPI cells |
+| Lark IM app | Lark application posting to chats via IM API | Weekly pings, digests, onboard, tech tickets, `send to` / `recall` |
+| LLM + RAG | DeepSeek / OpenAI-compatible + `knowledge/` | FAQ answers; optional assist inside KPI flows |
+
+KPI **checks and result writes** run only on the audit host (`kpi_checks_on_this_host()`). The delivery host may still run live watch, PR capture, and partner-facing flows.
 
 ```text
-              ┌─────────────────────────┐     ┌─────────────────────────┐
-              │  Lark Base              │     │  Lark IM app            │
-              │  Progress Tracker       │     │  group posts / @ /      │
-              │  Wallet table           │     │  Markdown / send-to /   │
-              │  PR · Frontend weekly   │     │  recall                 │
-              │  Agent glossary opt.    │     │                         │
-              └────────────▲────────────┘     └────────────▲────────────┘
-                           │ OpenAPI                       │ IM API
-              ┌────────────┴───────────────────────────────┴────────────┐
-              │                                                         │
-   ┌──────────┴───────────┐                                 ┌───────────┴──────────┐
-   │ Audit account        │                                 │ Delivery account     │
-   │                      │                                 │                      │
-   │ KPI checks ONLY      │                                 │ FAQ: RAG → LLM→reply │
-   │ auto schedule        │                                 │ welcome / folder     │
-   │   +7d / +21d         │                                 │ live → form → logo   │
-   │ live-onboard ping    │                                 │ form chase / wallet  │
-   │ PR + frontend weekly │                                 │ tech support         │
-   │   Sun 23:55 prepare  │                                 │ live / deploy watch  │
-   │   Mon 00:00 send     │                                 │ (KPI checks gated    │
-   │ PR backlink → TG     │                                 │  off)                │
-   │ optional LLM assist  │                                 │                      │
-   └──────────▲───────────┘                                 └──────────▲───────────┘
+              ┌─────────────────────────┐     ┌──────────────────────────────┐
+              │  Lark Base (OpenAPI)    │     │  Lark IM app (IM API)        │
+              │                         │     │                              │
+              │  Progress Tracker       │     │  Outbound to Lark chats:     │
+              │   · status / live time  │     │   · PR weekly ping           │
+              │   · KPI 1–7 + coord     │     │   · frontend weekly ping     │
+              │  Wallet table           │     │   · wallet address digest    │
+              │  PR weekly table        │     │   · live-onboard note        │
+              │  Frontend weekly table  │     │   · tech-support ticket      │
+              │  Agent glossary opt.    │     │   · verify / form notices    │
+              │                         │     │  Operator DM commands:       │
+              │                         │     │   · send to <name>           │
+              │                         │     │   · recall                   │
+              └────────────▲────────────┘     └──────────────▲───────────────┘
+                           │                                 │
+              ┌────────────┴─────────────────────────────────┴──────────────┐
+              │              same process per host (bot.main)               │
+              │                                                             │
+   ┌──────────┴───────────┐                                 ┌───────────────┴────────┐
+   │ Audit account        │                                 │ Delivery account       │
+   │ Telethon userbot     │                                 │ Telethon userbot       │
+   │                      │                                 │                        │
+   │ KPI checks ONLY      │                                 │ FAQ: gate → RAG → LLM  │
+   │ auto schedule        │                                 │   → reply bubbles      │
+   │   +7d first check    │                                 │ social / welcome       │
+   │   +21d final         │                                 │ folder auto-add        │
+   │ live-onboard → IM    │                                 │ live → Form → logo     │
+   │ weekly tables→Base   │                                 │ form chase             │
+   │ weekly ping → IM     │                                 │ wallet notify / digest │
+   │ PR backlink → TG     │                                 │ tech support → IM      │
+   │ optional LLM assist  │                                 │ live / deploy watch    │
+   │ ops reports on demand│                                 │ (KPI checks gated off) │
+   └──────────▲───────────┘                                 └──────────▲─────────────┘
               │          Telethon userbot × 2 (same codebase)          │
               └──────────────────────────┬─────────────────────────────┘
-                                         │
-                              Telegram project folders / groups
+                                         │ Projects-folder scope
+                                         ▼
+                              Telegram partner project groups
                                          ▲
-              LLM API (DeepSeek / OpenAI-compatible) · knowledge/ RAG
-                                         ▲
-                    Google Form → Apps Script → Wallet table
-                                         │
-                         Live webhook + status-watch backup
+                    ┌────────────────────┴────────────────────┐
+                    │ LLM API · knowledge/ RAG                │
+                    │ Google Form → Apps Script → Wallet      │
+                    │ Live webhook + status-watch backup      │
+                    │ Operator console (disk snapshots)       │
+                    └─────────────────────────────────────────┘
 ```
 
 Main path: **group ready → mainnet live → form + logo + wallet → chase → KPI (+7d / +21d) → PR weekly + backlink → tech support / learn**.
+
+FAQ path (answering userbot): **group message → scope/trigger/rate-limit gate → RAG (`knowledge/`) → LLM compose → multi-bubble reply**, or stay silent / queue for human review on `NEEDS_HUMAN`.
+
+Lark IM path (examples): **audit weekly prepare/send → IM app posts to configured Lark chat**; **tech support quote in TG → IM app opens Lark ticket → reply bridges back to TG**; **operator DM to IM app `send to` / `recall`**.
 
 ### Who does what
 
@@ -272,32 +299,36 @@ Main path: **group ready → mainnet live → form + logo + wallet → chase →
 | KPI cell checks & writes | **only** | gated off |
 | KPI auto schedule (+7 / +21) | **only** | off |
 | LLM assist inside KPI flows when configured | **only** | gated off |
+| Lark IM weekly / onboard / digest posts | **primary** | optional / config |
 | Official verification push copy | drafted outside this console | — |
 | Weekly PR / frontend Lark pings | **only** | off |
 | PR `pr support` capture / backlink | audit writes KPI 2; backlink ping | capture may stay on |
-| Tech-support ticket bridge | either | either |
+| Tech-support ticket bridge (TG ↔ Lark IM) | either | either |
 | Operator console snapshots | either host’s disk | either host’s disk |
 
 ### Shared inputs / outputs
 
-| Store | Role |
-|-------|------|
+| Store / service | Role |
+|-----------------|------|
 | Progress Tracker | Source of truth for status, live time, KPI 1–7, coordination |
 | Wallet Bitable | Form field mirror; digest “new since last run” |
 | PR / frontend weekly tables | Derived weekly rows; ping targets, not the Progress source |
-| Lark IM app | Posts to Lark chats (weekly pings, digests, onboard, tech support, send-to / recall) |
+| Lark IM app | Posts to Lark chats and accepts operator DM commands (`send to`, `recall`) |
 | `knowledge/` (+ optional Lark wiki sync) | FAQ RAG corpus fed into the LLM path |
 | LLM API | Answer composition; optional assist in selected KPI checks |
+| Live webhook + status watch | Detect mainnet-live transitions (webhook preferred) |
+| Google Form + Apps Script | Partner submissions → Wallet table |
 | `data/*` on each host | Counters, watch state, chase state, message JSONL — **not** in git |
 | Optional shared dir (e.g. PR capture events) | Cross-host event files when configured — **not** in git |
 
 ### Control plane notes
 
 - **Userbots**, not BotFather bots — each account is a Telethon personal session.
+- **Lark Base ≠ Lark IM app** — tables use OpenAPI/Bitable; chat posts and DM commands use the IM app.
 - Folder scope, ignore lists, QA testers, and operator allowlists bound who the bots listen to and who may run ops keywords.
 - Monitor mode can queue group questions for the operator console instead of calling the LLM reply path.
 - Live webhook is the preferred live trigger; status watch is the backup for missed automations.
-- Secrets: `.env`, `*.session`, real `config/*.yaml`, and LLM API keys stay on the hosts only.
+- Secrets: `.env`, `*.session`, real `config/*.yaml`, and LLM / Lark app credentials stay on the hosts only.
 
 Detail for each capability is in **Features** below; deploy wiring is in [`deploy/README.md`](deploy/README.md).
 

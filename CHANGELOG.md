@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-06 · README Architecture 写细四平面
+
+### 优化
+- Architecture 开头补 Telegram / Lark Base / Lark IM / LLM+RAG 四平面表
+- ASCII 图展开 Base 字段、IM 出站与 DM 命令、双账号职责；图下补 FAQ 与 Lark IM 短链路
+
+---
+
 ## 2026-10-06 · README Architecture 补上 Lark IM app
 
 ### 优化
