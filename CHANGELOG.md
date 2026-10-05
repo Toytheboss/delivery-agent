@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-10-06 · README Architecture 去掉人名
+
+### 优化
+- Architecture 中的账号只写 Audit / Delivery account，不再带个人称呼
+
+---
+
 ## 2026-10-06 · README Architecture 写细为双机拓扑
 
 ### 优化

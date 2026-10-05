@@ -239,7 +239,7 @@ Same git repo, two production Telethon **userbots** (`python -m bot.main`). Each
                 ┌─────────────────────────────┴─────────────────────────────┐
                 │                                                           │
      ┌──────────┴──────────────┐                             ┌──────────────┴─────────────┐
-     │ Audit account (Roy)     │                             │ Delivery account (Josh)    │
+     │ Audit account           │                             │ Delivery account          │
      │ e.g. /opt/botchain-…    │                             │ e.g. /opt/delivery-agent   │
      │                         │                             │                            │
      │ • KPI diag / schedule   │                             │ • FAQ RAG + LLM            │
@@ -266,8 +266,8 @@ Same git repo, two production Telethon **userbots** (`python -m bot.main`). Each
 
 ### Who does what
 
-| Concern | Audit (Roy) | Delivery (Josh) |
-|---------|-------------|-----------------|
+| Concern | Audit account | Delivery account |
+|---------|---------------|------------------|
 | Partner FAQ / welcome / folder filing | optional | primary |
 | Live → Google Form → logo fill | may assist | primary |
 | Form chase / wallet digest notify | often primary for digest | configurable |
