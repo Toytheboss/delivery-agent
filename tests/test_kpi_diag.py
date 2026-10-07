@@ -75,6 +75,25 @@ def test_private_diag_matches_one_normalized_project_name():
     assert len(two) == 2
 
 
+def test_diag_name_keeps_space_as_a_different_project():
+    class Config:
+        workflow_project_name_field = "项目名称 Project Name"
+
+    records = [
+        {"record_id": "spaced", "fields": {"项目名称 Project Name": "Agent Vault"}},
+        {"record_id": "glued", "fields": {"项目名称 Project Name": "AgentVault"}},
+    ]
+    cfg = Config()
+    glued = match_projects_by_name(cfg, records, "AgentVault")
+    assert [item[0] for item in glued] == ["glued"]
+    spaced = match_projects_by_name(cfg, records, "Agent Vault")
+    assert [item[0] for item in spaced] == ["spaced"]
+    folded = match_projects_by_name(cfg, records, "agentvault")
+    assert [item[0] for item in folded] == ["glued"]
+    only_spaced = match_projects_by_name(cfg, records[:1], "AgentVault")
+    assert [item[0] for item in only_spaced] == ["spaced"]
+
+
 def test_kpi6_no_contract_copy():
     verdict = evaluate_kpi6(contract="", txs=[], window_start=None)
     assert verdict["passed"] is False

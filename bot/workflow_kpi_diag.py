@@ -94,16 +94,27 @@ def is_kpi_diag_command(text: str) -> bool:
     return parse_kpi_diag_command(text) is not None
 
 
+def _display_name_key(text: str) -> str:
+    """Case-insensitive key that still treats spaces as part of the name."""
+    return re.sub(r"\s+", " ", str(text or "").strip()).casefold()
+
+
 def match_projects_by_name(
     config: Any,
     records: list[dict[str, Any]],
     query: str,
 ) -> list[tuple[str, str, dict[str, Any]]]:
-    """Exact normalized project-name hits. Zero or several means do not run."""
-    key = _normalize_name(query)
-    if not key:
+    """Prefer space-preserving name hits, then punctuation-stripped ones.
+
+    ``AgentVault`` and ``Agent Vault`` are different projects. Zero or several
+    remaining hits means do not run.
+    """
+    exact_key = _display_name_key(query)
+    norm_key = _normalize_name(query)
+    if not exact_key and not norm_key:
         return []
-    hits: list[tuple[str, str, dict[str, Any]]] = []
+    exact_hits: list[tuple[str, str, dict[str, Any]]] = []
+    norm_hits: list[tuple[str, str, dict[str, Any]]] = []
     name_field = str(getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name")
     for record in records:
         record_id = str(record.get("record_id") or "")
@@ -111,10 +122,13 @@ def match_projects_by_name(
         project_name = _field_text(fields, name_field)
         if not record_id or not project_name:
             continue
-        if _normalize_name(project_name) != key:
-            continue
-        hits.append((record_id, project_name, fields))
-    return hits
+        if exact_key and _display_name_key(project_name) == exact_key:
+            exact_hits.append((record_id, project_name, fields))
+        if norm_key and _normalize_name(project_name) == norm_key:
+            norm_hits.append((record_id, project_name, fields))
+    if exact_hits:
+        return exact_hits
+    return norm_hits
 
 
 def _cell_passed(fields: dict[str, Any], result_field: str) -> bool:

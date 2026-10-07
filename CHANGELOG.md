@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-10-07 · project diag 能分开 AgentVault 和 Agent Vault
+
+### 修复
+- 带项目名的 diag 先按空格原样匹配，不再把 `AgentVault` 和 `Agent Vault` 当成同一条
+
+---
+
 ## 2026-10-07 · Mark live 能对上 Bot Oracle 这类噪声词项目名
 
 ### 修复
