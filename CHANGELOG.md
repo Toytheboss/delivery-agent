@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-10-07 · KPI 读钱包表时分开 AgentVault 和 Agent Vault
+
+### 修复
+- 查推特/合约时两条只差空格不再互相撞车，避免当成未提交
+
+---
+
 ## 2026-10-07 · project diag 能分开 AgentVault 和 Agent Vault
 
 ### 修复

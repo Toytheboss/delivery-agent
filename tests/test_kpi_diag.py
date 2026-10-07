@@ -168,6 +168,44 @@ def test_kpi6_counts_successful_to_contract_skips_create():
     assert "old" in verdict["copy"]
 
 
+def test_find_wallet_row_keeps_space_as_a_different_project(monkeypatch):
+    from types import SimpleNamespace
+
+    from bot.workflow_kpi_write import find_wallet_row
+
+    rows = [
+        {
+            "record_id": "spaced",
+            "fields": {
+                "Project name": "Agent Vault",
+                "Mainnet Contract Addresss": "0x" + ("11" * 20),
+            },
+        },
+        {
+            "record_id": "glued",
+            "fields": {
+                "Project name": "AgentVault",
+                "Mainnet Contract Addresss": "0x" + ("22" * 20),
+            },
+        },
+    ]
+    monkeypatch.setattr(
+        "bot.workflow_kpi_write.list_records",
+        lambda *_args, **_kwargs: rows,
+    )
+    cfg = SimpleNamespace(
+        workflow_base_app_token="app",
+        workflow_wallet_table_id="tbl",
+        workflow_wallet_name_field="Project name",
+    )
+    glued = find_wallet_row("tok", cfg, "AgentVault")
+    assert glued is not None
+    assert glued[0] == "glued"
+    spaced = find_wallet_row("tok", cfg, "Agent Vault")
+    assert spaced is not None
+    assert spaced[0] == "spaced"
+
+
 def test_wallet_row_keeps_both_contracts():
     from bot.workflow_kpi_write import wallet_contracts
 

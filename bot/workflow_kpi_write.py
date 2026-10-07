@@ -157,6 +157,11 @@ def extract_contracts(value: Any) -> list[str]:
     return out
 
 
+def _display_name_key(text: str) -> str:
+    """Case-insensitive key that still treats spaces as part of the name."""
+    return re.sub(r"\s+", " ", str(text or "").strip()).casefold()
+
+
 def find_wallet_row(
     token: str,
     config: Any,
@@ -170,18 +175,24 @@ def find_wallet_row(
     if not app_token or not wallet_table:
         return None
     rows = list_records(token, app_token, wallet_table)
-    key = _normalize_name(project_name)
-    hits: list[tuple[str, dict[str, Any]]] = []
+    exact_key = _display_name_key(project_name)
+    norm_key = _normalize_name(project_name)
+    exact_hits: list[tuple[str, dict[str, Any]]] = []
+    norm_hits: list[tuple[str, dict[str, Any]]] = []
     for row in rows:
         rid = str(row.get("record_id") or "")
         fields = row.get("fields") or {}
         if not rid:
             continue
-        if _normalize_name(_field_text(fields, name_field)) != key:
-            continue
-        hits.append((rid, fields))
-    if len(hits) == 1:
-        return hits[0]
+        wallet_name = _field_text(fields, name_field)
+        if exact_key and _display_name_key(wallet_name) == exact_key:
+            exact_hits.append((rid, fields))
+        if norm_key and _normalize_name(wallet_name) == norm_key:
+            norm_hits.append((rid, fields))
+    if len(exact_hits) == 1:
+        return exact_hits[0]
+    if len(norm_hits) == 1:
+        return norm_hits[0]
     return None
 
 
