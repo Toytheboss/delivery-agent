@@ -35,7 +35,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 _SKIP_NOTIFY_SOURCES = frozenset({"startup_catchup", "join_catchup"})
-_RETRY_NOTIFY = frozenset({"need_roy", "scheduled", "sending"})
+_INFLIGHT_NOTIFY = frozenset({"sending", "waiting_form"})
+_RETRY_NOTIFY = frozenset({"need_roy", "scheduled", "sending", "waiting_form"})
+FORM_HANDOFF_WAIT_SECONDS = 53
+FORM_HANDOFF_POLL_SECONDS = 1.0
 
 
 def parse_bd_person(fields: dict[str, Any], field_name: str) -> tuple[str, str]:
@@ -452,6 +455,7 @@ def _mark_onboard_form_sent(
         if chat_title:
             entry["chat_title"] = chat_title
         entry["form"] = "sent"
+        entry["form_sent"] = True
         entry["form_by"] = by
 
 
@@ -677,6 +681,85 @@ def _form_ok(status: str) -> bool:
     return status in {"sent", "already_sent", "already_sent_chat"}
 
 
+def resolve_form_sent(
+    config: Any,
+    *,
+    rid: str,
+    chat_id: int | None,
+    entry: dict[str, Any] | None = None,
+    known: bool = False,
+) -> bool:
+    """True if this row already had a form send, including the peer account."""
+    if known:
+        return True
+    if entry is not None and (
+        bool(entry.get("form_sent")) or _form_ok(str(entry.get("form") or ""))
+    ):
+        return True
+    return form_already_sent(config, rid=rid, chat_id=chat_id)
+
+
+def should_wait_for_form_handoff(
+    *,
+    form_sent: bool,
+    form_status: str,
+    claim_status: str,
+    roy_in: bool,
+    josh_in: bool,
+) -> bool:
+    """Wait when the other account is still supposed to post the bubbles."""
+    if form_sent or _form_ok(form_status):
+        return False
+    if form_status == "deferred":
+        return True
+    if str(claim_status or "") in {"assigned", "sending", "reserved"}:
+        return True
+    return bool(roy_in and josh_in)
+
+
+def apply_form_sent(entry: dict[str, Any], form_sent: bool) -> bool:
+    """Persist form_sent without ever downgrading True to False."""
+    current = bool(entry.get("form_sent")) or _form_ok(str(entry.get("form") or ""))
+    final = bool(form_sent) or current
+    if final:
+        entry["form_sent"] = True
+        if not _form_ok(str(entry.get("form") or "")):
+            entry["form"] = "already_sent"
+    else:
+        entry["form_sent"] = False
+    return final
+
+
+def _claim_status(config: Any, rid: str) -> str:
+    from bot.workflow_form_claim import claim_path_for, form_send_status
+
+    try:
+        return form_send_status(claim_path_for(config), rid)
+    except Exception:
+        logger.exception("live-onboard: claim status read failed for %s", rid)
+        return ""
+
+
+async def wait_until_form_sent(
+    config: Any,
+    *,
+    rid: str,
+    chat_id: int | None,
+) -> bool:
+    """Poll shared form state until the speaker finishes, or the handoff window lapses."""
+    deadline = time.monotonic() + float(FORM_HANDOFF_WAIT_SECONDS)
+    path = _state_path(config)
+    while True:
+        with _locked_state(path) as data:
+            entry = _project_entry(data, rid)
+            if resolve_form_sent(config, rid=rid, chat_id=chat_id, entry=entry):
+                apply_form_sent(entry, True)
+                return True
+        if time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(float(FORM_HANDOFF_POLL_SECONDS))
+
+
 async def _notify_lark(config: Any, entry: dict[str, Any], fields: dict[str, Any]) -> str:
     if not sends_lark_notify(config):
         return "skipped_not_roy"
@@ -750,7 +833,7 @@ async def _finalize_notify(
         entry = _project_entry(data, rid)
         if entry.get("notify") == "sent":
             return
-        if entry.get("notify") == "sending":
+        if str(entry.get("notify") or "") in _INFLIGHT_NOTIFY:
             return
         chat_id_raw = entry.get("chat_id")
         try:
@@ -763,8 +846,8 @@ async def _finalize_notify(
         if chat_id is not None:
             stored_roy = stored_roy or chat_id in cache_roy
             stored_josh = stored_josh or chat_id in cache_josh
-        form_sent = _form_ok(str(entry.get("form") or "")) or form_already_sent(
-            config, rid=rid, chat_id=chat_id
+        form_sent = resolve_form_sent(
+            config, rid=rid, chat_id=chat_id, entry=entry
         )
         snapshot = {
             "chat_id": chat_id,
@@ -773,6 +856,7 @@ async def _finalize_notify(
             "stored_roy": stored_roy,
             "stored_josh": stored_josh,
             "form_sent": form_sent,
+            "form_status": str(entry.get("form") or ""),
             "cache_roy": chat_id in cache_roy if chat_id is not None else False,
             "cache_josh": chat_id in cache_josh if chat_id is not None else False,
         }
@@ -807,9 +891,16 @@ async def _finalize_notify(
                 entry["notify"] = "scheduled"
                 entry["roy_in"] = roy_in
                 entry["josh_in"] = josh_in
-                if snapshot["form_sent"]:
-                    entry["form"] = "already_sent"
-                    entry["form_sent"] = True
+                apply_form_sent(
+                    entry,
+                    resolve_form_sent(
+                        config,
+                        rid=rid,
+                        chat_id=snapshot["chat_id"],
+                        entry=entry,
+                        known=bool(snapshot["form_sent"]),
+                    ),
+                )
                 if snapshot["chat_title"]:
                     entry["chat_title"] = snapshot["chat_title"]
         logger.info(
@@ -817,18 +908,46 @@ async def _finalize_notify(
             rid,
         )
         return
+    with _locked_state(path) as data:
+        entry = _project_entry(data, rid)
+        form_sent = resolve_form_sent(
+            config,
+            rid=rid,
+            chat_id=snapshot["chat_id"],
+            entry=entry,
+            known=bool(snapshot["form_sent"]),
+        )
+        form_status = str(entry.get("form") or snapshot["form_status"] or "")
+    claim_status = _claim_status(config, rid)
+    if should_wait_for_form_handoff(
+        form_sent=form_sent,
+        form_status=form_status,
+        claim_status=claim_status,
+        roy_in=roy_in,
+        josh_in=josh_in,
+    ):
+        with _locked_state(path) as data:
+            entry = _project_entry(data, rid)
+            if entry.get("notify") == "sent":
+                return
+            if str(entry.get("notify") or "") in _INFLIGHT_NOTIFY:
+                return
+            entry["notify"] = "waiting_form"
+        logger.info("live-onboard wait for form send before notify %s", rid)
+        form_sent = await wait_until_form_sent(
+            config, rid=rid, chat_id=snapshot["chat_id"]
+        )
     case = classify_case(roy_in, josh_in)
-    form_sent = bool(snapshot["form_sent"])
     with _locked_state(path) as data:
         entry = _project_entry(data, rid)
         if entry.get("notify") == "sent":
             return
+        if entry.get("notify") == "sending":
+            return
         entry["roy_in"] = roy_in
         entry["josh_in"] = josh_in
         entry["case"] = case
-        entry["form_sent"] = form_sent
-        if form_sent and not _form_ok(str(entry.get("form") or "")):
-            entry["form"] = "already_sent"
+        form_sent = apply_form_sent(entry, form_sent)
         if snapshot["chat_title"]:
             entry["chat_title"] = snapshot["chat_title"]
         entry["notify"] = "sending"
@@ -950,7 +1069,9 @@ async def run_live_onboard(
             )
             entry["form_by"] = key
             entry["form_sent"] = True
-        elif not _form_ok(str(entry.get("form") or "")):
+        elif not resolve_form_sent(
+            config, rid=rid, chat_id=chat_id, entry=entry
+        ):
             entry["form"] = form_status
             entry["form_sent"] = False
         case = classify_case(roy_in, josh_in)

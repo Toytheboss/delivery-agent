@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 from types import SimpleNamespace
 
@@ -7,13 +8,17 @@ from bot.workflow_form_dispatch import match_project_to_chat
 from bot.workflow_live_onboard import (
     _RETRY_NOTIFY,
     _SKIP_NOTIFY_SOURCES,
+    apply_form_sent,
     build_onboard_message,
     classify_case,
     form_already_sent,
     load_peer_folder_titles,
     merge_membership,
     parse_bd_person,
+    resolve_form_sent,
     sends_lark_notify,
+    should_wait_for_form_handoff,
+    wait_until_form_sent,
 )
 
 
@@ -189,7 +194,111 @@ def test_retry_covers_stuck_scheduled():
     assert "scheduled" in _RETRY_NOTIFY
     assert "need_roy" in _RETRY_NOTIFY
     assert "sending" in _RETRY_NOTIFY
+    assert "waiting_form" in _RETRY_NOTIFY
     assert "sent" not in _RETRY_NOTIFY
+
+
+def test_wait_for_deferred_or_both_in_group():
+    assert should_wait_for_form_handoff(
+        form_sent=False,
+        form_status="deferred",
+        claim_status="",
+        roy_in=True,
+        josh_in=True,
+    )
+    assert should_wait_for_form_handoff(
+        form_sent=False,
+        form_status="not_in_group",
+        claim_status="assigned",
+        roy_in=True,
+        josh_in=False,
+    )
+    assert should_wait_for_form_handoff(
+        form_sent=False,
+        form_status="",
+        claim_status="",
+        roy_in=True,
+        josh_in=True,
+    )
+    assert not should_wait_for_form_handoff(
+        form_sent=True,
+        form_status="deferred",
+        claim_status="assigned",
+        roy_in=True,
+        josh_in=True,
+    )
+    assert not should_wait_for_form_handoff(
+        form_sent=False,
+        form_status="no_group",
+        claim_status="",
+        roy_in=False,
+        josh_in=False,
+    )
+
+
+def test_apply_form_sent_never_downgrades():
+    entry = {"form": "sent", "form_sent": True}
+    assert apply_form_sent(entry, False) is True
+    assert entry["form_sent"] is True
+    assert entry["form"] == "sent"
+
+    blank = {"form": "deferred", "form_sent": False}
+    assert apply_form_sent(blank, True) is True
+    assert blank["form_sent"] is True
+    assert blank["form"] == "already_sent"
+
+
+def test_resolve_form_sent_keeps_known_true(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "bot.workflow_live_onboard._DATA_ROOTS",
+        (tmp_path,),
+    )
+    cfg = SimpleNamespace(
+        workflow_state_file=str(tmp_path / "missing-dispatch.json"),
+        workflow_form_chase_state_file=str(tmp_path / "missing-chase.json"),
+    )
+    assert (
+        resolve_form_sent(
+            cfg, rid="rec-x", chat_id=None, entry={"form": "deferred"}, known=True
+        )
+        is True
+    )
+    assert (
+        resolve_form_sent(
+            cfg, rid="rec-x", chat_id=None, entry={"form": "deferred"}
+        )
+        is False
+    )
+
+
+def test_wait_until_form_sent_sees_peer_write(tmp_path, monkeypatch):
+    import bot.workflow_live_onboard as onboard
+
+    monkeypatch.setattr(onboard, "FORM_HANDOFF_WAIT_SECONDS", 2)
+    monkeypatch.setattr(onboard, "FORM_HANDOFF_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(onboard, "_DATA_ROOTS", (tmp_path,))
+    state = tmp_path / "live_onboard_state.json"
+    monkeypatch.setattr(onboard, "_state_path", lambda _cfg: state)
+    dispatch = tmp_path / "form_dispatch_state.json"
+    dispatch.write_text(json.dumps({"sent_record_ids": []}), encoding="utf-8")
+    cfg = SimpleNamespace(
+        workflow_state_file=str(dispatch),
+        workflow_form_chase_state_file=str(tmp_path / "missing-chase.json"),
+        workflow_live_onboard_state_file=str(state),
+    )
+
+    async def _run() -> bool:
+        async def _mark() -> None:
+            await asyncio.sleep(0.03)
+            dispatch.write_text(
+                json.dumps({"sent_record_ids": ["rec-wait"]}),
+                encoding="utf-8",
+            )
+
+        asyncio.create_task(_mark())
+        return await wait_until_form_sent(cfg, rid="rec-wait", chat_id=None)
+
+    assert asyncio.run(_run()) is True
 
 
 def test_peer_folder_cache_matches_delivery_account_group(tmp_path, monkeypatch):

@@ -293,6 +293,18 @@ def release_form_send(path: Path, record_id: str, owner: str, *, now: float | No
         entry["updated_at"] = now
 
 
+def form_send_status(path: Path, record_id: str) -> str:
+    """Return claim status for a live row, or '' if none."""
+    rid = str(record_id or "").strip()
+    if not rid or not path.exists():
+        return ""
+    with _locked(path) as data:
+        entry = (data.get("records") or {}).get(rid)
+        if not isinstance(entry, dict):
+            return ""
+        return str(entry.get("status") or "")
+
+
 def pending_form_sends(path: Path, owner: str) -> list[dict[str, Any]]:
     owner = "josh" if owner == "josh" else "roy"
     if not path.exists():

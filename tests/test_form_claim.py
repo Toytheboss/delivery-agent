@@ -4,12 +4,31 @@ from bot.workflow_form_claim import (
     assign_form_sender,
     begin_form_send,
     finish_form_send,
+    form_send_status,
     live_form_speaker,
     pending_form_sends,
     reclaim_expired_form_sends,
     release_form_send,
     reserve_form_send,
 )
+
+
+def test_form_send_status_reads_claim(tmp_path: Path):
+    path = tmp_path / "claim.json"
+    assert form_send_status(path, "rec1") == ""
+    reserve_form_send(
+        path,
+        "rec1",
+        chat_id=-100,
+        project_name="BotVault",
+        requested_by="roy",
+        now=1_000,
+    )
+    assert form_send_status(path, "rec1") == "reserved"
+    assign_form_sender(path, "rec1", "josh", now=1_002)
+    assert form_send_status(path, "rec1") == "assigned"
+    finish_form_send(path, "rec1", "josh", now=1_020)
+    assert form_send_status(path, "rec1") == "sent"
 
 
 def test_speaker_is_the_other_bot_when_both_are_in_the_group():
