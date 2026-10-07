@@ -11,6 +11,13 @@
 
 ---
 
+## 2026-10-07 · Mark live 能对上 Bot Oracle 这类噪声词项目名
+
+### 修复
+- 群名只剩 bot / oracle / botchain 等噪声词时不再直接跳过，Bot Oracle 可对上 `BOT Oracle <> BOTChain`
+
+---
+
 ## 2026-10-07 · 上线核对等表单发完再推飞书
 
 ### 修复

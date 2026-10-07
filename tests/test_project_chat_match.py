@@ -69,6 +69,20 @@ def test_lumora_oracle_paren():
     assert cid == 8, reason
 
 
+def test_bot_oracle_noise_words_still_match():
+    titles = {
+        8: "Botchain <> Lumora ( Oracle)",
+        140: "BOT Oracle <> BOTChain",
+        141: "BOT Chain",
+    }
+    cid, reason = match_project_to_chat("Bot Oracle", titles)
+    assert cid == 140, reason
+    cid, reason = match_project_to_chat("Lumora", titles)
+    assert cid == 8, reason
+    cid, _reason = match_project_to_chat("Bot Oracle", {141: "BOT Chain"})
+    assert cid is None
+
+
 def test_depin_reg_abbrev():
     cid, reason = match_project_to_chat("DePIN Device Registry", TITLES)
     assert cid == 9, reason

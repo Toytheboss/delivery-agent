@@ -316,8 +316,6 @@ def find_project_chat_matches(
         title_norm = _normalize_name(title_text)
         title_tokens = _meaningful_match_tokens(title_text)
         title_core = "".join(title_tokens)
-        if not title_tokens and not title_core:
-            continue
         score = -1
         reason = ""
 
@@ -325,10 +323,17 @@ def find_project_chat_matches(
             score, reason = 100, "exact title match"
         elif _title_has_project_phrase(project, title_text):
             score, reason = 98, "phrase match"
-        elif project_norm and _contains_as_name(project_norm, title_norm, title_tokens):
-            score, reason = 96, "title contains project"
-        elif title_norm and _contains_as_name(title_norm, project_norm, project_tokens):
-            score, reason = 94, "project contains title"
+        if not title_tokens and not title_core:
+            # Group titles that are only noise words (bot / oracle / botchain)
+            # still match when the project phrase is in the title.
+            if score >= 0:
+                candidates.append((score, int(chat_id), title_text, reason))
+            continue
+        if score < 0:
+            if project_norm and _contains_as_name(project_norm, title_norm, title_tokens):
+                score, reason = 96, "title contains project"
+            elif title_norm and _contains_as_name(title_norm, project_norm, project_tokens):
+                score, reason = 94, "project contains title"
 
         if project_core and project_core == title_core:
             score, reason = max(score, 95), "core title match"
