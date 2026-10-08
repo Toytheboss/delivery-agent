@@ -230,6 +230,8 @@ def format_result_post(
     onchain_line: str,
     fixes: list[str],
     final: bool = False,
+    final_trigger: str = "calendar",
+    first_check_date: str = "",
 ) -> str:
     """English result post. The first check never says KPI failed."""
     name = (bd_name or "").strip() or "BD"
@@ -261,15 +263,26 @@ def format_result_post(
         f"**Project:** `{project}`",
         f"**BD:** {name}",
         f"**Live date:** `{live_date}` Day `1`",
-        (
-            f"**Second check:** `{check_date}` · final"
-            if final
-            else f"**First check:** `{check_date}` · {result}"
-        ),
-        "",
-        f"**Result:** {result}",
-        "",
     ]
+    if final:
+        first_day = (first_check_date or "").strip()
+        if first_day:
+            lines.append(f"**First check:** `{first_day}` · {_HELD}")
+        trigger = (final_trigger or "calendar").strip().lower()
+        if trigger == "submit":
+            second_label = "final (triggered by submit)"
+        else:
+            second_label = "Day `21` recheck"
+        lines.append(f"**Second check:** `{check_date}` · {second_label}")
+    else:
+        lines.append(f"**First check:** `{check_date}` · {result}")
+    lines.extend(
+        [
+            "",
+            f"**Result:** {result}",
+            "",
+        ]
+    )
     if failed:
         lines.append("**Failed**")
         lines.extend(f"- **{label}:** {text}" for _n, label, _ok, text in failed)
@@ -283,15 +296,18 @@ def format_result_post(
     elif final:
         del fixes
         lines.append(
-            "**Summary:** Any held item still failed, so this is a final fail "
-            "under the new standard. There is no further rectification."
+            "**Summary:** Held items still failed on final review, so this is "
+            "`KPI failed` under the new standard. There is no further fix window."
         )
     else:
         del fixes
         lines.append(
             "**Summary:** This is held for rectification under the new standard. "
-            "Quote this message and submit the missing items within `2` weeks. "
-            "The second review is final."
+            "Quote this message to submit X profile, mainnet contract, and/or "
+            "PR tweet. Any successful submit triggers a **final** recheck now: "
+            "pass → `Valid KPI`; fail → `KPI failed` (no further chance). "
+            "Website issues must be fixed on the live site — a URL paste here "
+            "does not count. No submit → final review on live day `21`."
         )
     return "\n".join(lines).rstrip() + "\n"
 
@@ -385,6 +401,8 @@ def audit_first_check(
     *,
     project_name: str,
     final: bool = False,
+    final_trigger: str = "calendar",
+    first_check_date: str = "",
 ) -> dict[str, Any]:
     """Re-check items that are not already passed, then write coordination.
 
@@ -570,12 +588,20 @@ def audit_first_check(
         onchain_line=onchain_line,
         fixes=fixes,
         final=final,
+        final_trigger=final_trigger,
+        first_check_date=first_check_date,
     )
     return {
         "project": name,
         "record_id": rid,
         "valid": twitter_ok and pr_ok and website_ok and onchain_ok,
         "markdown": markdown,
+        "result": (
+            _VALID
+            if (twitter_ok and pr_ok and website_ok and onchain_ok)
+            else (_FAILED if final else _HELD)
+        ),
+        "final": final,
     }
 
 
@@ -662,3 +688,124 @@ def push_pending(
             }
         )
     return done
+
+
+def _coord_value(fields: dict[str, Any]) -> str:
+    return field_result(fields, _COORD_FIELD) or _field_text(fields, _COORD_FIELD)
+
+
+def run_early_final_after_submit(
+    config: AppConfig,
+    *,
+    project_name: str,
+    record_id: str = "",
+) -> dict[str, Any]:
+    """If the project is still held, run a final recheck immediately and post it.
+
+    Triggered after BD successfully pastes X profile / contract / PR under the
+    held result post. Pass → Valid KPI. Fail → KPI failed with no further chance.
+    Calendar day-21 second check is then skipped via schedule state.
+    """
+    import os
+
+    from bot.lark_bitable import get_tenant_access_token, list_records
+    from bot.workflow_form_dispatch import _normalize_name
+    from bot.workflow_kpi_schedule import first_check_date_for, mark_rounds_done
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    out: dict[str, Any] = {
+        "ran": False,
+        "skipped": True,
+        "reason": "",
+        "result": "",
+        "project": (project_name or "").strip(),
+        "record_id": (record_id or "").strip(),
+    }
+    if not kpi_checks_on_this_host():
+        out["reason"] = "non_roy_host"
+        return out
+    name = out["project"]
+    if not name:
+        out["reason"] = "no_project"
+        return out
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        out["reason"] = "missing_lark_credentials"
+        return out
+    try:
+        token = get_tenant_access_token(app_id, app_secret)
+        rows = list_records(
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
+        )
+    except Exception:
+        logger.exception("early final: list progress failed project=%r", name)
+        out["reason"] = "list_failed"
+        return out
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
+    )
+    key = _normalize_name(name)
+    hit: dict[str, Any] | None = None
+    rid = out["record_id"]
+    for row in rows:
+        row_id = str(row.get("record_id") or "").strip()
+        fields = row.get("fields") or {}
+        if not isinstance(fields, dict):
+            continue
+        if rid and row_id == rid:
+            hit = row
+            break
+        if _normalize_name(_field_text(fields, name_field)) == key:
+            hit = row
+            if not rid:
+                rid = row_id
+            break
+    if not hit:
+        out["reason"] = "progress_missing"
+        return out
+    rid = str(hit.get("record_id") or rid).strip()
+    fields = hit.get("fields") or {}
+    out["record_id"] = rid
+    coord = _coord_value(fields if isinstance(fields, dict) else {})
+    if coord != _HELD_COORD:
+        out["reason"] = f"not_held:{coord or 'empty'}"
+        return out
+    try:
+        audited = audit_first_check(
+            token,
+            config,
+            rid,
+            fields if isinstance(fields, dict) else {},
+            project_name=name,
+            final=True,
+            final_trigger="submit",
+            first_check_date=first_check_date_for(rid),
+        )
+        send_result_post(token, config, audited["markdown"])
+        mark_rounds_done(rid, rounds=("first", "second"))
+        remember_posted(rid)
+    except Exception:
+        logger.exception("early final failed project=%r record=%s", name, rid)
+        out["reason"] = "audit_or_send_failed"
+        return out
+    out["ran"] = True
+    out["skipped"] = False
+    out["reason"] = "ok"
+    out["result"] = str(audited.get("result") or "")
+    out["valid"] = bool(audited.get("valid"))
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_early_final",
+            "kpi result push",
+            project_name=name,
+            record_id=rid,
+            text=f"补交触发终审：{out['result']}",
+        )
+    except Exception:
+        logger.exception("early final log failed project=%r", name)
+    return out

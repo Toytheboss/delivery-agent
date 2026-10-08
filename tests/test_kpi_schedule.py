@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from bot.workflow_kpi_schedule import due_round, select_due
+from bot.workflow_kpi_schedule import due_round, mark_rounds_done, select_due
 
 SH = ZoneInfo("Asia/Shanghai")
 
@@ -48,3 +48,23 @@ def test_september_and_already_posted_projects_stay_off_the_calendar():
     )
     assert [item["project"] for item in due] == ["Newone"]
     assert due[0]["round"] == "first"
+
+
+def test_mark_rounds_done_skips_calendar_second(tmp_path):
+    path = tmp_path / "kpi_schedule_state.json"
+    mark_rounds_done("rec-held", rounds=("first", "second"), day=date(2026, 10, 10), path=path)
+    live = datetime(2026, 10, 1, tzinfo=SH)
+    assert due_round(live, date(2026, 10, 22), first_done=True, second_done=True) is None
+    records = [_row("rec-held", "HeldProj", "2026-10-01")]
+    due = select_due(
+        records,
+        today=date(2026, 10, 22),
+        state={
+            "first": {"rec-held": "2026-10-08"},
+            "second": {"rec-held": "2026-10-10"},
+        },
+        status_field="项目状态",
+        name_field="项目名称 Project Name",
+        already_posted=set(),
+    )
+    assert due == []

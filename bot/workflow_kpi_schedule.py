@@ -86,6 +86,36 @@ def _save_state(path: Path, state: dict[str, Any]) -> None:
     )
 
 
+def mark_rounds_done(
+    record_id: str,
+    *,
+    rounds: tuple[str, ...] = ("first", "second"),
+    day: date | None = None,
+    path: Path | None = None,
+) -> None:
+    """Record that automatic rounds are finished so the daily scan skips them."""
+    rid = (record_id or "").strip()
+    if not rid:
+        return
+    stamp = (day or now_shanghai().date()).isoformat()
+    file = path or _STATE_FILE
+    state = _load_state(file)
+    for round_name in rounds:
+        key = str(round_name or "").strip()
+        if key not in {"first", "second"}:
+            continue
+        state.setdefault(key, {})[rid] = stamp
+    _save_state(file, state)
+
+
+def first_check_date_for(record_id: str, path: Path | None = None) -> str:
+    rid = (record_id or "").strip()
+    if not rid:
+        return ""
+    state = _load_state(path or _STATE_FILE)
+    return str((state.get("first") or {}).get(rid) or "").strip()
+
+
 def select_due(
     records: list[dict[str, Any]],
     *,
@@ -173,13 +203,16 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
                 {},
             )
             try:
+                is_second = item["round"] == "second"
                 audited = audit_first_check(
                     token,
                     config,
                     rid,
                     fields,
                     project_name=item["project"],
-                    final=item["round"] == "second",
+                    final=is_second,
+                    final_trigger="calendar",
+                    first_check_date=first_check_date_for(rid, path) if is_second else "",
                 )
                 send_result_post(token, config, audited["markdown"])
             except Exception:

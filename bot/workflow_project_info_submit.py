@@ -427,6 +427,38 @@ def maybe_handle_project_info_submit(
             logger.exception("project info submit failed to log PR event")
 
     reply = format_submit_reply(project=project, wallet=wallet, pr=pr)
+    wrote = wallet.get("action") in {"created", "updated"} or (
+        pr.get("ok") and pr.get("action") == "updated"
+    )
+    early: dict[str, Any] = {"ran": False}
+    if wrote:
+        try:
+            from bot.workflow_kpi_result_push import run_early_final_after_submit
+
+            progress_rid = ""
+            for rid in pr.get("record_ids") or []:
+                if str(rid).strip():
+                    progress_rid = str(rid).strip()
+                    break
+            early = run_early_final_after_submit(
+                config, project_name=project, record_id=progress_rid
+            )
+            if early.get("ran"):
+                reply = (
+                    f"{reply}\nFinal review posted: {early.get('result') or 'done'}."
+                )
+            elif early.get("reason") and not str(early.get("reason") or "").startswith(
+                "not_held"
+            ):
+                logger.info(
+                    "project info submit early final skipped project=%r reason=%s",
+                    project,
+                    early.get("reason"),
+                )
+        except Exception:
+            logger.exception(
+                "project info submit early final crashed project=%r", project
+            )
     _reply(token, message_id, reply)
     try:
         from bot.workflow_events import log_delivery
@@ -446,4 +478,5 @@ def maybe_handle_project_info_submit(
         "project": project,
         "wallet": wallet.get("action"),
         "pr": pr.get("action") if pr.get("ok") else pr.get("reason"),
+        "early_final": early.get("reason") if early else "",
     }

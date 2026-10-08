@@ -75,13 +75,14 @@ def test_held_post_omits_kpi7_and_lists_only_the_failed_fix():
     )
     assert text.startswith('<at user_id="ou_bd">Daniel</at>')
     assert "**Result:** Held for rectification" in text
-    assert "KPI failed" not in text
+    assert "**Result:** KPI failed" not in text
     assert "KPI 7" not in text
     assert text.index("**Failed**") < text.index("**Passed**")
     assert "**KPI 2 PR:** Not submitted" in text
-    assert "Quote this message and submit the missing items within `2` weeks." in text
+    assert "Any successful submit triggers a **final** recheck now" in text
+    assert "live day `21`" in text
     assert "share the Twitter PR link" not in text
-    assert "The second review is final." in text
+    assert "within `2` weeks" not in text
     assert "Day `1`" in text
 
 
@@ -128,13 +129,39 @@ def test_final_fail_post_is_not_a_hold():
         onchain_line="`3` wallets, `5` txs. Meets the wallet and on-chain requirement.",
         fixes=[],
         final=True,
+        final_trigger="calendar",
+        first_check_date="2026-10-08",
     )
-    assert "**Second check:** `2026-10-22` · final" in text
+    assert "**First check:** `2026-10-08` · Held for rectification" in text
+    assert "**Second check:** `2026-10-22` · Day `21` recheck" in text
     assert "**Result:** KPI failed" in text
     assert "KPI 7" not in text
-    assert "Held for rectification" not in text
-    assert "no further rectification" in text
-    assert "First check" not in text
+    assert "no further fix window" in text
+
+
+def test_submit_triggered_final_label():
+    text = format_result_post(
+        project="example",
+        bd_name="Ada",
+        bd_open_id="ou_ada",
+        live_date="2026-10-01",
+        check_date="2026-10-10",
+        twitter_ok=True,
+        twitter_line="`5` original posts. Meets the Twitter requirement.",
+        pr_ok=True,
+        pr_line="https://x.com/example/status/1",
+        website_ok=False,
+        website_line="Result: failed",
+        onchain_ok=True,
+        onchain_line="`3` wallets, `5` txs. Meets the wallet and on-chain requirement.",
+        fixes=[],
+        final=True,
+        final_trigger="submit",
+        first_check_date="2026-10-08",
+    )
+    assert "**Second check:** `2026-10-10` · final (triggered by submit)" in text
+    assert "**Result:** KPI failed" in text
+    assert "`KPI failed` under the new standard" in text
 
 
 def test_pending_rows_skip_posted_and_non_september():
