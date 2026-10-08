@@ -7,6 +7,7 @@ Without --send this only prints pending projects. It does not audit or post.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -18,7 +19,10 @@ from dotenv import load_dotenv  # noqa: E402
 
 from bot.config_loader import load_config  # noqa: E402
 from bot.lark_bitable import get_tenant_access_token, list_records  # noqa: E402
-from bot.workflow_kpi_result_push import push_pending  # noqa: E402
+from bot.workflow_kpi_result_push import (  # noqa: E402
+    push_pending,
+    run_early_final_after_submit,
+)
 
 
 def main() -> None:
@@ -28,11 +32,27 @@ def main() -> None:
         action="store_true",
         help="Audit pending September projects and post the English result",
     )
+    parser.add_argument(
+        "--early-final",
+        action="store_true",
+        help="Run submit-triggered final review for --project and print JSON",
+    )
     parser.add_argument("--project", default="", help="Limit to one project name")
+    parser.add_argument("--record-id", default="", help="Progress-table record id")
     args = parser.parse_args()
 
     load_dotenv(ROOT / ".env")
     config = load_config()
+    if args.early_final:
+        if not str(args.project or "").strip():
+            raise SystemExit("need --project")
+        out = run_early_final_after_submit(
+            config,
+            project_name=str(args.project).strip(),
+            record_id=str(args.record_id or "").strip(),
+        )
+        print(json.dumps(out, ensure_ascii=False, default=str))
+        return
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
     if not app_id or not app_secret:

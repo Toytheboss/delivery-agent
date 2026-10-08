@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -74,6 +75,7 @@ _KPI6_RESULT = "交互验证结果"
 _KPI6_COPY = "KPI 6 - 链上交互验证"
 _POSTED_RE = re.compile(r"posted (\d+) original", re.I)
 _WALLETS_RE = re.compile(r"(\d+) unique wallets, (\d+) successful", re.I)
+_ROY_BOT_ROOT = Path("/opt/botchain-qa-tg-bot")
 
 
 def posted_ids(path: Path | None = None) -> set[str]:
@@ -690,6 +692,95 @@ def push_pending(
     return done
 
 
+def roy_early_final_cmd(
+    project_name: str,
+    record_id: str = "",
+    *,
+    root: Path | None = None,
+) -> list[str] | None:
+    """Command that runs early final on Roy号. None if that tree is missing."""
+    dest = Path(root) if root is not None else _ROY_BOT_ROOT
+    python = dest / ".venv" / "bin" / "python"
+    script = dest / "scripts" / "run_kpi_result_push.py"
+    if not python.is_file() or not script.is_file():
+        return None
+    cmd = [
+        str(python),
+        str(script),
+        "--early-final",
+        "--project",
+        project_name,
+    ]
+    if record_id:
+        cmd.extend(["--record-id", record_id])
+    return cmd
+
+
+def forward_early_final_to_roy(
+    project_name: str,
+    record_id: str = "",
+    *,
+    root: Path | None = None,
+    runner: Any = None,
+) -> dict[str, Any]:
+    """Josh webhook writes the wallet row; Roy号 must run the KPI final."""
+    empty: dict[str, Any] = {
+        "ran": False,
+        "skipped": True,
+        "reason": "non_roy_host",
+        "result": "",
+        "project": (project_name or "").strip(),
+        "record_id": (record_id or "").strip(),
+    }
+    cmd = roy_early_final_cmd(project_name, record_id, root=root)
+    if not cmd:
+        return empty
+    run = runner or subprocess.run
+    try:
+        proc = run(
+            cmd,
+            cwd=str(Path(root) if root is not None else _ROY_BOT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=180,
+            check=False,
+        )
+    except Exception:
+        logger.exception(
+            "early final forward to Roy号 failed project=%r", project_name
+        )
+        empty["reason"] = "forward_failed"
+        return empty
+    stdout = str(getattr(proc, "stdout", "") or "")
+    stderr = str(getattr(proc, "stderr", "") or "")
+    if int(getattr(proc, "returncode", 1) or 0) != 0:
+        logger.error(
+            "early final forward rc=%s project=%r stderr=%s",
+            getattr(proc, "returncode", None),
+            project_name,
+            stderr[-800:],
+        )
+        empty["reason"] = "forward_failed"
+        return empty
+    line = ""
+    for raw in reversed(stdout.splitlines()):
+        if raw.strip().startswith("{"):
+            line = raw.strip()
+            break
+    if not line:
+        empty["reason"] = "forward_failed"
+        return empty
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        empty["reason"] = "forward_failed"
+        return empty
+    if not isinstance(payload, dict):
+        empty["reason"] = "forward_failed"
+        return empty
+    return payload
+
+
 def _coord_value(fields: dict[str, Any]) -> str:
     return field_result(fields, _COORD_FIELD) or _field_text(fields, _COORD_FIELD)
 
@@ -721,12 +812,15 @@ def run_early_final_after_submit(
         "project": (project_name or "").strip(),
         "record_id": (record_id or "").strip(),
     }
-    if not kpi_checks_on_this_host():
-        out["reason"] = "non_roy_host"
-        return out
     name = out["project"]
     if not name:
         out["reason"] = "no_project"
+        return out
+    if not kpi_checks_on_this_host():
+        forwarded = forward_early_final_to_roy(name, out["record_id"])
+        if forwarded.get("reason") != "non_roy_host" or forwarded.get("ran"):
+            return forwarded
+        out["reason"] = "non_roy_host"
         return out
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()

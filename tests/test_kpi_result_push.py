@@ -286,3 +286,51 @@ def test_audit_skips_passed_items_and_writes_held_coord(monkeypatch):
     assert "Held for rectification" in built["markdown"]
     assert "`7` original posts." in built["markdown"]
     assert "KPI 7" not in built["markdown"]
+
+
+def test_roy_early_final_cmd_needs_tree(tmp_path):
+    from bot.workflow_kpi_result_push import roy_early_final_cmd
+
+    assert roy_early_final_cmd("Spinner", root=tmp_path) is None
+    python = tmp_path / ".venv" / "bin" / "python"
+    script = tmp_path / "scripts" / "run_kpi_result_push.py"
+    python.parent.mkdir(parents=True)
+    script.parent.mkdir(parents=True)
+    python.write_text("")
+    script.write_text("")
+    cmd = roy_early_final_cmd("Spinner", "rec1", root=tmp_path)
+    assert cmd == [
+        str(python),
+        str(script),
+        "--early-final",
+        "--project",
+        "Spinner",
+        "--record-id",
+        "rec1",
+    ]
+
+
+def test_forward_early_final_parses_roy_json(tmp_path):
+    from types import SimpleNamespace
+
+    from bot.workflow_kpi_result_push import forward_early_final_to_roy
+
+    python = tmp_path / ".venv" / "bin" / "python"
+    script = tmp_path / "scripts" / "run_kpi_result_push.py"
+    python.parent.mkdir(parents=True)
+    script.parent.mkdir(parents=True)
+    python.write_text("")
+    script.write_text("")
+
+    def fake_run(*_a, **_k):
+        return SimpleNamespace(
+            returncode=0,
+            stdout='noise\n{"ran": true, "skipped": false, "reason": "ok", "result": "Valid KPI"}\n',
+            stderr="",
+        )
+
+    out = forward_early_final_to_roy(
+        "Spinner", "rec1", root=tmp_path, runner=fake_run
+    )
+    assert out["ran"] is True
+    assert out["result"] == "Valid KPI"
