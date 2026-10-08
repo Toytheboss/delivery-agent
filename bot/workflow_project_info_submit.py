@@ -37,6 +37,10 @@ _CONTRACT_FIELD = "Mainnet Contract Addresss"
 _TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
 _DEFAULT_PROGRESS_NAME = "项目名称 Project Name"
 _DEFAULT_KPI2_FIELD = "KPI 2 - PR 新闻链接验证"
+_FINAL_FAIL_COORDS = frozenset({"不通过", "KPI未通过"})
+_RESULT_KPI_FAILED_RE = re.compile(
+    r"(?im)^\s*Result:\s*KPI failed\b"
+)
 
 
 def is_project_info_submit(text: str) -> bool:
@@ -280,6 +284,51 @@ def write_pr_link(
     }
 
 
+def quoted_result_is_kpi_failed(text: str) -> bool:
+    """True when the quoted result post already shows Result: KPI failed."""
+    plain = (text or "").replace("*", "").replace("`", "")
+    return bool(_RESULT_KPI_FAILED_RE.search(plain))
+
+
+def progress_coord_is_final_failed(
+    token: str,
+    config: Any,
+    *,
+    project_name: str,
+    quoted: str = "",
+) -> bool:
+    """True when the KPI-era progress row is already final-failed.
+
+    Progress ``KPI 统筹`` is the source of truth. If no row is found, fall
+    back to the quoted result post text.
+    """
+    from bot.workflow_kpi_result_push import pick_early_final_progress_row
+
+    app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()
+    table_id = str(getattr(config, "workflow_progress_table_id", "") or "").strip()
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or _DEFAULT_PROGRESS_NAME
+    ).strip()
+    if app_token and table_id and (project_name or "").strip():
+        try:
+            rows = list_records(token, app_token, table_id)
+            hit = pick_early_final_progress_row(
+                rows,
+                project_name=project_name,
+                name_field=name_field,
+            )
+        except Exception:
+            logger.exception(
+                "project info submit final-fail lookup failed project=%r",
+                project_name,
+            )
+            hit = None
+        if hit:
+            coord = _field_text(hit.get("fields") or {}, "KPI 统筹").strip()
+            return coord in _FINAL_FAIL_COORDS
+    return quoted_result_is_kpi_failed(quoted)
+
+
 def format_submit_reply(
     *,
     project: str,
@@ -291,6 +340,12 @@ def format_submit_reply(
         return "Reply to the project result post and paste the link."
     if reason == "no_project":
         return "Quoted message has no **Project:** line, so nothing was written."
+    if reason == "final_failed":
+        return (
+            "Second check already failed for this project. "
+            "No further submit or review.\n"
+            "该项目二审已不通过，无法再次补交或审核。"
+        )
     if reason == "empty_payload":
         return (
             "Paste the X profile, the mainnet contract (0x plus 40 hex digits), "
@@ -401,6 +456,20 @@ def maybe_handle_project_info_submit(
     if not project:
         _reply(token, message_id, format_submit_reply(project="", reason="no_project"))
         return {"ok": True, "project_info_submit": "no_project"}
+
+    if progress_coord_is_final_failed(
+        token, config, project_name=project, quoted=quoted
+    ):
+        reply = format_submit_reply(project=project, reason="final_failed")
+        _reply(token, message_id, reply)
+        logger.info(
+            "project info submit rejected final-failed project=%r", project
+        )
+        return {
+            "ok": True,
+            "project_info_submit": "final_failed",
+            "project": project,
+        }
 
     wallet: dict[str, Any] = {"ok": True, "action": "skipped"}
     pr: dict[str, Any] = {"ok": True, "action": "skipped"}

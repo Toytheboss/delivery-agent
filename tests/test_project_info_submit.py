@@ -9,7 +9,9 @@ from bot.workflow_project_info_submit import (
     maybe_handle_project_info_submit,
     message_text,
     parse_submit_payload,
+    progress_coord_is_final_failed,
     project_name_from_quoted,
+    quoted_result_is_kpi_failed,
     upsert_wallet_row,
     write_pr_link,
 )
@@ -230,6 +232,132 @@ def test_reply_copy():
         pr={"ok": False, "reason": "progress_missing"},
     )
     assert "no progress row" in held
+    failed = format_submit_reply(project="Relay", reason="final_failed")
+    assert "Second check already failed for this project." in failed
+    assert "该项目二审已不通过，无法再次补交或审核。" in failed
+
+
+def test_quoted_result_detects_kpi_failed():
+    assert quoted_result_is_kpi_failed(
+        "**Result:** `KPI failed`\n**Summary:** done"
+    )
+    assert quoted_result_is_kpi_failed("Result: KPI failed")
+    assert not quoted_result_is_kpi_failed("Result: Valid KPI")
+    assert not quoted_result_is_kpi_failed("Result: Held for rectification")
+
+
+def test_progress_coord_final_failed_uses_table():
+    config = SimpleNamespace(
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+    )
+    rows = [
+        {
+            "record_id": "rec1",
+            "fields": {
+                "项目名称 Project Name": "Relay",
+                "主网上线时间": "2026-09-10T00:00:00+08:00",
+                "KPI 统筹": "不通过",
+            },
+        }
+    ]
+    with patch(
+        "bot.workflow_project_info_submit.list_records",
+        return_value=rows,
+    ):
+        assert progress_coord_is_final_failed(
+            "tok", config, project_name="Relay", quoted=""
+        )
+
+
+def test_progress_coord_held_is_not_final_failed():
+    config = SimpleNamespace(
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+    )
+    rows = [
+        {
+            "record_id": "rec1",
+            "fields": {
+                "项目名称 Project Name": "Relay",
+                "主网上线时间": "2026-09-10T00:00:00+08:00",
+                "KPI 统筹": "暂扣整改",
+            },
+        }
+    ]
+    with patch(
+        "bot.workflow_project_info_submit.list_records",
+        return_value=rows,
+    ):
+        assert not progress_coord_is_final_failed(
+            "tok",
+            config,
+            project_name="Relay",
+            quoted="Result: KPI failed",
+        )
+
+
+def test_submit_rejects_final_failed_without_write():
+    config = SimpleNamespace(
+        raw={},
+        workflow_live_onboard_lark_chat_id="oc_verify",
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+    )
+    event = {
+        "sender": {"sender_type": "user"},
+        "message": {
+            "chat_id": "oc_verify",
+            "message_id": "om_1",
+            "parent_id": "om_parent",
+            "message_type": "text",
+            "content": '{"text":"https://x.com/foo"}',
+        },
+    }
+    parent = {
+        "message_type": "post",
+        "body": {
+            "content": (
+                '{"content":[[{"tag":"md","text":'
+                '"**Project:** `Relay`\\n**Result:** KPI failed"}]]}'
+            )
+        },
+    }
+    replies: list[str] = []
+    with patch(
+        "bot.workflow_kpi_write.kpi_checks_on_this_host", lambda: True
+    ), patch(
+        "bot.workflow_project_info_submit.claim_message",
+        return_value=True,
+    ), patch(
+        "bot.workflow_project_info_submit._lark_creds",
+        return_value=("id", "secret"),
+    ), patch(
+        "bot.workflow_project_info_submit.get_tenant_access_token",
+        return_value="tok",
+    ), patch(
+        "bot.workflow_lark_recall.get_message",
+        return_value=parent,
+    ), patch(
+        "bot.workflow_project_info_submit.progress_coord_is_final_failed",
+        return_value=True,
+    ), patch(
+        "bot.workflow_project_info_submit.upsert_wallet_row"
+    ) as wallet, patch(
+        "bot.workflow_project_info_submit.write_pr_link"
+    ) as pr, patch(
+        "bot.workflow_project_info_submit._reply",
+        side_effect=lambda _t, _m, text: replies.append(text),
+    ):
+        out = maybe_handle_project_info_submit(config, event)
+    assert out and out.get("project_info_submit") == "final_failed"
+    assert wallet.call_count == 0
+    assert pr.call_count == 0
+    assert "Second check already failed" in replies[0]
+    assert "该项目二审已不通过" in replies[0]
 
 
 def test_submit_ignored_on_delivery_host():
