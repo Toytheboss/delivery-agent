@@ -94,11 +94,15 @@ def extract_urls(text: str) -> list[str]:
 
 
 def pick_site_url(
-    fields: dict[str, Any], live_link_field: str, project_link_field: str
+    fields: dict[str, Any], live_link_field: str, project_link_field: str = ""
 ) -> str | None:
+    """Official site URL from the live-link field only.
+
+    ``project_link_field`` is kept for call-site compatibility but ignored —
+    KPI / logo must not fall back to「项目链接」.
+    """
+    del project_link_field  # explicit: never use project link as the site
     urls = extract_urls(link_str(fields.get(live_link_field)))
-    if not urls:
-        urls = extract_urls(link_str(fields.get(project_link_field)))
     return urls[0] if urls else None
 
 
