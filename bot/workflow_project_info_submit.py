@@ -2,8 +2,9 @@
 
 A profile URL (no ``/status/``) and a 40-hex contract go to the wallet table.
 A tweet URL goes to the progress-tracker KPI 2 field and is not treated as
-the official profile. A missing wallet row is created only when a profile
-or a contract was sent.
+the official profile. Other http(s) URLs go to progress「已上线链接」so KPI 3
+probes the site the BD just pasted. A missing wallet row is created only when
+a profile or a contract was sent.
 """
 
 from __future__ import annotations
@@ -37,9 +38,23 @@ _CONTRACT_FIELD = "Mainnet Contract Addresss"
 _TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
 _DEFAULT_PROGRESS_NAME = "项目名称 Project Name"
 _DEFAULT_KPI2_FIELD = "KPI 2 - PR 新闻链接验证"
+_DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗"
 _FINAL_FAIL_COORDS = frozenset({"不通过", "KPI未通过"})
 _RESULT_KPI_FAILED_RE = re.compile(
     r"(?im)^\s*Result:\s*KPI failed\b"
+)
+_SITE_URL_BLOCK_HOSTS = frozenset(
+    {
+        "t.me",
+        "telegram.me",
+        "telegram.org",
+        "docs.google.com",
+        "drive.google.com",
+        "linkedin.com",
+        "www.linkedin.com",
+        "scan.botchain.ai",
+        "logo.clearbit.com",
+    }
 )
 
 
@@ -91,10 +106,38 @@ def _submitted_contracts(text: str) -> list[str]:
     return out
 
 
-def parse_submit_payload(text: str) -> tuple[str, str, str]:
-    """Return (contract, twitter_profile_url, pr_url). Empty when missing.
+def _is_site_submit_url(url: str) -> bool:
+    """True for an official-site URL (not X / TG / explorer / drive)."""
+    from urllib.parse import urlparse
+
+    raw = (url or "").strip()
+    if not raw:
+        return False
+    if is_tweet_url(raw):
+        return False
+    if twitter_handle_from_url(raw):
+        return False
+    try:
+        host = (urlparse(raw).netloc or "").lower()
+    except ValueError:
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    if not host or host in _SITE_URL_BLOCK_HOSTS:
+        return False
+    if host.endswith(".google.com"):
+        return False
+    path = (urlparse(raw).path or "").lower()
+    if host == "scan.botchain.ai" or "/tx/" in path or "/address/" in path:
+        return False
+    return True
+
+
+def parse_submit_payload(text: str) -> tuple[str, str, str, str]:
+    """Return (contract, twitter_profile_url, pr_url, site_url). Empty when missing.
 
     ``/status/`` URLs are PR links. A profile URL has no status segment.
+    Other http(s) URLs are treated as the official site for「已上线链接」.
     Bare ``@name`` mentions are ignored. A transaction hash (64 hex digits)
     is not a contract. Several 40-hex addresses are kept, one per line.
     """
@@ -102,15 +145,20 @@ def parse_submit_payload(text: str) -> tuple[str, str, str]:
     contract = "\n".join(_submitted_contracts(blob))
     twitter = ""
     pr = ""
+    site = ""
     for url in collect_urls_from_text(blob):
         if is_tweet_url(url):
             if not pr:
                 pr = _display_pr_url(url)
             continue
         handle = twitter_handle_from_url(url)
-        if handle and handle.lower() not in _RESERVED_HANDLES and not twitter:
-            twitter = f"https://x.com/{handle}"
-    return contract, twitter, pr
+        if handle and handle.lower() not in _RESERVED_HANDLES:
+            if not twitter:
+                twitter = f"https://x.com/{handle}"
+            continue
+        if not site and _is_site_submit_url(url):
+            site = url
+    return contract, twitter, pr, site
 
 
 def _expected_chat_id(config: Any) -> str:
@@ -284,6 +332,76 @@ def write_pr_link(
     }
 
 
+def write_live_site_url(
+    token: str,
+    config: Any,
+    *,
+    project_name: str,
+    site_url: str,
+    rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Write a pasted official site into progress「已上线链接」before KPI 3."""
+    from bot.workflow_kpi_write import is_kpi_era_live, kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return {
+            "ok": True,
+            "action": "skipped_non_roy",
+            "project": project_name,
+            "record_ids": [],
+        }
+    site = (site_url or "").strip()
+    if not site:
+        return {"ok": True, "action": "skipped", "project": project_name, "record_ids": []}
+    app_token = str(getattr(config, "workflow_base_app_token", "") or "").strip()
+    table_id = str(getattr(config, "workflow_progress_table_id", "") or "").strip()
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or _DEFAULT_PROGRESS_NAME
+    ).strip()
+    live_field = str(
+        getattr(config, "workflow_live_link_field", "") or _DEFAULT_LIVE_LINK_FIELD
+    ).strip()
+    if not app_token or not table_id or not live_field:
+        return {
+            "ok": False,
+            "reason": "progress_table_not_configured",
+            "project": project_name,
+        }
+    if rows is None:
+        rows = list_records(token, app_token, table_id)
+    hits = [
+        (rid, fields)
+        for rid, fields in _name_hits(rows, project_name, name_field)
+        if is_kpi_era_live(fields)
+    ]
+    if not hits:
+        return {
+            "ok": False,
+            "reason": "progress_missing",
+            "project": project_name,
+            "site": site,
+        }
+    updated: list[str] = []
+    payload = {live_field: {"link": site, "text": site}}
+    for rid, _row_fields in hits:
+        update_record(token, app_token, table_id, rid, payload)
+        updated.append(rid)
+    logger.info(
+        "project info submit wrote live site project=%r url=%s n=%s",
+        project_name,
+        site[:80],
+        len(updated),
+    )
+    return {
+        "ok": True,
+        "action": "updated",
+        "project": project_name,
+        "record_ids": updated,
+        "site": site,
+        "duplicate_rows": len(updated) > 1,
+    }
+
+
 def quoted_result_is_kpi_failed(text: str) -> bool:
     """True when the quoted result post already shows Result: KPI failed."""
     plain = (text or "").replace("*", "").replace("`", "")
@@ -334,6 +452,7 @@ def format_submit_reply(
     project: str,
     wallet: dict[str, Any] | None = None,
     pr: dict[str, Any] | None = None,
+    site: dict[str, Any] | None = None,
     reason: str = "",
 ) -> str:
     if reason == "no_quote":
@@ -349,12 +468,13 @@ def format_submit_reply(
     if reason == "empty_payload":
         return (
             "Paste the X profile, the mainnet contract (0x plus 40 hex digits), "
-            "or the PR tweet link."
+            "the official website URL, or the PR tweet link."
         )
     name = project or "this project"
     lines: list[str] = []
     wallet = wallet or {}
     pr = pr or {}
+    site = site or {}
     if wallet.get("action") == "created":
         lines.append(f"Created info form row for {name}.")
     elif wallet.get("action") == "updated":
@@ -372,6 +492,15 @@ def format_submit_reply(
             f"Note: {count} info form rows share this name. "
             "Merge them later so KPI checks can match."
         )
+    if site.get("ok") and site.get("action") == "updated":
+        lines.append(f"Website written to live link: {site.get('site')}")
+        if site.get("duplicate_rows"):
+            count = len(site.get("record_ids") or [])
+            lines.append(f"Note: {count} progress rows share this name.")
+    elif site.get("reason") == "progress_missing":
+        lines.append(f"Website was not written: no progress row for {name}.")
+    elif site.get("reason"):
+        lines.append(f"Website was not written ({site['reason']}).")
     if pr.get("ok") and pr.get("action") == "updated":
         lines.append("PR written to KPI 2.")
         if pr.get("pr"):
@@ -418,8 +547,8 @@ def maybe_handle_project_info_submit(
         return None
     text = message_text(message)
     payload_text = strip_command(text) if is_project_info_submit(text) else text
-    contract, twitter, pr_url = parse_submit_payload(payload_text)
-    if not contract and not twitter and not pr_url:
+    contract, twitter, pr_url, site_url = parse_submit_payload(payload_text)
+    if not contract and not twitter and not pr_url and not site_url:
         return None
 
     from bot.lark_bitable import LarkBitableError
@@ -473,6 +602,7 @@ def maybe_handle_project_info_submit(
 
     wallet: dict[str, Any] = {"ok": True, "action": "skipped"}
     pr: dict[str, Any] = {"ok": True, "action": "skipped"}
+    site: dict[str, Any] = {"ok": True, "action": "skipped"}
     try:
         if contract or twitter:
             wallet = upsert_wallet_row(
@@ -481,6 +611,12 @@ def maybe_handle_project_info_submit(
                 project_name=project,
                 contract=contract,
                 twitter=twitter,
+            )
+        # Write the live site before PR / early final so KPI 3 probes the
+        # URL the BD just pasted (e.g. vercel app vs marketing domain).
+        if site_url:
+            site = write_live_site_url(
+                token, config, project_name=project, site_url=site_url
             )
         if pr_url:
             pr = write_pr_link(token, config, project_name=project, pr_url=pr_url)
@@ -503,9 +639,11 @@ def maybe_handle_project_info_submit(
         except Exception:
             logger.exception("project info submit failed to log PR event")
 
-    reply = format_submit_reply(project=project, wallet=wallet, pr=pr)
-    wrote = wallet.get("action") in {"created", "updated"} or (
-        pr.get("ok") and pr.get("action") == "updated"
+    reply = format_submit_reply(project=project, wallet=wallet, pr=pr, site=site)
+    wrote = (
+        wallet.get("action") in {"created", "updated"}
+        or (pr.get("ok") and pr.get("action") == "updated")
+        or (site.get("ok") and site.get("action") == "updated")
     )
     early: dict[str, Any] = {"ran": False}
     if wrote:
@@ -513,7 +651,9 @@ def maybe_handle_project_info_submit(
             from bot.workflow_kpi_result_push import run_early_final_after_submit
 
             progress_rid = ""
-            for rid in pr.get("record_ids") or []:
+            for rid in list(pr.get("record_ids") or []) + list(
+                site.get("record_ids") or []
+            ):
                 if str(rid).strip():
                     progress_rid = str(rid).strip()
                     break

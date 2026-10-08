@@ -26,7 +26,7 @@ def test_command_accepts_first_line_only():
 
 
 def test_status_url_is_pr_not_profile():
-    contract, twitter, pr = parse_submit_payload(
+    contract, twitter, pr, site = parse_submit_payload(
         "https://x.com/OfficialHandle\n"
         "0x9a76DD1cf04C9142A8939a9b124f738e621BE249\n"
         "https://x.com/OfficialHandle/status/1234567890?s=20"
@@ -34,16 +34,18 @@ def test_status_url_is_pr_not_profile():
     assert contract == "0x9a76dd1cf04c9142a8939a9b124f738e621be249"
     assert twitter == "https://x.com/OfficialHandle"
     assert pr == "https://x.com/OfficialHandle/status/1234567890"
+    assert site == ""
 
 
 def test_tweet_alone_does_not_fill_twitter():
-    contract, twitter, pr = parse_submit_payload(
+    contract, twitter, pr, site = parse_submit_payload(
         "https://x.com/Foo/status/9"
     )
     assert contract == ""
     assert twitter == ""
     assert pr == "https://x.com/Foo/status/9"
-    _, mention, _ = parse_submit_payload("thanks @Daniel")
+    assert site == ""
+    _, mention, _, _ = parse_submit_payload("thanks @Daniel")
     assert mention == ""
 
 
@@ -51,12 +53,13 @@ def test_two_contracts_are_both_kept():
     first = "0x" + ("ab" * 20)
     second = "0x" + ("cd" * 20)
     tx = "0x" + ("ef" * 32)
-    contract, twitter, pr = parse_submit_payload(
+    contract, twitter, pr, site = parse_submit_payload(
         f"0x{'CD' * 20}\n{tx}\n{first}\n{first}"
     )
     assert contract == f"{second}\n{first}"
     assert twitter == ""
     assert pr == ""
+    assert site == ""
     text = format_submit_reply(
         project="Relay",
         wallet={"action": "updated", "contract": contract, "record_ids": ["rec"]},
@@ -67,13 +70,30 @@ def test_two_contracts_are_both_kept():
 
 def test_transaction_hash_is_not_a_contract():
     tx = "0x" + ("ab" * 32)
-    contract, twitter, pr = parse_submit_payload(tx)
+    contract, twitter, pr, site = parse_submit_payload(tx)
     assert contract == ""
     assert twitter == ""
     assert pr == ""
+    assert site == ""
     address = "0x" + ("cd" * 20)
-    contract, _, _ = parse_submit_payload(f"contract {address}")
+    contract, _, _, _ = parse_submit_payload(f"contract {address}")
     assert contract == address
+
+
+def test_site_url_is_parsed_and_not_confused_with_x():
+    contract, twitter, pr, site = parse_submit_payload(
+        "KPI 3:-https://rephood.vercel.app/\n"
+        "https://x.com/Rephoodxyz\n"
+        "https://x.com/Rephoodxyz/status/2104527004838285622"
+    )
+    assert site == "https://rephood.vercel.app/"
+    assert twitter == "https://x.com/Rephoodxyz"
+    assert pr == "https://x.com/Rephoodxyz/status/2104527004838285622"
+    assert contract == ""
+    _, _, _, blocked = parse_submit_payload(
+        "https://scan.botchain.ai/tx/0x" + ("ab" * 32)
+    )
+    assert blocked == ""
 
 
 def test_markdown_post_body_keeps_project_line():
