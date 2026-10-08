@@ -62,4 +62,4 @@
 - 工单状态：`/opt/botchain-shared/tech_support_tickets.json`
 - 服务：`botchain-qa.service`（Roy）、`delivery-agent.service`（Josh）
 - 可选秒级回传：Lark 开放平台给 Roy 应用订阅 `im.message.receive_v1`，请求地址  
-  `http://8-222-166-120.sslip.io/workflow/tech-support/event`
+  `http://8-222-166-120.sslip.io/workflow/tech-support/event`（Nginx 转到 Roy号 `127.0.0.1:8786`，交付号不处理）

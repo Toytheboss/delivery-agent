@@ -339,6 +339,10 @@ def maybe_handle_project_info_submit(
     config: Any, event_data: dict[str, Any]
 ) -> dict[str, Any] | None:
     """Write links pasted in a reply to a verification result. None = ignore."""
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return None
     if not _enabled(config):
         return None
     if not isinstance(event_data, dict):

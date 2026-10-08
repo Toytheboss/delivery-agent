@@ -107,6 +107,8 @@ workflow:
   form_logo_poll_enabled: false
   live_webhook_enabled: true
   live_webhook_host: "0.0.0.0"
+  # Delivery-agent (Josh) keeps 8787. Roy号 on the same ECS uses 8786 so
+  # /workflow/tech-support/event (考核群补交) is not stolen by Josh.
   live_webhook_port: 8787
   live_webhook_path: "/workflow/live"
   live_webhook_secret: ""

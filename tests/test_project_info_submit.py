@@ -6,6 +6,7 @@ from unittest.mock import patch
 from bot.workflow_project_info_submit import (
     format_submit_reply,
     is_project_info_submit,
+    maybe_handle_project_info_submit,
     message_text,
     parse_submit_payload,
     project_name_from_quoted,
@@ -226,3 +227,25 @@ def test_reply_copy():
         pr={"ok": False, "reason": "progress_missing"},
     )
     assert "no progress row" in held
+
+
+def test_submit_ignored_on_delivery_host():
+    config = SimpleNamespace(
+        raw={},
+        workflow_live_onboard_lark_chat_id="oc_verify",
+    )
+    event = {
+        "sender": {"sender_type": "user"},
+        "message": {
+            "chat_id": "oc_verify",
+            "message_id": "om_1",
+            "parent_id": "om_parent",
+            "message_type": "text",
+            "content": '{"text":"0x' + ("ab" * 20) + '"}',
+        },
+    }
+    with patch(
+        "bot.workflow_kpi_write.kpi_checks_on_this_host",
+        lambda: False,
+    ):
+        assert maybe_handle_project_info_submit(config, event) is None
