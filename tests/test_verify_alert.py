@@ -16,9 +16,7 @@ def test_verify_alert_copy_is_short_with_time():
         when=datetime(2026, 10, 7, 16, 57, tzinfo=TZ),
     )
     assert text == (
-        "Verify：TipStream\n"
-        "@brianwongjhh · TipStream <> Botchain\n"
-        "2026-10-07 16:57"
+        "Verify：TipStream - @brianwongjhh · TipStream <> Botchain (2026-10-07 16:57)"
     )
     assert "原文" not in text
     assert "UTC+8" not in text

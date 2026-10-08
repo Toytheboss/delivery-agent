@@ -94,8 +94,8 @@ def build_verify_alert_text(
     # text is kept for callers/logging; delivery-group copy stays short.
     _ = (text or "").strip()
     if kind == "mainnet_live":
-        return f"主网上线：{project}\n{sender} · {group}\n{stamp}"
-    return f"Verify：{project}\n{sender} · {group}\n{stamp}"
+        return f"主网上线：{project} - {sender} · {group} ({stamp})"
+    return f"Verify：{project} - {sender} · {group} ({stamp})"
 
 
 def maybe_send_verify_alert(
