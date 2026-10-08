@@ -165,6 +165,26 @@ def test_submit_triggered_final_label():
     assert "`KPI failed` under the new standard" in text
 
 
+def test_first_check_date_prefers_sept30_cell_stamp_over_live_plus_7():
+    from bot.workflow_kpi_result_push import resolve_first_check_date
+
+    fields = {
+        "KPI 3 - 官网展示验证": (
+            "Website display verification failed\n"
+            "Recheck 2026-09-30 03:26: Website display verification failed"
+        )
+    }
+    assert (
+        resolve_first_check_date(
+            "2026-09-04",
+            first_check_date="2026-10-09",
+            fields=fields,
+        )
+        == "2026-09-30"
+    )
+    assert resolve_first_check_date("2026-09-04", first_check_date="") == "2026-09-11"
+
+
 def test_website_post_line_is_one_line_not_checklist():
     from bot.workflow_kpi_result_push import website_post_line
 

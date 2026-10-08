@@ -104,7 +104,12 @@ def mark_rounds_done(
         key = str(round_name or "").strip()
         if key not in {"first", "second"}:
             continue
-        state.setdefault(key, {})[rid] = stamp
+        bucket = state.setdefault(key, {})
+        # Keep the original first-check day (e.g. 2026-09-30 batch). Early
+        # final must not overwrite it with today's date.
+        if key == "first" and str(bucket.get(rid) or "").strip():
+            continue
+        bucket[rid] = stamp
     _save_state(file, state)
 
 

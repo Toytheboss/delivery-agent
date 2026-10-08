@@ -245,11 +245,43 @@ def onchain_fix(*, contract: str) -> str:
     return _ONCHAIN_SHORT
 
 
-def resolve_first_check_date(live_date: str, first_check_date: str = "") -> str:
-    """Prefer the recorded first-check day; else live + 7 (same as the calendar)."""
+_CHECK_DAY_RE = re.compile(
+    r"(?:First check|Recheck)\s+(\d{4}-\d{2}-\d{2})",
+    re.IGNORECASE,
+)
+
+
+def first_check_date_from_fields(fields: dict[str, Any] | None) -> str:
+    """Earliest First check / Recheck stamp in KPI copy cells (e.g. 2026-09-30 batch)."""
+    days: list[str] = []
+    for value in (fields or {}).values():
+        text = str(value or "")
+        if not text:
+            continue
+        for match in _CHECK_DAY_RE.finditer(text):
+            days.append(match.group(1))
+    return min(days) if days else ""
+
+
+def resolve_first_check_date(
+    live_date: str,
+    first_check_date: str = "",
+    fields: dict[str, Any] | None = None,
+) -> str:
+    """Resolve First check day for final posts.
+
+    Order: earliest stamp in progress KPI cells (covers the 2026-09-30 batch) →
+    schedule / caller date → live+7 only as last resort.
+    """
+    candidates: list[str] = []
+    from_fields = first_check_date_from_fields(fields)
+    if from_fields:
+        candidates.append(from_fields)
     explicit = (first_check_date or "").strip()
     if explicit:
-        return explicit
+        candidates.append(explicit)
+    if candidates:
+        return min(candidates)
     live = (live_date or "").strip()
     if not live:
         return ""
@@ -280,6 +312,7 @@ def format_result_post(
     final: bool = False,
     final_trigger: str = "calendar",
     first_check_date: str = "",
+    fields: dict[str, Any] | None = None,
 ) -> str:
     """English result post. The first check never says KPI failed."""
     name = (bd_name or "").strip() or "BD"
@@ -313,9 +346,11 @@ def format_result_post(
         f"**Live date:** `{live_date}` Day `1`",
     ]
     if final:
-        # Final posts always show First check + Second check. Missing schedule
-        # state falls back to live+7 so the header never drops First check.
-        first_day = resolve_first_check_date(live_date, first_check_date)
+        # Final posts always show First check + Second check. Prefer real audit
+        # stamps (incl. 2026-09-30 batch) over live+7.
+        first_day = resolve_first_check_date(
+            live_date, first_check_date, fields=fields
+        )
         if first_day:
             lines.append(f"**First check:** `{first_day}` · {_HELD}")
         trigger = (final_trigger or "calendar").strip().lower()
@@ -642,6 +677,7 @@ def audit_first_check(
         final=final,
         final_trigger=final_trigger,
         first_check_date=first_check_date,
+        fields=current,
     )
     return {
         "project": name,
