@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -249,7 +250,8 @@ def _http_probe(url: str, timeout: float = 12.0) -> WebsiteProbe:
     )
 
 
-def _browser_probe(url: str) -> WebsiteProbe | None:
+def _browser_probe_sync(url: str) -> WebsiteProbe | None:
+    """Run Playwright sync API. Must not be called on the asyncio loop thread."""
     global _BROWSER_UNAVAILABLE
     if _BROWSER_UNAVAILABLE:
         return None
@@ -299,6 +301,26 @@ def _browser_probe(url: str) -> WebsiteProbe | None:
         text=text,
         has_logo=bool(data.get("hasLogo")),
     )
+
+
+def _browser_probe(url: str) -> WebsiteProbe | None:
+    """Probe with Playwright, always off the asyncio loop thread.
+
+    Lark webhook / early-final call KPI 3 from async handlers. Sync Playwright
+    raises there and we used to fall back to raw HTML, missing SPA links and
+    falsely failing projects like BotNS.
+    """
+    try:
+        import asyncio
+
+        asyncio.get_running_loop()
+        in_async = True
+    except RuntimeError:
+        in_async = False
+    if not in_async:
+        return _browser_probe_sync(url)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        return pool.submit(_browser_probe_sync, url).result(timeout=60)
 
 
 def probe_website(url: str) -> WebsiteProbe:

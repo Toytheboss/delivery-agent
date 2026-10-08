@@ -140,3 +140,31 @@ def test_html_helpers():
         evaluate_kpi3(project_name="X", probe=None, url=""),
         "X",
     ).endswith("failed")
+
+
+def test_browser_probe_runs_in_thread_when_asyncio_loop_is_active(monkeypatch):
+    import asyncio
+
+    import bot.workflow_kpi3_website as kpi3
+
+    calls: list[str] = []
+    expected = WebsiteProbe(
+        url="https://example.com",
+        opened=True,
+        hrefs=("https://botchain.ai", "https://scan.botchain.ai"),
+        text="BOT Chain",
+        has_logo=True,
+    )
+
+    def fake_sync(url: str):
+        calls.append(url)
+        return expected
+
+    monkeypatch.setattr(kpi3, "_browser_probe_sync", fake_sync)
+
+    async def run():
+        return kpi3._browser_probe("https://example.com")
+
+    out = asyncio.run(run())
+    assert out is expected
+    assert calls == ["https://example.com"]
