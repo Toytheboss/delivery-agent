@@ -255,6 +255,14 @@ def test_reply_copy():
     failed = format_submit_reply(project="Relay", reason="final_failed")
     assert "Second check already failed for this project." in failed
     assert "该项目二审已不通过，无法再次补交或审核。" in failed
+    site_ok = format_submit_reply(
+        project="Relay",
+        site={"ok": True, "action": "updated", "site": "https://app.example/"},
+    )
+    assert "Website submitted successfully." in site_ok
+    assert "https://app.example/" in site_ok
+    assert "已上线" not in site_ok
+    assert "live link" not in site_ok.lower()
 
 
 def test_quoted_result_detects_kpi_failed():

@@ -493,14 +493,16 @@ def format_submit_reply(
             "Merge them later so KPI checks can match."
         )
     if site.get("ok") and site.get("action") == "updated":
-        lines.append(f"Website written to live link: {site.get('site')}")
+        lines.append("Website submitted successfully.")
+        if site.get("site"):
+            lines.append(str(site["site"]))
         if site.get("duplicate_rows"):
             count = len(site.get("record_ids") or [])
             lines.append(f"Note: {count} progress rows share this name.")
     elif site.get("reason") == "progress_missing":
-        lines.append(f"Website was not written: no progress row for {name}.")
+        lines.append(f"Website submit failed: no progress row for {name}.")
     elif site.get("reason"):
-        lines.append(f"Website was not written ({site['reason']}).")
+        lines.append(f"Website submit failed ({site['reason']}).")
     if pr.get("ok") and pr.get("action") == "updated":
         lines.append("PR written to KPI 2.")
         if pr.get("pr"):
