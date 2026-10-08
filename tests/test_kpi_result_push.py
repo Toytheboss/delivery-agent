@@ -165,6 +165,28 @@ def test_submit_triggered_final_label():
     assert "`KPI failed` under the new standard" in text
 
 
+def test_website_post_line_is_one_line_not_checklist():
+    from bot.workflow_kpi_result_push import website_post_line
+
+    raw = (
+        "- Site opened: yes\n"
+        "- BOT Chain name: yes\n"
+        "- https://botchain.ai: yes\n"
+        "- https://scan.botchain.ai: yes\n"
+        "- Result: passed"
+    )
+    line = website_post_line(ok=True, site_copy=raw, site_reason="passed")
+    assert "\n" not in line
+    assert "website display verification passed" in line
+    fail = website_post_line(
+        ok=False,
+        site_copy="- Site opened: yes\n- BOT Chain name: no\n- Result: failed",
+        site_reason="no_botchain_name",
+    )
+    assert "\n" not in fail
+    assert "BOT Chain name not found" in fail
+
+
 def test_early_final_ignores_pre_september_name_duplicate():
     from datetime import datetime, timezone
 

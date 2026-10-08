@@ -167,6 +167,37 @@ def pr_post_line(url: str) -> tuple[bool, str]:
     return True, shown
 
 
+_WEBSITE_PASS_LINE = (
+    "Website display verification: website opened, BOT Chain name is visible, "
+    f"page has clickable {_BOT} and {_SCAN}; website display verification passed"
+)
+
+
+def website_post_line(*, ok: bool, site_copy: str = "", site_reason: str = "") -> str:
+    """One-line Website result for the Lark post (never the raw checklist)."""
+    if ok or (site_reason or "").strip() == "passed":
+        return _WEBSITE_PASS_LINE
+    text = latest_copy(site_copy or "")
+    low = text.lower()
+    if "official website url: not submitted" in low or (site_reason or "") == "no_url":
+        return "Official website URL not submitted."
+    if "- site opened: no" in low or (site_reason or "") == "unreachable":
+        return "Official website could not be opened."
+    if "bot chain name: no" in low or (site_reason or "") == "no_botchain_name":
+        return "BOT Chain name not found on the website."
+    bot_ok = f"- {_BOT}: yes" in text
+    scan_ok = f"- {_SCAN}: yes" in text
+    name_ok = "BOT Chain name: yes" in text
+    opened = "- Site opened: yes" in text
+    parts = [
+        f"Site opened: {'yes' if opened else 'no'}",
+        f"BOT Chain name: {'yes' if name_ok else 'no'}",
+        f"{_BOT}: {'yes' if bot_ok else 'no'}",
+        f"{_SCAN}: {'yes' if scan_ok else 'no'}",
+    ]
+    return "Website display verification failed (" + "; ".join(parts) + ")."
+
+
 def website_fix(reason: str, copy: str) -> str:
     text = copy or ""
     if f"no clickable {_BOT} or {_SCAN}" in text:
@@ -602,7 +633,9 @@ def audit_first_check(
         pr_ok=pr_ok,
         pr_line=pr_line,
         website_ok=website_ok,
-        website_line=site_copy,
+        website_line=website_post_line(
+            ok=website_ok, site_copy=site_copy, site_reason=site_reason
+        ),
         onchain_ok=onchain_ok,
         onchain_line=onchain_line,
         fixes=fixes,
