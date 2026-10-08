@@ -159,9 +159,35 @@ def test_submit_triggered_final_label():
         final_trigger="submit",
         first_check_date="2026-10-08",
     )
+    assert "**First check:** `2026-10-08` · Held for rectification" in text
     assert "**Second check:** `2026-10-10` · final (triggered by submit)" in text
     assert "**Result:** KPI failed" in text
     assert "`KPI failed` under the new standard" in text
+
+
+def test_final_post_fills_first_check_from_live_plus_7():
+    text = format_result_post(
+        project="Coupon System",
+        bd_name="Ramesh",
+        bd_open_id="",
+        live_date="2026-09-09",
+        check_date="2026-10-08",
+        twitter_ok=True,
+        twitter_line="`6` original posts. Meets the Twitter requirement.",
+        pr_ok=True,
+        pr_line="https://x.com/couponsystem/status/1",
+        website_ok=True,
+        website_line="website display verification passed",
+        onchain_ok=True,
+        onchain_line="`12` wallets, `22` txs. Meets the wallet and on-chain requirement.",
+        fixes=[],
+        final=True,
+        final_trigger="submit",
+        first_check_date="",
+    )
+    assert "**First check:** `2026-09-16` · Held for rectification" in text
+    assert "**Second check:** `2026-10-08` · final (triggered by submit)" in text
+    assert "**Result:** Valid KPI" in text
 
 
 def test_pending_rows_skip_posted_and_non_september():

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -213,6 +214,22 @@ def onchain_fix(*, contract: str) -> str:
     return _ONCHAIN_SHORT
 
 
+def resolve_first_check_date(live_date: str, first_check_date: str = "") -> str:
+    """Prefer the recorded first-check day; else live + 7 (same as the calendar)."""
+    explicit = (first_check_date or "").strip()
+    if explicit:
+        return explicit
+    live = (live_date or "").strip()
+    if not live:
+        return ""
+    try:
+        return (
+            datetime.strptime(live, "%Y-%m-%d").date() + timedelta(days=7)
+        ).isoformat()
+    except ValueError:
+        return ""
+
+
 def format_result_post(
     *,
     project: str,
@@ -265,7 +282,9 @@ def format_result_post(
         f"**Live date:** `{live_date}` Day `1`",
     ]
     if final:
-        first_day = (first_check_date or "").strip()
+        # Final posts always show First check + Second check. Missing schedule
+        # state falls back to live+7 so the header never drops First check.
+        first_day = resolve_first_check_date(live_date, first_check_date)
         if first_day:
             lines.append(f"**First check:** `{first_day}` · {_HELD}")
         trigger = (final_trigger or "calendar").strip().lower()
