@@ -333,6 +333,14 @@ def _wallet_intro_index(wallet_records: list[dict[str, Any]]) -> dict[str, str]:
     return out
 
 
+def _has_logo(fields: dict[str, Any], logo_field: str) -> bool:
+    return bool(_logo_file_tokens(fields, logo_field))
+
+
+def _has_site(fields: dict[str, Any], live_link_field: str) -> bool:
+    return bool(link_str(fields.get(live_link_field)))
+
+
 def collect_week_projects(
     progress_records: list[dict[str, Any]],
     *,
@@ -356,6 +364,17 @@ def collect_week_projects(
         name = _field_text(fields, name_field)
         if not name:
             continue
+        site = link_str(fields.get(live_link_field))
+        has_logo = _has_logo(fields, logo_field)
+        if not site or not has_logo:
+            logger.info(
+                "blake weekly: skip %s (missing %s)",
+                name,
+                "logo and site"
+                if (not site and not has_logo)
+                else ("site" if not site else "logo"),
+            )
+            continue
         intro = _field_text(fields, _INTRO_PROGRESS_FIELD)
         if not intro:
             intro = wallet_intros.get(_normalize_name(name), "")
@@ -363,7 +382,7 @@ def collect_week_projects(
             {
                 "record_id": str(record.get("record_id") or ""),
                 "name": name,
-                "site": link_str(fields.get(live_link_field)),
+                "site": site,
                 "intro_source": intro,
                 "category": track_name(fields),
                 "logo_fields": fields,

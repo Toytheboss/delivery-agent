@@ -1,5 +1,6 @@
 # Daily 00:00 Asia/Shanghai → refresh 项目推送至前端-每周更新
 # Sunday 23:55 prepare, Monday 00:00:00 send → ping Blake
+# Skip live projects missing 项目logo（文件） or 已上线链接🔗 (not counted)
 blake_weekly:
   enabled: true
   chat_id: "oc_xxxxxxxx"  # 项目方信息整理&推送（钱包/ logo/官网）

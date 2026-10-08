@@ -90,6 +90,7 @@ def test_collect_filters_status_and_live_week():
                 "项目名称 Project Name": "Neon Arcade",
                 "主网上线时间": live_ms,
                 "已上线链接🔗": {"link": "https://neon.example/", "text": "https://neon.example/"},
+                "项目logo（文件）": [{"file_token": "tok_neon"}],
                 "项目简介（1-2句话）": "A cyberpunk arcade",
                 "赛道Category": ["GameFi"],
             },
@@ -125,6 +126,50 @@ def test_collect_filters_status_and_live_week():
     assert rows[0]["category"] == "GameFi"
 
 
+def test_collect_skips_missing_logo_or_site():
+    monday = datetime(2026, 9, 21, tzinfo=TZ)
+    live_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    records = [
+        {
+            "record_id": "rec-ok",
+            "fields": {
+                "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                "项目名称 Project Name": "Complete",
+                "主网上线时间": live_ms,
+                "已上线链接🔗": "https://complete.example/",
+                "项目logo（文件）": [{"file_token": "tok_ok"}],
+            },
+        },
+        {
+            "record_id": "rec-no-logo",
+            "fields": {
+                "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                "项目名称 Project Name": "No Logo",
+                "主网上线时间": live_ms,
+                "已上线链接🔗": "https://nologo.example/",
+            },
+        },
+        {
+            "record_id": "rec-no-site",
+            "fields": {
+                "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                "项目名称 Project Name": "No Site",
+                "主网上线时间": live_ms,
+                "项目logo（文件）": [{"file_token": "tok_site"}],
+            },
+        },
+    ]
+    rows = collect_week_projects(
+        records,
+        monday=monday,
+        status_field="项目状态",
+        name_field="项目名称 Project Name",
+        live_link_field="已上线链接🔗",
+        logo_field="项目logo（文件）",
+    )
+    assert [r["name"] for r in rows] == ["Complete"]
+
+
 def test_collect_includes_sunday_afternoon_in_iso_week():
     monday = datetime(2026, 9, 21, tzinfo=TZ)
     sunday_ms = int(datetime(2026, 9, 27, 15, 30, tzinfo=TZ).timestamp() * 1000)
@@ -135,6 +180,8 @@ def test_collect_includes_sunday_afternoon_in_iso_week():
                 "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
                 "项目名称 Project Name": "Sunday Live",
                 "主网上线时间": sunday_ms,
+                "已上线链接🔗": "https://sunday.example/",
+                "项目logo（文件）": [{"file_token": "tok_sun"}],
             },
         }
     ]
@@ -182,6 +229,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
                 "项目名称 Project Name": "Neon Arcade",
                 "主网上线时间": live_ms,
                 "已上线链接🔗": "https://neon.example/",
+                "项目logo（文件）": [{"file_token": "tok_neon"}],
             },
         }
     ]
