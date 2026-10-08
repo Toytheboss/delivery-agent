@@ -88,21 +88,14 @@ def build_verify_alert_text(
 ) -> str:
     when = when or datetime.now(TZ)
     sender = f"@{sender_username}" if sender_username else (str(sender_id) if sender_id else "未知")
-    body = (text or "").strip()
-    if len(body) > 280:
-        body = body[:280].rstrip() + "…"
+    project = (project_name or "").strip() or "未知项目"
+    group = (chat_title or "").strip() or "未知群"
+    stamp = when.strftime("%Y-%m-%d %H:%M")
+    # text is kept for callers/logging; delivery-group copy stays short.
+    _ = (text or "").strip()
     if kind == "mainnet_live":
-        header = "【主网上线提醒】"
-    else:
-        header = "【Verify 提醒】"
-    return (
-        f"{header}\n"
-        f"项目：{project_name or '未知项目'}\n"
-        f"TG 群：{chat_title or '未知群'}\n"
-        f"时间：{when.strftime('%Y-%m-%d %H:%M')} (UTC+8)\n"
-        f"发送人：{sender}\n"
-        f"原文：{body or '(空)'}"
-    )
+        return f"主网上线：{project}\n{sender} · {group}\n{stamp}"
+    return f"Verify：{project}\n{sender} · {group}\n{stamp}"
 
 
 def maybe_send_verify_alert(
