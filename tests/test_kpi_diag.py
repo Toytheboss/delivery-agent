@@ -304,6 +304,33 @@ def test_kpi6_pass_lists_three_wallets_and_five_hashes():
     assert len(wallet_lines) == 3
 
 
+def test_kpi6_fail_also_caps_wallets_and_hashes():
+    start = datetime(2026, 9, 26, tzinfo=timezone(timedelta(hours=8)))
+    ca = "0xabc0000000000000000000000000000000000001"
+    txs = []
+    for i in range(12):
+        txs.append(
+            {
+                "hash": f"f{i}",
+                "from": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "to": ca,
+                "contractAddress": "",
+                "isError": "0",
+                "timeStamp": str(int(start.timestamp()) + i + 1),
+            }
+        )
+    verdict = evaluate_kpi6(contract=ca, txs=txs, window_start=start)
+    assert verdict["passed"] is False
+    assert verdict["tx_count"] == 12
+    listed_hashes = [
+        line.strip() for line in verdict["copy"].splitlines() if line.strip().startswith("f")
+    ]
+    assert listed_hashes == ["f11", "f10", "f9", "f8", "f7"]
+    wallet_block = verdict["copy"].split("Wallets:")[1].split("Tx hashes:")[0]
+    wallet_lines = [ln.strip() for ln in wallet_block.splitlines() if ln.strip().startswith("0x")]
+    assert len(wallet_lines) == 1
+
+
 def test_new_check_log_stamps_every_round():
     when = datetime(2026, 9, 30, 17, 24, tzinfo=timezone(timedelta(hours=8)))
     first = merge_kpi_copy(

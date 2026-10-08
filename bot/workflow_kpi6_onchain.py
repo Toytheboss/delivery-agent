@@ -166,8 +166,9 @@ def build_kpi6_copy(
         f"- Core txs: {tx_count} (need ≥5)",
         f"- Result: {'passed' if passed else 'failed'}",
     ]
-    show_wallets = list(wallets[:_WALLET_SHOW] if passed else wallets)
-    show_hashes = list((hashes or [])[:_TX_SHOW] if passed else (hashes or []))
+    # Cap evidence in both pass and fail copy so TG replies stay under length limits.
+    show_wallets = list(wallets[:_WALLET_SHOW])
+    show_hashes = list((hashes or [])[:_TX_SHOW])
     if passed:
         lines.append(f"- {_MEETS_AUDIT}")
     if show_wallets:
