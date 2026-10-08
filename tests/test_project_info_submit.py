@@ -197,7 +197,10 @@ def test_pr_writes_kpi2_and_does_not_create_progress_row():
             rows=[
                 {
                     "record_id": "recp",
-                    "fields": {"项目名称 Project Name": "Relay"},
+                    "fields": {
+                        "项目名称 Project Name": "Relay",
+                        "主网上线时间": "2026-09-10T00:00:00+08:00",
+                    },
                 }
             ],
         )

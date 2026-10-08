@@ -165,6 +165,40 @@ def test_submit_triggered_final_label():
     assert "`KPI failed` under the new standard" in text
 
 
+def test_early_final_ignores_pre_september_name_duplicate():
+    from datetime import datetime, timezone
+
+    from bot.workflow_kpi_result_push import pick_early_final_progress_row
+
+    july = datetime(2026, 7, 17, tzinfo=timezone.utc)
+    sept = datetime(2026, 9, 4, tzinfo=timezone.utc)
+    rows = [
+        {
+            "record_id": "rec-old",
+            "fields": {
+                "项目名称 Project Name": "Warden",
+                "主网上线时间": july.isoformat(),
+                "KPI 统筹": "",
+            },
+        },
+        {
+            "record_id": "rec-held",
+            "fields": {
+                "项目名称 Project Name": "Warden",
+                "主网上线时间": sept.isoformat(),
+                "KPI 统筹": "暂扣整改",
+            },
+        },
+    ]
+    hit = pick_early_final_progress_row(
+        rows,
+        project_name="Warden",
+        name_field="项目名称 Project Name",
+    )
+    assert hit is not None
+    assert hit["record_id"] == "rec-held"
+
+
 def test_final_post_fills_first_check_from_live_plus_7():
     text = format_result_post(
         project="Coupon System",

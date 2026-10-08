@@ -232,7 +232,7 @@ def write_pr_link(
     pr_url: str,
     rows: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    from bot.workflow_kpi_write import kpi_checks_on_this_host
+    from bot.workflow_kpi_write import is_kpi_era_live, kpi_checks_on_this_host
 
     if not kpi_checks_on_this_host():
         return {
@@ -255,7 +255,11 @@ def write_pr_link(
         return {"ok": False, "reason": "progress_table_not_configured", "project": project_name}
     if rows is None:
         rows = list_records(token, app_token, table_id)
-    hits = _name_hits(rows, project_name, name_field)
+    hits = [
+        (rid, fields)
+        for rid, fields in _name_hits(rows, project_name, name_field)
+        if is_kpi_era_live(fields)
+    ]
     if not hits:
         return {"ok": False, "reason": "progress_missing", "project": project_name, "pr": pr_url}
     updated: list[str] = []

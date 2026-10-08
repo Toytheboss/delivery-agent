@@ -713,6 +713,45 @@ def _coord_value(fields: dict[str, Any]) -> str:
     return field_result(fields, _COORD_FIELD) or _field_text(fields, _COORD_FIELD)
 
 
+def pick_early_final_progress_row(
+    rows: list[dict[str, Any]],
+    *,
+    project_name: str,
+    name_field: str,
+    record_id: str = "",
+) -> dict[str, Any] | None:
+    """Pick the KPI-era progress row for a补交终审.
+
+    Pre-2026-09-01 live duplicates are ignored. Among September-or-later rows
+    with the same name, prefer ``暂扣整改``.
+    """
+    from bot.workflow_form_dispatch import _normalize_name
+    from bot.workflow_kpi_write import is_kpi_era_live
+
+    key = _normalize_name(project_name)
+    rid = (record_id or "").strip()
+    name_hits: list[dict[str, Any]] = []
+    for row in rows:
+        row_id = str(row.get("record_id") or "").strip()
+        fields = row.get("fields") or {}
+        if not isinstance(fields, dict):
+            continue
+        if not is_kpi_era_live(fields):
+            continue
+        if rid and row_id == rid:
+            return row
+        if key and _normalize_name(_field_text(fields, name_field)) == key:
+            name_hits.append(row)
+    if not name_hits:
+        return None
+    held = [
+        row
+        for row in name_hits
+        if _coord_value(row.get("fields") or {}) == _HELD_COORD
+    ]
+    return held[0] if held else name_hits[0]
+
+
 def run_early_final_after_submit(
     config: AppConfig,
     *,
@@ -728,7 +767,6 @@ def run_early_final_after_submit(
     import os
 
     from bot.lark_bitable import get_tenant_access_token, list_records
-    from bot.workflow_form_dispatch import _normalize_name
     from bot.workflow_kpi_schedule import first_check_date_for, mark_rounds_done
     from bot.workflow_kpi_write import kpi_checks_on_this_host
 
@@ -766,26 +804,16 @@ def run_early_final_after_submit(
     name_field = str(
         getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
     )
-    key = _normalize_name(name)
-    hit: dict[str, Any] | None = None
-    rid = out["record_id"]
-    for row in rows:
-        row_id = str(row.get("record_id") or "").strip()
-        fields = row.get("fields") or {}
-        if not isinstance(fields, dict):
-            continue
-        if rid and row_id == rid:
-            hit = row
-            break
-        if _normalize_name(_field_text(fields, name_field)) == key:
-            hit = row
-            if not rid:
-                rid = row_id
-            break
+    hit = pick_early_final_progress_row(
+        rows,
+        project_name=name,
+        name_field=name_field,
+        record_id=out["record_id"],
+    )
     if not hit:
         out["reason"] = "progress_missing"
         return out
-    rid = str(hit.get("record_id") or rid).strip()
+    rid = str(hit.get("record_id") or out["record_id"] or "").strip()
     fields = hit.get("fields") or {}
     out["record_id"] = rid
     coord = _coord_value(fields if isinstance(fields, dict) else {})
@@ -805,11 +833,18 @@ def run_early_final_after_submit(
         )
         send_result_post(token, config, audited["markdown"])
         mark_rounds_done(rid, rounds=("first", "second"))
-        remember_posted(rid)
     except Exception:
         logger.exception("early final failed project=%r record=%s", name, rid)
         out["reason"] = "audit_or_send_failed"
         return out
+    try:
+        remember_posted(rid)
+    except Exception:
+        # Post already sent; do not treat a sent-state file permission error as
+        # a failed final review.
+        logger.exception(
+            "early final remember_posted failed project=%r record=%s", name, rid
+        )
     out["ran"] = True
     out["skipped"] = False
     out["reason"] = "ok"
