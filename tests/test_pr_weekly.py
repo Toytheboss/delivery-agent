@@ -82,46 +82,82 @@ def test_ping_mentions_lighter_jasper_and_copy():
     assert "https://example.com/pr-table" in text
 
 
-def test_collect_prefers_event_over_record_mtime():
+def test_collect_uses_live_date_not_pr_write_time():
     start = datetime(2026, 9, 20, tzinfo=TZ)
     end = datetime(2026, 9, 27, tzinfo=TZ)
-    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
-    out_ms = int(datetime(2026, 9, 19, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    live_in = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    live_out = int(datetime(2026, 9, 19, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    mtime_in = int(datetime(2026, 9, 23, 12, 0, tzinfo=TZ).timestamp() * 1000)
     records = [
         {
             "record_id": "rec1",
-            "last_modified_time": in_ms,
+            "last_modified_time": mtime_in,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "项目状态": "BOT主网上线 Live on Mainnet",
+                "主网上线时间": live_in,
                 "已上线链接🔗": {"link": "https://prompt.example/"},
                 "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
             },
         },
         {
             "record_id": "rec2",
-            "last_modified_time": out_ms,
+            "last_modified_time": mtime_in,
             "fields": {
-                "项目名称 Project Name": "Old",
+                "项目名称 Project Name": "OldLive",
+                "项目状态": "BOT主网上线 Live on Mainnet",
+                "主网上线时间": live_out,
                 "已上线链接🔗": "https://old.example/",
                 "KPI 2 - PR 新闻链接验证": "https://x.com/old/status/1",
             },
         },
         {
             "record_id": "rec3",
-            "last_modified_time": in_ms,
+            "last_modified_time": mtime_in,
             "fields": {
                 "项目名称 Project Name": "NoPR",
+                "项目状态": "BOT主网上线 Live on Mainnet",
+                "主网上线时间": live_in,
                 "已上线链接🔗": "https://nopr.example/",
             },
         },
     ]
+    rows = collect_week_prs(
+        records,
+        [],
+        start=start,
+        end=end,
+        name_field="项目名称 Project Name",
+        live_link_field="已上线链接🔗",
+        pr_field="KPI 2 - PR 新闻链接验证",
+        status_field="项目状态",
+    )
+    assert [r["name"] for r in rows] == ["PromptMint"]
+    assert rows[0]["url"] == "https://x.com/a/status/1"
+
+
+def test_collect_falls_back_to_capture_event_for_pr_url():
+    start = datetime(2026, 9, 20, tzinfo=TZ)
+    end = datetime(2026, 9, 27, tzinfo=TZ)
+    live_ms = int(datetime(2026, 9, 23, 8, 0, tzinfo=TZ).timestamp() * 1000)
+    records = [
+        {
+            "record_id": "rec9",
+            "fields": {
+                "项目名称 Project Name": "TaskForge",
+                "项目状态": "主网上线 Live",
+                "主网上线时间": live_ms,
+                "已上线链接🔗": "https://task.example/",
+            },
+        }
+    ]
     events = [
         {
-            "ts": "2026-09-22T10:00:00+08:00",
-            "record_id": "rec1",
-            "project": "PromptMint",
-            "url": "https://x.com/a/status/99",
-            "site": "https://prompt.example/",
+            "ts": "2026-09-24T10:00:00+08:00",
+            "record_id": "rec9",
+            "project": "TaskForge",
+            "url": "https://x.com/t/status/2",
+            "site": "",
         }
     ]
     rows = collect_week_prs(
@@ -132,34 +168,7 @@ def test_collect_prefers_event_over_record_mtime():
         name_field="项目名称 Project Name",
         live_link_field="已上线链接🔗",
         pr_field="KPI 2 - PR 新闻链接验证",
-    )
-    assert [r["name"] for r in rows] == ["PromptMint"]
-    assert rows[0]["url"] == "https://x.com/a/status/99"
-
-
-def test_collect_falls_back_to_record_mtime():
-    start = datetime(2026, 9, 20, tzinfo=TZ)
-    end = datetime(2026, 9, 27, tzinfo=TZ)
-    in_ms = int(datetime(2026, 9, 23, 8, 0, tzinfo=TZ).timestamp() * 1000)
-    records = [
-        {
-            "record_id": "rec9",
-            "last_modified_time": in_ms,
-            "fields": {
-                "项目名称 Project Name": "TaskForge",
-                "已上线链接🔗": "https://task.example/",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/t/status/2",
-            },
-        }
-    ]
-    rows = collect_week_prs(
-        records,
-        [],
-        start=start,
-        end=end,
-        name_field="项目名称 Project Name",
-        live_link_field="已上线链接🔗",
-        pr_field="KPI 2 - PR 新闻链接验证",
+        status_field="项目状态",
     )
     assert rows == [
         {
@@ -197,16 +206,18 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         workflow_progress_table_id="tbl",
         workflow_project_name_field="项目名称 Project Name",
         workflow_live_link_field="已上线链接🔗",
+        workflow_status_field="项目状态",
         pr_capture_link_field="KPI 2 - PR 新闻链接验证",
         pr_capture_events_file=str(tmp_path / "events.jsonl"),
     )
-    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    live_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
     progress = [
         {
             "record_id": "rec1",
-            "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "项目状态": "BOT主网上线 Live on Mainnet",
+                "主网上线时间": live_ms,
                 "已上线链接🔗": "https://prompt.example/",
                 "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
             },
@@ -257,16 +268,18 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
         workflow_progress_table_id="tbl",
         workflow_project_name_field="项目名称 Project Name",
         workflow_live_link_field="已上线链接🔗",
+        workflow_status_field="项目状态",
         pr_capture_link_field="KPI 2 - PR 新闻链接验证",
         pr_capture_events_file=str(tmp_path / "events.jsonl"),
     )
-    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    live_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
     progress = [
         {
             "record_id": "rec1",
-            "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "项目状态": "BOT主网上线 Live on Mainnet",
+                "主网上线时间": live_ms,
                 "已上线链接🔗": "https://prompt.example/",
                 "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
             },
