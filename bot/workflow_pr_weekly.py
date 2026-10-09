@@ -1,8 +1,4 @@
-"""Daily 00:00: refresh this week's mainnet-live PR rows; ping 品宣 Monday 00:00:00.
-
-Eligibility matches the frontend weekly: status is mainnet-live and
-「主网上线时间」falls in the report window. Rows still need a KPI 2 PR link.
-"""
+"""Daily 00:00: refresh this week's PR rows; ping 品宣 Monday 00:00:00."""
 
 from __future__ import annotations
 
@@ -54,7 +50,6 @@ FIELD_NAME = "项目方"
 FIELD_SITE = "官网"
 FIELD_PR = "主网上线PR链接"
 FIELD_PERIOD = "统计周期"
-_LIVE_TIME_FIELD = "主网上线时间"
 
 
 def week_window(now: datetime | None = None) -> tuple[datetime, datetime]:
@@ -139,11 +134,6 @@ def _ms_to_dt(value: Any) -> datetime | None:
         return datetime.fromtimestamp(float(value) / 1000.0, TZ)
     except (OverflowError, OSError, ValueError):
         return None
-
-
-def _status_is_live(status: str) -> bool:
-    s = (status or "").strip()
-    return s.startswith("BOT主网上线") or s.startswith("主网上线")
 
 
 def _parse_ts(value: Any) -> datetime | None:
@@ -308,72 +298,63 @@ def collect_week_prs(
     name_field: str,
     live_link_field: str,
     pr_field: str,
-    status_field: str,
 ) -> list[dict[str, str]]:
-    """Mainnet-live projects whose live time is in [start, end) and have a PR URL.
-
-    Same live-date gate as the frontend weekly. Capture events only fill in a
-    PR URL / site when the progress cell is empty.
-    """
-    event_by_id: dict[str, dict[str, Any]] = {}
+    """Latest KPI 2 write in [start, end) per progress record."""
+    by_id: dict[str, dict[str, Any]] = {}
     for event in events:
         when = _parse_ts(event.get("ts"))
+        if when is None or when < start or when >= end:
+            continue
         rid = str(event.get("record_id") or "").strip()
         name = str(event.get("project") or "").strip()
         url = str(event.get("url") or "").strip()
-        if when is None or not rid or not name or not url:
+        if not rid or not name or not url:
             continue
-        prev = event_by_id.get(rid)
+        prev = by_id.get(rid)
         if prev is None or when >= prev["captured_at"]:
-            event_by_id[rid] = {
+            by_id[rid] = {
+                "record_id": rid,
                 "name": name,
                 "url": url,
                 "site": str(event.get("site") or "").strip(),
                 "captured_at": when,
+                "source": "event",
             }
-
-    rows: list[dict[str, Any]] = []
     for record in progress_records:
         rid = str(record.get("record_id") or "").strip()
         fields = record.get("fields") or {}
         if not rid or not isinstance(fields, dict):
             continue
-        if not _status_is_live(_field_text(fields, status_field)):
-            continue
-        live_at = _ms_to_dt(fields.get(_LIVE_TIME_FIELD))
-        if live_at is None or live_at < start or live_at >= end:
-            continue
-        name = _field_text(fields, name_field)
-        if not name:
-            continue
         url = _cell_url(fields, pr_field)
-        site = _cell_url(fields, live_link_field)
-        event = event_by_id.get(rid)
-        if not url and event:
-            url = str(event.get("url") or "").strip()
-        if not site and event:
-            site = str(event.get("site") or "").strip()
-        if not url:
+        name = _field_text(fields, name_field)
+        if not url or not name:
             continue
-        rows.append(
-            {
-                "record_id": rid,
-                "name": name,
-                "url": url,
-                "site": site,
-                "live_at": live_at,
-            }
-        )
-    rows.sort(key=lambda item: (item["live_at"], item["name"].lower()))
-    return [
+        if rid in by_id:
+            if not by_id[rid].get("site"):
+                by_id[rid]["site"] = _cell_url(fields, live_link_field)
+            continue
+        when = _ms_to_dt(record.get("last_modified_time"))
+        if when is None or when < start or when >= end:
+            continue
+        by_id[rid] = {
+            "record_id": rid,
+            "name": name,
+            "url": url,
+            "site": _cell_url(fields, live_link_field),
+            "captured_at": when,
+            "source": "record",
+        }
+    rows = [
         {
             "record_id": str(item["record_id"]),
             "name": str(item["name"]),
             "url": str(item["url"]),
             "site": str(item.get("site") or ""),
         }
-        for item in rows
+        for item in by_id.values()
     ]
+    rows.sort(key=lambda item: item["name"].lower())
+    return rows
 
 
 def _dest_index(
@@ -527,9 +508,6 @@ def run_pr_weekly_once(
         ),
         pr_field=str(
             getattr(config, "pr_capture_link_field", "") or "KPI 2 - PR 新闻链接验证"
-        ),
-        status_field=str(
-            getattr(config, "workflow_status_field", "") or "项目状态"
         ),
     )
     result["count"] = len(projects)
