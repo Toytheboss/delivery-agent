@@ -805,6 +805,191 @@ def _wallet_daily_counts(
     return out
 
 
+def _dedupe_names(names: list[Any], *, limit: int = 40) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for raw in names:
+        name = str(raw or "").strip()
+        if not name:
+            continue
+        key = name.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(name)
+        if len(out) >= max(int(limit), 1):
+            break
+    return out
+
+
+def _classify_kpi_write(text: str) -> tuple[str, str]:
+    """Return (kpi_item, pass|fail|other) from a kpi_result_written text."""
+    t = str(text or "")
+    if "KPI 1" in t:
+        item = "KPI1"
+    elif "KPI 2" in t:
+        item = "KPI2"
+    elif "KPI 3" in t or "官网" in t:
+        item = "KPI3"
+    elif "KPI 4" in t or "KPI 5" in t or "产品可用" in t or "独立性" in t:
+        item = "KPI45"
+    elif "KPI 6" in t or "链上" in t:
+        item = "KPI6"
+    elif "KPI 7" in t:
+        item = "KPI7"
+    elif "Twitter" in t:
+        item = "KPI1"
+    else:
+        item = "other"
+    if "不通过" in t or "fail" in t.lower():
+        ok = "fail"
+    elif "通过" in t or "pass" in t.lower() or "Valid" in t:
+        ok = "pass"
+    else:
+        ok = "other"
+    return item, ok
+
+
+def _workflow_events_path(config: Any) -> Path:
+    rel = str(
+        getattr(config, "workflow_events_file", "") or "data/workflow_events.jsonl"
+    ).strip()
+    path = Path(rel)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def _message_log_dir(config: Any) -> Path:
+    rel = str(
+        getattr(config, "metrics_message_log_dir", "") or "data/message_logs"
+    ).strip()
+    path = Path(rel)
+    if not path.is_absolute():
+        path = ROOT / path
+    return path
+
+
+def _workflow_window_summary(
+    config: Any, *, since: datetime
+) -> dict[str, Any]:
+    """Aggregate workflow_events.jsonl rows inside the rolling window."""
+    out: dict[str, Any] = {
+        "total": 0,
+        "by_kind": {},
+        "names_by_kind": {},
+        "kpi_writes": {},
+        "early_final": [],
+        "error": None,
+    }
+    path = _workflow_events_path(config)
+    if not path.exists():
+        return out
+    by_kind: dict[str, int] = {}
+    names_by_kind: dict[str, list[str]] = {}
+    kpi_writes: dict[str, dict[str, int]] = {}
+    early_final: list[str] = []
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                dt = _parse_iso_ts(row.get("ts"))
+                if not _in_time_window(dt, since=since):
+                    continue
+                kind = str(row.get("kind") or "unknown")
+                by_kind[kind] = by_kind.get(kind, 0) + 1
+                name = str(row.get("project_name") or "").strip()
+                if name:
+                    names_by_kind.setdefault(kind, []).append(name)
+                if kind == "kpi_result_written":
+                    item, ok = _classify_kpi_write(str(row.get("text") or ""))
+                    bucket = kpi_writes.setdefault(item, {"pass": 0, "fail": 0, "other": 0})
+                    bucket[ok] = int(bucket.get(ok) or 0) + 1
+                if kind == "kpi_early_final":
+                    text = str(row.get("text") or "").strip()
+                    label = f"{name or '—'} · {text}" if text else (name or "—")
+                    early_final.append(label)
+        out["total"] = sum(by_kind.values())
+        out["by_kind"] = by_kind
+        out["names_by_kind"] = {
+            k: _dedupe_names(v) for k, v in names_by_kind.items()
+        }
+        out["kpi_writes"] = kpi_writes
+        out["early_final"] = early_final[:40]
+    except OSError as exc:
+        logger.warning("metrics: workflow events read failed: %s", exc)
+        out["error"] = str(exc)
+    return out
+
+
+def _message_window_summary(
+    config: Any, *, since: datetime, window_days: list[str]
+) -> dict[str, Any]:
+    """Aggregate message_logs outcomes inside the rolling window."""
+    out: dict[str, Any] = {
+        "total": 0,
+        "faq_replied": 0,
+        "social_replied": 0,
+        "silent": 0,
+        "ignored": 0,
+        "outbound": 0,
+        "human_review": 0,
+        "silent_reasons": {},
+        "error": None,
+    }
+    log_dir = _message_log_dir(config)
+    if not log_dir.exists():
+        return out
+    silent_reasons: dict[str, int] = {}
+    try:
+        for day in window_days:
+            path = log_dir / f"messages-{day}.jsonl"
+            if not path.exists():
+                continue
+            with path.open("r", encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if not line.startswith("{"):
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    dt = _parse_iso_ts(row.get("ts"))
+                    if not _in_time_window(dt, since=since):
+                        continue
+                    out["total"] = int(out["total"]) + 1
+                    outcome = str(row.get("outcome") or "")
+                    kind = str(row.get("kind") or "")
+                    if outcome == "replied" and kind == "faq":
+                        out["faq_replied"] = int(out["faq_replied"]) + 1
+                    elif outcome == "replied" and kind == "social":
+                        out["social_replied"] = int(out["social_replied"]) + 1
+                    elif outcome == "silent":
+                        out["silent"] = int(out["silent"]) + 1
+                        reason = str(row.get("reason") or "other").strip() or "other"
+                        silent_reasons[reason] = silent_reasons.get(reason, 0) + 1
+                    elif outcome == "ignored":
+                        out["ignored"] = int(out["ignored"]) + 1
+                    elif outcome == "sent" or kind == "outbound":
+                        out["outbound"] = int(out["outbound"]) + 1
+                    if kind == "human_review":
+                        out["human_review"] = int(out["human_review"]) + 1
+        out["silent_reasons"] = dict(
+            sorted(silent_reasons.items(), key=lambda kv: (-kv[1], kv[0]))[:12]
+        )
+    except OSError as exc:
+        logger.warning("metrics: message log read failed: %s", exc)
+        out["error"] = str(exc)
+    return out
+
+
 def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     """Assemble ops report for a rolling window (default past 24 hours)."""
     hours = max(int(hours), 1)
@@ -820,33 +1005,28 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
 
     with _lock:
         data = _ensure_loaded()
-        folder = _counter_triple(
-            data["counters"], "folder_auto_add_success", week_days, day_days=window_days
-        )
-        logo_ok = _counter_triple(
-            data["counters"], "logo_fill_success", week_days, day_days=window_days
-        )
-        processed = _counter_triple(
-            data["counters"], "messages_processed", week_days, day_days=window_days
-        )
-        sent = _counter_triple(
-            data["counters"], "messages_sent", week_days, day_days=window_days
-        )
-        faq_bubbles = _counter_triple(
-            data["counters"], "faq_bubbles_sent", week_days, day_days=window_days
-        )
-        faq_footer = _counter_triple(
-            data["counters"], "faq_footer_sent", week_days, day_days=window_days
-        )
-        social = _counter_triple(
-            data["counters"], "social_chitchat_replies", week_days, day_days=window_days
-        )
-        welcome_msgs = _counter_triple(
-            data["counters"], "welcome_messages_sent", week_days, day_days=window_days
-        )
-        form_ok = _counter_triple(
-            data["counters"], "form_dispatch_success", week_days, day_days=window_days
-        )
+        counters = data["counters"]
+
+        def _c(key: str) -> dict[str, int]:
+            return _counter_triple(counters, key, week_days, day_days=window_days)
+
+        folder = _c("folder_auto_add_success")
+        logo_ok = _c("logo_fill_success")
+        processed = _c("messages_processed")
+        sent = _c("messages_sent")
+        faq_bubbles = _c("faq_bubbles_sent")
+        faq_footer = _c("faq_footer_sent")
+        social = _c("social_chitchat_replies")
+        welcome_msgs = _c("welcome_messages_sent")
+        welcome_seq = _c("welcome_sequences_started")
+        form_ok = _c("form_dispatch_success")
+        form_fail = _c("form_dispatch_fail")
+        human_review = _c("human_review_alerts")
+        mark_live = _c("mark_live_triggers")
+        wallet_digest_sent = _c("wallet_digest_sent")
+        wallet_digest_new = _c("wallet_digest_new_projects")
+        absorb = _c("absorb_learn_success")
+        webhook_fail_proxy = _c("webhook_live_received")
         updated_at = data.get("updated_at") or ""
 
     auto_replies = (
@@ -867,6 +1047,7 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "total": 0,
         "lines": [],
         "entered_mainnet_live": [],
+        "left_mainnet_live": [],
         "entered_mainnet_live_records": [],
         "entered_mainnet_deploy": [],
         "left_mainnet_deploy": [],
@@ -881,6 +1062,9 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("metrics: deploy status summarize failed: %s", exc)
         deploy_changes["error"] = str(exc)
+
+    workflow = _workflow_window_summary(config, since=since)
+    messages = _message_window_summary(config, since=since, window_days=window_days)
 
     # Live count stays on the progress table: current mainnet-live status and
     # 主网上线时间 inside the window. A status that was flipped to live and
@@ -922,11 +1106,21 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
             "faq_footer": int(faq_footer.get("today") or 0),
             "social": int(social.get("today") or 0),
             "welcome": int(welcome_msgs.get("today") or 0),
+            "welcome_sequences": int(welcome_seq.get("today") or 0),
             "form": int(form_ok.get("today") or 0),
+            "form_fail": int(form_fail.get("today") or 0),
+            "human_review": int(human_review.get("today") or 0),
+            "mark_live": int(mark_live.get("today") or 0),
+            "wallet_digest_sent": int(wallet_digest_sent.get("today") or 0),
+            "wallet_digest_new": int(wallet_digest_new.get("today") or 0),
+            "absorb_learn": int(absorb.get("today") or 0),
+            "webhook_live_received": int(webhook_fail_proxy.get("today") or 0),
         },
         "progress": progress,
         "wallet": wallet,
         "deploy_changes": deploy_changes,
+        "workflow": workflow,
+        "message_mix": messages,
     }
 
 
@@ -952,93 +1146,288 @@ def _append_name_list(lines: list[str], names: list[Any]) -> None:
         lines.append(f"   {i}. {name}")
 
 
+def _fmt_kind_line(
+    lines: list[str],
+    *,
+    label: str,
+    count: int,
+    names: list[Any] | None = None,
+    empty: str = "无",
+) -> None:
+    if count <= 0 and not names:
+        lines.append(f"· {label}：{empty}")
+        return
+    n = int(count)
+    if names:
+        shown = _dedupe_names(list(names))
+        extra = max(n - len(shown), 0) if n > len(shown) else 0
+        suffix = f" 等另 {extra} 个" if extra else ""
+        joined = "、".join(shown) if shown else empty
+        lines.append(f"· {label}：{n}（{joined}{suffix}）")
+    else:
+        lines.append(f"· {label}：{n}")
+
+
 def format_daily_report_zh(daily: dict[str, Any]) -> str:
-    """Short Chinese daily digest: past-24h new items only (no full stock lists)."""
+    """Eight-section Chinese daily digest aligned to current automation."""
     today = daily.get("today") or _today()
     since = daily.get("window_since") or ""
     until = daily.get("window_until") or ""
+    window = daily.get("window_label") or "过去24小时"
     p = daily.get("progress") or {}
     w = daily.get("wallet") or {}
     dc = daily.get("deploy_changes") or {}
+    bm = daily.get("bot_messages") or {}
+    wf = daily.get("workflow") or {}
+    mm = daily.get("message_mix") or {}
+    by_kind = wf.get("by_kind") or {}
+    names_by_kind = wf.get("names_by_kind") or {}
+
+    def kcount(kind: str) -> int:
+        return int(by_kind.get(kind) or 0)
+
+    def knames(kind: str) -> list[str]:
+        return list(names_by_kind.get(kind) or [])
 
     lines = [
         "Delivery Agent日报",
-        f"统计窗口：过去24小时（Asia/Shanghai）",
+        f"统计窗口：{window}（Asia/Shanghai）",
         f"起止：{since or '—'} ~ {until or '—'}",
         f"生成日：{today}",
         f"数据更新：{daily.get('updated_at') or '—'}",
         "",
-        "一、过去24小时上线与部署",
+        "一、群触达",
     ]
-    if p.get("error"):
-        lines.append(f"· 进度表查询失败：{p['error']}")
-    else:
-        lines.append(f"1. 过去24小时主网上线：{p.get('today_mainnet_live', 0)} 个")
-        _append_name_list(lines, list(p.get("today_mainnet_live_names") or []))
+    folder_names = knames("folder_chat_added")
+    _fmt_kind_line(
+        lines,
+        label="新群归档",
+        count=int(daily.get("folder_new_groups_today") or len(folder_names) or 0),
+        names=folder_names,
+    )
+    lines.append(
+        f"· 问候序列：{bm.get('welcome_sequences', 0)}；欢迎语发出：{bm.get('welcome', 0)}"
+    )
+    faq_n = int(mm.get("faq_replied") or 0) or int(bm.get("faq_bubbles") or 0)
+    social_n = int(mm.get("social_replied") or 0) or int(bm.get("social") or 0)
+    silent_n = int(mm.get("silent") or 0)
+    ignored_n = int(mm.get("ignored") or 0)
+    outbound_n = int(mm.get("outbound") or 0) or int(
+        daily.get("messages_sent_24h") or bm.get("sent") or 0
+    )
+    lines.append(
+        f"· 入站处理：{daily.get('messages_processed_24h', bm.get('processed', 0))}；"
+        f"FAQ {faq_n}、社交寒暄 {social_n}、沉默 {silent_n}、忽略 {ignored_n}；"
+        f"出站 {outbound_n}"
+    )
+    human_n = int(mm.get("human_review") or 0) or int(bm.get("human_review") or 0)
+    lines.append(f"· 人工队列 / human_review：{human_n}")
+    reasons = mm.get("silent_reasons") or {}
+    if reasons:
+        top = "、".join(f"{r} {c}" for r, c in list(reasons.items())[:5])
+        lines.append(f"· 沉默主因：{top}")
 
+    lines.extend(["", "二、部署管道"])
     if dc.get("error"):
-        lines.append(f"2. 过去24小时新进测试网部署：读取失败（{dc['error']}）")
-        lines.append("3. 过去24小时新进主网部署中：读取失败")
+        lines.append(f"· 部署监测读取失败：{dc['error']}")
     elif not dc.get("baselined") and int(dc.get("total") or 0) == 0:
-        lines.append("2. 过去24小时新进测试网部署：—（监测基线中，之后开始记新增）")
-        lines.append("3. 过去24小时新进主网部署中：—（监测基线中，之后开始记新增）")
+        lines.append("· 部署监测基线中，之后开始记新增")
     else:
+        lines.append(f"· 状态变迁：{int(dc.get('total') or 0)} 次")
         entered_test = list(dc.get("entered_testnet_deploy") or [])
         entered_main = list(dc.get("entered_mainnet_deploy") or [])
-        lines.append(f"2. 过去24小时新进测试网部署：{len(entered_test)} 个")
-        _append_name_list(lines, entered_test)
-        lines.append(f"3. 过去24小时新进主网部署中：{len(entered_main)} 个")
-        _append_name_list(lines, entered_main)
+        left_live = list(dc.get("left_mainnet_live") or [])
+        _fmt_kind_line(
+            lines, label="新进测试网部署", count=len(entered_test), names=entered_test
+        )
+        _fmt_kind_line(
+            lines, label="新进主网部署中", count=len(entered_main), names=entered_main
+        )
+        if p.get("error"):
+            lines.append(f"· 进度表主网上线：查询失败（{p['error']}）")
+        else:
+            _fmt_kind_line(
+                lines,
+                label="进度表主网上线（按主网上线时间）",
+                count=int(p.get("today_mainnet_live") or 0),
+                names=list(p.get("today_mainnet_live_names") or []),
+            )
+        _fmt_kind_line(
+            lines, label="上线回退", count=len(left_live), names=left_live
+        )
 
-    lines.extend(
-        [
-            "",
-            "二、过去24小时对接与物料",
-            (
-                f"1. 过去24小时新进项目方群：{daily.get('folder_new_groups_today', 0)} 个"
-                "（Folder 自动归集成功）"
-            ),
-        ]
+    lines.extend(["", "三、上线漏斗"])
+    _fmt_kind_line(
+        lines,
+        label="Mark live",
+        count=int(bm.get("mark_live") or kcount("mark_live") or 0),
+        names=knames("mark_live"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="Logo 上传",
+        count=int(daily.get("logo_fill_today") or kcount("logo_uploaded_lark") or 0),
+        names=knames("logo_uploaded_lark"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="verification push onboard",
+        count=kcount("verification_push_onboard"),
+        names=knames("verification_push_onboard"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="表单新发",
+        count=int(bm.get("form") or kcount("form_sent") or 0),
+        names=knames("form_sent"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="表单催收",
+        count=kcount("form_chase_reminder"),
+        names=knames("form_chase_reminder"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="表单下发失败",
+        count=int(bm.get("form_fail") or kcount("form_dispatch_failed") or 0),
+        names=knames("form_dispatch_failed"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="live onboard 飞书推送",
+        count=kcount("live_onboard_lark_push"),
+        names=knames("live_onboard_lark_push"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="表单回执通知",
+        count=kcount("form_received_notified"),
+        names=knames("form_received_notified"),
+    )
+
+    lines.extend(["", "四、物料与钱包"])
+    _fmt_kind_line(
+        lines,
+        label="项目信息提交",
+        count=kcount("project_info_submit"),
+        names=knames("project_info_submit"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="PR support → KPI2",
+        count=kcount("pr_support_written"),
+        names=knames("pr_support_written"),
     )
     if w.get("error"):
-        lines.append(f"2. 过去24小时新收集钱包：查询失败：{w['error']}")
+        lines.append(f"· 新收集钱包：查询失败（{w['error']}）")
     else:
         lines.append(
-            f"2. 过去24小时新收集钱包的项目方：{w.get('today_new_projects', 0)} 个"
-            f"（新增地址字段 {w.get('today_new_address_fields', 0)} 个）"
+            f"· 新收集钱包项目：{w.get('today_new_projects', 0)} "
+            f"（地址字段 {w.get('today_new_address_fields', 0)}；"
+            f"digest 埋点 {bm.get('wallet_digest_new', 0)}）"
         )
-    lines.append(f"3. 过去24小时收集 Logo：{daily.get('logo_fill_today', 0)} 个")
-
-    bm = daily.get("bot_messages") or {}
-    window = daily.get("window_label") or "过去24小时"
-    lines.extend(
-        [
-            "",
-            f"三、{window} Bot 消息",
-            (
-                f"1. 发出消息：{daily.get('messages_replied_24h', bm.get('replied', 0))} 条"
-                "（交付号全部出站，含手动发送）"
-            ),
-            f"2. 处理入站：{daily.get('messages_processed_24h', bm.get('processed', 0))} 条",
-            (
-                "   （其中自动发出：FAQ 气泡 "
-                f"{bm.get('faq_bubbles', 0)}、页脚 {bm.get('faq_footer', 0)}、"
-                f"社交寒暄 {bm.get('social', 0)}、欢迎 {bm.get('welcome', 0)}、"
-                f"表单 {bm.get('form', 0)}；自动合计 {bm.get('auto_replied', 0)}）"
-            ),
-        ]
+    lines.append(f"· 钱包日报发出：{bm.get('wallet_digest_sent', 0)}")
+    _fmt_kind_line(
+        lines,
+        label="wallet_collected 事件",
+        count=kcount("wallet_collected"),
+        names=knames("wallet_collected"),
     )
+    _fmt_kind_line(
+        lines,
+        label="官推自动回填",
+        count=kcount("wallet_twitter_filled"),
+        names=knames("wallet_twitter_filled"),
+    )
+
+    lines.extend(["", "五、KPI 审计"])
+    kpi_writes = wf.get("kpi_writes") or {}
+    write_total = kcount("kpi_result_written")
+    if write_total:
+        parts = []
+        for item in ("KPI1", "KPI2", "KPI3", "KPI45", "KPI6", "KPI7", "other"):
+            bucket = kpi_writes.get(item) or {}
+            p_ok = int(bucket.get("pass") or 0)
+            p_fail = int(bucket.get("fail") or 0)
+            if p_ok or p_fail:
+                label = "KPI4/5" if item == "KPI45" else item
+                parts.append(f"{label} 通过 {p_ok}/不通过 {p_fail}")
+        lines.append(f"· 字段写入：{write_total}" + (f"（{'；'.join(parts)}）" if parts else ""))
+    else:
+        lines.append("· 字段写入：无")
+    _fmt_kind_line(
+        lines,
+        label="补交终审",
+        count=kcount("kpi_early_final"),
+        names=list(wf.get("early_final") or knames("kpi_early_final")),
+    )
+    _fmt_kind_line(
+        lines,
+        label="日历考核推群",
+        count=kcount("kpi_result_pushed"),
+        names=knames("kpi_result_pushed"),
+    )
+
+    lines.extend(["", "六、协作告警"])
+    _fmt_kind_line(
+        lines,
+        label="Verify 告警",
+        count=kcount("verify_alert"),
+        names=knames("verify_alert"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="Tech support / 技支学习",
+        count=kcount("tech_support_auto_learn"),
+        names=knames("tech_support_auto_learn"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="可信学习入库",
+        count=int(bm.get("absorb_learn") or 0) + kcount("trusted_auto_learn"),
+        names=knames("trusted_auto_learn"),
+    )
+    _fmt_kind_line(
+        lines,
+        label="AMA 邀请",
+        count=kcount("ama_invite_sent"),
+        names=knames("ama_invite_sent"),
+    )
+
+    lines.extend(["", "七、周表例行"])
+    lines.append(
+        f"· 品宣 PR 周表刷入：{kcount('pr_weekly_row')} 行；"
+        f"前端周报刷入：{kcount('frontend_weekly_row')} 行"
+    )
+    blake_n = kcount("blake_weekly_row") + kcount("blake_weekly_ping")
+    lines.append(
+        f"· Blake 周表相关事件：{blake_n or '无'}（正式 Lark ping 仅周一发送）"
+    )
+
+    lines.extend(["", "八、Agent / 稳定性"])
+    lines.append("· 服务状态：以本机 systemd 为准（报表生成时进程存活）")
+    _fmt_kind_line(
+        lines,
+        label="Live webhook 失败事件",
+        count=kcount("live_webhook_failed"),
+    )
+    sync_ok = kcount("lark_sync_completed")
+    sync_fail = kcount("lark_sync_failed")
+    lines.append(f"· Lark 知识同步：成功 {sync_ok} / 失败 {sync_fail}")
+    if wf.get("error") or mm.get("error"):
+        err_bits = [x for x in (wf.get("error"), mm.get("error")) if x]
+        lines.append(f"· 日志聚合告警：{'；'.join(err_bits)}")
+
     lines.extend(
         [
             "",
             "口径说明",
-            f"· 本报告统计「{window}」滚动窗口内的新增，不含全量存量名单。",
-            "· 主网上线 = 状态已是「主网上线」，且「主网上线时间」或「更新日期」落在窗口内（或监测到该窗口内新进该状态）。",
-            "· 新进测试网/主网部署 = 监测到状态在窗口内进入对应项。",
-            "· 新进群 / Logo = 埋点按日桶汇总后，取覆盖窗口的日历日合计（近似）。",
-            "· 新收集钱包 = digest first_seen 落在覆盖窗口的日历日。",
-            "· 发出消息 = 交付号账号全部出站消息（含 FAQ/欢迎/表单/手动打字等）。",
-            "· 处理入站 = 进入 FAQ/社交处理链路的入站消息数（含最终沉默未回）。",
+            f"· 本报告统计「{window}」滚动窗口内的新增（Asia/Shanghai）。",
+            "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
+            "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
+            "· 工作流事件来自 workflow_events；消息结构来自 message_logs；计数器按日桶近似。",
+            "· form_dispatch_skip / 轮询次数等噪声不进正文。",
         ]
     )
     return "\n".join(lines)

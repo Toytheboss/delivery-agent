@@ -224,6 +224,7 @@ def _summarize_events(
     since: datetime | None = None,
 ) -> dict[str, Any]:
     entered_live: list[str] = []
+    left_live: list[str] = []
     entered_main: list[str] = []
     left_main: list[str] = []
     entered_test: list[str] = []
@@ -237,6 +238,8 @@ def _summarize_events(
         old_k, new_k = status_kind(old), status_kind(new)
         if new_k == STATUS_KIND_LIVE and old_k != STATUS_KIND_LIVE:
             entered_live.append(name)
+        if old_k == STATUS_KIND_LIVE and new_k != STATUS_KIND_LIVE:
+            left_live.append(name)
         if new_k == STATUS_KIND_MAIN_DEPLOY and old_k != STATUS_KIND_MAIN_DEPLOY:
             entered_main.append(name)
         if old_k == STATUS_KIND_MAIN_DEPLOY and new_k != STATUS_KIND_MAIN_DEPLOY:
@@ -252,6 +255,7 @@ def _summarize_events(
         "events": events,
         "lines": lines,
         "entered_mainnet_live": entered_live,
+        "left_mainnet_live": left_live,
         "entered_mainnet_deploy": entered_main,
         "left_mainnet_deploy": left_main,
         "entered_testnet_deploy": entered_test,

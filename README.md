@@ -174,7 +174,7 @@ Templates: `config/pr_weekly.example.yaml` and the frontend-weekly example in `c
 | **Persistent counters** | FAQ, social, welcome, folder add, form/logo, mark-live, webhooks, wallet digest, messages processed, etc. |
 | **Stats (detail)** | Full Chinese ops breakdown. |
 | **Weekly / exec report** | Management-facing summary for the **past 7 days**; also writes `data/delivery_agent_report.txt`. |
-| **Daily report** | Rolling **past 24 hours**: new mainnet live, deploy transitions, new folder groups, new wallets, logos, bot message mix. |
+| **Daily report** | Rolling **past 24 hours**, eight blocks: group reach, deploy pipeline, live funnel, materials/wallets, KPI audit, collaboration alerts, weekly tables, stability (`workflow_events` + `message_logs` + counters). |
 | **Message detail log** | Append-only JSONL under `data/message_logs/messages-YYYY-MM-DD.jsonl` (retain N days, default 90); monitor-mode questions are marked `human_review` for the console queue. |
 
 **Report command aliases** (Telegram, on-demand — no scheduled TG push):
