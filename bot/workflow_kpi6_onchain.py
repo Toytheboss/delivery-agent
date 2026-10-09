@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -32,6 +33,14 @@ _FAIL = "不通过"
 _SCAN_API = "https://scan.botchain.ai/api"
 _WALLET_SHOW = 3
 _TX_SHOW = 5
+_MIN_WALLETS = 3
+_MIN_TXS = 5
+# Newest-first small pages: stop once KPI thresholds are met so busy
+# contracts (DEX etc.) do not pull tens of thousands of historical txs.
+_PAGE_SIZE = 100
+_MAX_PAGES = 30
+_PAGE_TIMEOUT = 30
+_PAGE_RETRIES = 3
 _MEETS_AUDIT = "Meets the audit requirement"
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -51,32 +60,73 @@ def is_successful(tx: dict[str, Any]) -> bool:
     return err in {"", "0"}
 
 
+def _kpi6_thresholds_met(core: list[dict[str, Any]], contract: str) -> bool:
+    wallets = unique_wallets(core, contract)
+    return len(wallets) >= _MIN_WALLETS and len(core) >= _MIN_TXS
+
+
+def _fetch_txlist_page(address: str, *, page: int) -> list[dict[str, Any]]:
+    """One scanner page with retries. Newest-first, small offset."""
+    last_exc: Exception | None = None
+    for attempt in range(_PAGE_RETRIES):
+        try:
+            resp = requests.get(
+                _SCAN_API,
+                params={
+                    "module": "account",
+                    "action": "txlist",
+                    "address": address,
+                    "startblock": 0,
+                    "endblock": 99999999,
+                    "page": page,
+                    "offset": _PAGE_SIZE,
+                    "sort": "desc",
+                },
+                headers={"User-Agent": _UA},
+                timeout=_PAGE_TIMEOUT,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            rows = payload.get("result") if isinstance(payload, dict) else None
+            if not isinstance(rows, list) or not rows:
+                return []
+            return [row for row in rows if isinstance(row, dict)]
+        except (requests.Timeout, requests.ConnectionError) as exc:
+            last_exc = exc
+            logger.info(
+                "kpi6: txlist page retry address=%s page=%s attempt=%s err=%s",
+                (address or "")[:12],
+                page,
+                attempt + 1,
+                str(exc)[:120],
+            )
+            time.sleep(0.4 * (attempt + 1))
+    if last_exc is not None:
+        raise last_exc
+    return []
+
+
 def fetch_txlist(address: str) -> list[dict[str, Any]]:
+    """Pull newest txs until KPI 6 thresholds are met (or pages run out).
+
+    Busy contracts can have tens of thousands of historical txs; we only need
+    ≥3 unique wallets and ≥5 successful core txs, so stop as soon as that is
+    satisfied instead of scanning from genesis.
+    """
+    ca = (address or "").strip()
+    if not ca:
+        return []
     items: list[dict[str, Any]] = []
     page = 1
-    while page <= 20:
-        resp = requests.get(
-            _SCAN_API,
-            params={
-                "module": "account",
-                "action": "txlist",
-                "address": address,
-                "startblock": 0,
-                "endblock": 99999999,
-                "page": page,
-                "offset": 1000,
-                "sort": "asc",
-            },
-            headers={"User-Agent": _UA},
-            timeout=45,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
-        rows = payload.get("result") if isinstance(payload, dict) else None
-        if not isinstance(rows, list) or not rows:
+    while page <= _MAX_PAGES:
+        rows = _fetch_txlist_page(ca, page=page)
+        if not rows:
             break
-        items.extend(row for row in rows if isinstance(row, dict))
-        if len(rows) < 1000:
+        items.extend(rows)
+        core, _skipped = classify_core_txs(items, contract=ca, window_start=None)
+        if _kpi6_thresholds_met(core, ca):
+            break
+        if len(rows) < _PAGE_SIZE:
             break
         page += 1
     return items
@@ -208,7 +258,7 @@ def evaluate_kpi6_contracts(
     wallets = [w for w in unique_wallets(core_all, "") if w not in blocked]
     hashes = core_tx_hashes(core_all)
     tx_count = len(hashes)
-    passed = len(wallets) >= 3 and tx_count >= 5
+    passed = len(wallets) >= _MIN_WALLETS and tx_count >= _MIN_TXS
     return {
         "passed": passed,
         "result": _PASS if passed else _FAIL,
@@ -250,7 +300,7 @@ def evaluate_kpi6(
     wallets = unique_wallets(core, contract)
     hashes = core_tx_hashes(core)
     tx_count = len(core)
-    passed = len(wallets) >= 3 and tx_count >= 5
+    passed = len(wallets) >= _MIN_WALLETS and tx_count >= _MIN_TXS
     return {
         "passed": passed,
         "result": _PASS if passed else _FAIL,
