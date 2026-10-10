@@ -10,6 +10,7 @@ from bot.workflow_kpi1_twitter import (
     _x_api,
     collect_originals,
     count_originals,
+    evaluate_kpi1,
     find_mainnet_pr_url,
     is_mainnet_pr_tweet,
     original_status_links,
@@ -83,6 +84,88 @@ def test_x_api_looks_up_again_when_cached_id_fails(monkeypatch, _user_id_cache):
     assert '"demo": "42"' in _user_id_cache.read_text(encoding="utf-8")
 
 
+def test_x_api_enough_reads_one_small_page(monkeypatch):
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    seen: list[dict] = []
+
+    def fake_get(path: str, bearer: str, params: dict | None = None):
+        del bearer
+        if path.startswith("/2/users/by/username/"):
+            return _Resp({"data": {"id": "42"}})
+        seen.append(dict(params or {}))
+        return _Resp(
+            {
+                "data": [
+                    {"created_at": f"2026-09-2{i}T00:00:00.000Z", "text": f"t{i}"}
+                    for i in range(5)
+                ],
+                "meta": {"next_token": "more"},
+            }
+        )
+
+    monkeypatch.setenv("X_BEARER_TOKEN", "t")
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_get", fake_get)
+    rows = _x_api("Demo", since, enough=5)
+    assert len(rows) == 5
+    assert len(seen) == 1
+    assert seen[0]["max_results"] == 5
+    assert _x_api("Demo", since) is not None
+    assert seen[-1]["max_results"] == 100
+
+
+def test_kpi1_copy_capped_shows_at_least():
+    verdict = evaluate_kpi1(handle="demo", count=5, unread=False, links=[], capped=True)
+    assert "Original posts (30d): ≥5 (need ≥5)" in verdict["copy"]
+    assert verdict["capped"] is True
+    short = evaluate_kpi1(handle="demo", count=3, unread=False, links=[], capped=True)
+    assert "Original posts (30d): 3 (need ≥5)" in short["copy"]
+    assert short["capped"] is False
+
+
+@pytest.mark.parametrize(
+    ("kpi2", "want"),
+    [("https://x.com/demo/status/9", 5), ("", None)],
+)
+def test_audit_reads_less_only_when_kpi2_filled(monkeypatch, kpi2, want):
+    from types import SimpleNamespace
+
+    from bot import workflow_kpi1_twitter as mod
+
+    asked: list[int | None] = []
+    rows = [
+        (datetime(2026, 10, 1 + i, tzinfo=SH), f"t{i}", {"id": str(i + 1)})
+        for i in range(5)
+    ]
+
+    def fake_fetch(handle, *, since, enough=None):
+        del handle, since
+        asked.append(enough)
+        return "x_api", rows
+
+    cfg = SimpleNamespace(
+        workflow_project_name_field="项目名称 Project Name",
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+    )
+    monkeypatch.setattr("bot.workflow_kpi_write.kpi_checks_on_this_host", lambda: True)
+    monkeypatch.setattr(
+        mod,
+        "find_wallet_row",
+        lambda *_a: ("rec", {mod._TWITTER_FIELD_ALIASES[0]: "https://x.com/demo"}),
+    )
+    monkeypatch.setattr(mod, "fetch_timeline", fake_fetch)
+    monkeypatch.setattr(mod, "now_shanghai", lambda: datetime(2026, 10, 10, tzinfo=SH))
+    monkeypatch.setattr(mod, "maybe_write_kpi2_from_tweets", lambda *_a, **_k: "")
+    monkeypatch.setattr(mod, "update_record", lambda *_a, **_k: None)
+    fields = {"项目名称 Project Name": "Demo"}
+    if kpi2:
+        fields[mod._KPI2_LINK] = kpi2
+    out = mod.audit_kpi1_for_fields("tok", cfg, "rec1", fields, project_name="Demo")
+    assert asked == [want]
+    assert out["passed"] is True
+    assert out["capped"] is (want is not None)
+
+
 def test_utc_stamp_is_actual_utc_not_shanghai_labeled_z():
     dt = datetime(2026, 9, 26, 8, 0, tzinfo=SH)
     assert _utc_stamp(dt) == "2026-09-26T00:00:00Z"
@@ -112,7 +195,7 @@ def test_count_originals_uses_x_api_when_bearer_set(monkeypatch):
         (datetime(2026, 9, 14, tzinfo=timezone.utc), "five", {}),
     ]
     monkeypatch.setenv("X_BEARER_TOKEN", "test")
-    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start: tweets)
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start, **_kw: tweets)
     count, source = count_originals("demo", since=since)
     assert source == "x_api"
     assert count == 5
@@ -121,7 +204,7 @@ def test_count_originals_uses_x_api_when_bearer_set(monkeypatch):
 def test_count_originals_does_not_fall_back_when_x_api_fails(monkeypatch):
     since = datetime(2026, 9, 1, tzinfo=timezone.utc)
     monkeypatch.setenv("X_BEARER_TOKEN", "test")
-    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start: None)
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start, **_kw: None)
     monkeypatch.setattr(
         "bot.workflow_kpi1_twitter._syndication",
         lambda handle: [(datetime(2026, 9, 10, tzinfo=timezone.utc), "cached", {})],
@@ -241,7 +324,7 @@ def test_collect_originals_returns_links_from_x_api(monkeypatch):
         (datetime(2026, 9, 13, tzinfo=timezone.utc), "four", {"id": "4"}),
     ]
     monkeypatch.setenv("X_BEARER_TOKEN", "test")
-    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start: tweets)
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_api", lambda handle, start, **_kw: tweets)
     count, source, links = collect_originals("demo", since=since)
     assert source == "x_api"
     assert count == 2

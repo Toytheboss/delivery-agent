@@ -769,14 +769,19 @@ def _lookup_user_id(handle: str, bearer: str) -> str | None:
     return user_id
 
 
-def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, Any]]] | None:
-    """Official X timeline. None = call failed. [] = user/tweets empty."""
+def _x_api(
+    handle: str, since: datetime, *, enough: int | None = None
+) -> list[tuple[datetime, str, dict[str, Any]]] | None:
+    """Official X timeline. None = call failed. [] = user/tweets empty.
+
+    ``enough`` stops paging once that many in-window originals are read.
+    """
     bearer = _x_bearer()
     if not bearer:
         return None
     cached = _cached_user_id(handle)
     if cached:
-        rows = _x_timeline(handle, cached, bearer, since)
+        rows = _x_timeline(handle, cached, bearer, since, enough=enough)
         if rows is not None:
             return rows
         logger.info("kpi1: X cached user id failed handle=%s; looking up again", handle)
@@ -786,15 +791,22 @@ def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, 
         return None
     if not user_id:
         return []
-    return _x_timeline(handle, user_id, bearer, since)
+    return _x_timeline(handle, user_id, bearer, since, enough=enough)
 
 
 def _x_timeline(
-    handle: str, user_id: str, bearer: str, since: datetime
+    handle: str,
+    user_id: str,
+    bearer: str,
+    since: datetime,
+    *,
+    enough: int | None = None,
 ) -> list[tuple[datetime, str, dict[str, Any]]] | None:
     start = _utc_stamp(since)
+    # X allows max_results 5..100 on this endpoint.
+    page_size = min(max(int(enough), 5), 100) if enough else 100
     params: dict[str, Any] = {
-        "max_results": 100,
+        "max_results": page_size,
         "exclude": "retweets,replies",
         "tweet.fields": "created_at,text",
         "start_time": start,
@@ -835,6 +847,8 @@ def _x_timeline(
                 oldest_on_page = dt
             if dt >= since:
                 out.append((dt, str(item.get("text") or ""), item))
+        if enough and len(out) >= enough:
+            break
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
         next_token = str((meta or {}).get("next_token") or "").strip()
         if not next_token:
@@ -846,11 +860,11 @@ def _x_timeline(
 
 
 def fetch_timeline(
-    handle: str, *, since: datetime
+    handle: str, *, since: datetime, enough: int | None = None
 ) -> tuple[str, list[tuple[datetime, str, dict[str, Any]]] | None]:
     """Return (source, rows). ``None`` rows means the official read failed."""
     if x_api_configured():
-        api = _x_api(handle, since)
+        api = _x_api(handle, since, enough=enough)
         if api is None:
             return "unread", None
         return "x_api", api
@@ -886,6 +900,7 @@ def build_kpi1_copy(
     count: int | None,
     reason: str,
     links: list[str] | None = None,
+    capped: bool = False,
 ) -> str:
     if reason == "no_account":
         return "- Official account: not submitted\n- Result: failed"
@@ -898,7 +913,8 @@ def build_kpi1_copy(
         return "\n".join(lines)
     n = int(count)
     passed = n >= _THRESHOLD
-    lines.append(f"- Original posts (30d): {n} (need ≥{_THRESHOLD})")
+    shown = f"≥{_THRESHOLD}" if capped and passed else str(n)
+    lines.append(f"- Original posts (30d): {shown} (need ≥{_THRESHOLD})")
     lines.append(f"- Result: {'passed' if passed else 'failed'}")
     urls = [str(url).strip() for url in (links or []) if str(url).strip()]
     if passed:
@@ -914,6 +930,7 @@ def evaluate_kpi1(
     count: int | None,
     unread: bool,
     links: list[str] | None = None,
+    capped: bool = False,
 ) -> dict[str, Any]:
     if not handle:
         return {
@@ -932,12 +949,16 @@ def evaluate_kpi1(
             "links": [],
         }
     passed = count >= _THRESHOLD
+    capped = capped and passed
     urls = list(links or [])
     return {
         "passed": passed,
         "reason": "pass" if passed else "below_threshold",
-        "copy": build_kpi1_copy(handle=handle, count=count, reason="ok", links=urls),
+        "copy": build_kpi1_copy(
+            handle=handle, count=count, reason="ok", links=urls, capped=capped
+        ),
         "count": count,
+        "capped": capped,
         "links": urls[:_LINK_LIMIT] if passed else urls,
     }
 
@@ -979,10 +1000,14 @@ def audit_kpi1_for_fields(
     since = now_shanghai() - timedelta(days=30)
     count: int | None = None
     unread = False
+    capped = False
     links: list[str] = []
     rows: list[tuple[datetime, str, dict[str, Any]]] = []
+    pr_link_field = str(getattr(config, "pr_capture_link_field", "") or _KPI2_LINK)
+    # PR hunt only reads the timeline when KPI 2 is empty.
+    enough = _THRESHOLD if field_is_filled(fields, pr_link_field) else None
     if handle:
-        source, fetched = fetch_timeline(handle, since=since)
+        source, fetched = fetch_timeline(handle, since=since, enough=enough)
         if fetched is None:
             unread = True
             logger.info("kpi1: handle=%s source=unread", handle)
@@ -994,11 +1019,13 @@ def audit_kpi1_for_fields(
                 if dt >= since and not is_retweet(text, extra)
             )
             links = original_status_links(handle, rows, since=since)
+            capped = bool(enough) and source == "x_api" and count >= int(enough or 0)
             logger.info(
-                "kpi1: handle=%s source=%s count=%s links=%s",
+                "kpi1: handle=%s source=%s count=%s%s links=%s",
                 handle,
                 source,
                 count,
+                "+" if capped else "",
                 len(links),
             )
     pr_url = ""
@@ -1013,7 +1040,9 @@ def audit_kpi1_for_fields(
             rows=rows,
             since=since,
         )
-    verdict = evaluate_kpi1(handle=handle, count=count, unread=unread, links=links)
+    verdict = evaluate_kpi1(
+        handle=handle, count=count, unread=unread, links=links, capped=capped
+    )
     existing_copy = _field_text(fields, copy_field)
     existing_result = field_result(fields, result_field)
     copy = merge_kpi_copy(existing_copy, str(verdict["copy"]))
@@ -1044,6 +1073,7 @@ def audit_kpi1_for_fields(
         "copy": copy,
         "handle": handle,
         "count": verdict["count"],
+        "capped": bool(verdict.get("capped")),
         "project": name,
         "pr_url": pr_url,
     }

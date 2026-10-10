@@ -23,6 +23,12 @@ def test_twitter_and_onchain_lines():
         "`2` original posts. Does not meet the Twitter requirement."
     )
     assert twitter_post_line(handle="demo", count=7, unread=False)[0] is True
+    assert twitter_post_line(handle="demo", count=5, unread=False, capped=True)[1] == (
+        "`≥5` original posts. Meets the Twitter requirement."
+    )
+    assert twitter_line_from_copy(
+        "- Official account: @demo\n- Original posts (30d): ≥5 (need ≥5)\n- Result: passed"
+    ) == "`≥5` original posts. Meets the Twitter requirement."
     assert onchain_post_line(contract="", wallets=0, txs=0) == (False, "Not submitted")
     assert "0" not in onchain_post_line(contract="", wallets=0, txs=0)[1]
     short = onchain_post_line(contract="0xabc", wallets=2, txs=4)[1]

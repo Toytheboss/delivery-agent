@@ -142,7 +142,7 @@ def pending_september_rows(
 
 
 def twitter_post_line(
-    *, handle: str, count: int | None, unread: bool
+    *, handle: str, count: int | None, unread: bool, capped: bool = False
 ) -> tuple[bool, str]:
     if not (handle or "").strip():
         return False, "Not submitted"
@@ -150,7 +150,8 @@ def twitter_post_line(
         return False, "Official account could not be read."
     shown = int(count)
     if shown >= 5:
-        return True, f"`{shown}` original posts. Meets the Twitter requirement."
+        label = "≥5" if capped else str(shown)
+        return True, f"`{label}` original posts. Meets the Twitter requirement."
     return False, f"`{shown}` original posts. Does not meet the Twitter requirement."
 
 
@@ -408,12 +409,16 @@ def twitter_line_from_copy(copy: str) -> str:
         return "Not submitted"
     if "original posts (30d): unread" in low or "could not be read" in low:
         return "Official account could not be read."
-    match = _POSTED_RE.search(body) or re.search(
-        r"Original posts \(30d\): (\d+)", body
-    )
+    match = _POSTED_RE.search(body)
+    capped = False
+    if not match:
+        match = re.search(r"Original posts \(30d\): (≥)?(\d+)", body)
+        capped = bool(match and match.group(1))
     if not match:
         return "Meets the Twitter requirement."
-    return twitter_post_line(handle="kept", count=int(match.group(1)), unread=False)[1]
+    return twitter_post_line(
+        handle="kept", count=int(match.groups()[-1]), unread=False, capped=capped
+    )[1]
 
 
 def onchain_line_from_copy(copy: str) -> str:
@@ -540,7 +545,10 @@ def audit_first_check(
         if not isinstance(count, int):
             count = None
         twitter_ok, twitter_line = twitter_post_line(
-            handle=handle, count=count, unread=unread
+            handle=handle,
+            count=count,
+            unread=unread,
+            capped=bool(twitter.get("capped")),
         )
     else:
         twitter_ok = True
