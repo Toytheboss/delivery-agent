@@ -20,6 +20,7 @@ from bot.metrics import (
     format_stats_zh,
     inc,
     snapshot,
+    split_telegram_text,
     write_report_file,
 )
 from bot.message_log import log_message_event
@@ -384,7 +385,11 @@ class MessageHandler:
                     daily = await loop.run_in_executor(
                         None, lambda: build_daily_report(self.config)
                     )
-                    await message.reply(format_daily_report_zh(daily))
+                    chunks = split_telegram_text(format_daily_report_zh(daily))
+                    for i, chunk in enumerate(chunks):
+                        await message.reply(chunk)
+                        if i + 1 < len(chunks):
+                            await asyncio.sleep(0.35)
                 else:
                     snap = await loop.run_in_executor(
                         None, lambda: snapshot(self.config, include_lark=True)
@@ -392,7 +397,11 @@ class MessageHandler:
                     if is_report_cmd:
                         report = format_report_zh(snap)
                         await loop.run_in_executor(None, lambda: write_report_file(snap))
-                        await message.reply(report)
+                        chunks = split_telegram_text(report)
+                        for i, chunk in enumerate(chunks):
+                            await message.reply(chunk)
+                            if i + 1 < len(chunks):
+                                await asyncio.sleep(0.35)
                     else:
                         await message.reply(format_stats_zh(snap))
             except Exception:

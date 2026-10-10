@@ -2,7 +2,32 @@
 
 from __future__ import annotations
 
-from bot.metrics import _classify_kpi_write, format_daily_report_zh
+from bot.metrics import (
+    _classify_kpi_write,
+    _fmt_kind_line,
+    format_daily_report_zh,
+    split_telegram_text,
+)
+
+
+def test_split_telegram_text_keeps_short_message() -> None:
+    assert split_telegram_text("hello") == ["hello"]
+
+
+def test_split_telegram_text_splits_long_lines() -> None:
+    body = "\n".join(f"line-{i}-" + ("x" * 80) for i in range(80))
+    chunks = split_telegram_text(body, limit=500)
+    assert len(chunks) >= 2
+    assert all(len(c) <= 500 for c in chunks)
+    assert "\n".join(chunks) == body
+
+
+def test_fmt_kind_line_caps_name_list() -> None:
+    lines: list[str] = []
+    names = [f"Proj{i}" for i in range(30)]
+    _fmt_kind_line(lines, label="新群归档", count=30, names=names, name_limit=5)
+    assert lines and "等另 25 个" in lines[0]
+    assert lines[0].count("Proj") == 5
 
 
 def test_classify_kpi_write() -> None:

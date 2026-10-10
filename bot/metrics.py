@@ -1153,19 +1153,55 @@ def _fmt_kind_line(
     count: int,
     names: list[Any] | None = None,
     empty: str = "无",
+    name_limit: int = 12,
 ) -> None:
     if count <= 0 and not names:
         lines.append(f"· {label}：{empty}")
         return
     n = int(count)
     if names:
-        shown = _dedupe_names(list(names))
-        extra = max(n - len(shown), 0) if n > len(shown) else 0
+        unique = _dedupe_names(list(names), limit=10_000)
+        shown = unique[: max(int(name_limit), 1)]
+        extra = max(max(n, len(unique)) - len(shown), 0)
         suffix = f" 等另 {extra} 个" if extra else ""
         joined = "、".join(shown) if shown else empty
         lines.append(f"· {label}：{n}（{joined}{suffix}）")
     else:
         lines.append(f"· {label}：{n}")
+
+
+def split_telegram_text(text: str, *, limit: int = 3500) -> list[str]:
+    """Split a long Telegram reply into chunks under ``limit`` characters.
+
+    Prefers line boundaries; falls back to hard cuts when a single line is too
+    long. Telegram's hard cap is 4096; keep headroom for safety.
+    """
+    raw = (text or "").strip()
+    if not raw:
+        return []
+    cap = max(int(limit), 256)
+    if len(raw) <= cap:
+        return [raw]
+    chunks: list[str] = []
+    buf = ""
+    for line in raw.split("\n"):
+        piece = line if not buf else f"{buf}\n{line}"
+        if len(piece) <= cap:
+            buf = piece
+            continue
+        if buf:
+            chunks.append(buf)
+            buf = ""
+        if len(line) <= cap:
+            buf = line
+            continue
+        start = 0
+        while start < len(line):
+            chunks.append(line[start : start + cap])
+            start += cap
+    if buf:
+        chunks.append(buf)
+    return chunks or [raw[:cap]]
 
 
 def format_daily_report_zh(daily: dict[str, Any]) -> str:
