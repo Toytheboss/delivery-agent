@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
+import pytest
+
 from bot.workflow_kpi1_twitter import (
     SH,
     _utc_stamp,
@@ -14,6 +16,71 @@ from bot.workflow_kpi1_twitter import (
     tweet_has_project_name,
     x_api_configured,
 )
+
+
+@pytest.fixture(autouse=True)
+def _user_id_cache(tmp_path, monkeypatch):
+    path = tmp_path / "x_user_id_cache.json"
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._USER_ID_CACHE_PATH", path)
+    return path
+
+
+class _Resp:
+    def __init__(self, payload: dict, status_code: int = 200) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def json(self) -> dict:
+        return self._payload
+
+
+def _timeline_get(calls: list[str], *, bad_ids: frozenset[str] = frozenset()):
+    def fake_get(path: str, bearer: str, params: dict | None = None):
+        del bearer, params
+        calls.append(path)
+        if path.startswith("/2/users/by/username/"):
+            return _Resp({"data": {"id": "42"}})
+        user_id = path.split("/")[3]
+        if user_id in bad_ids:
+            return _Resp({"errors": [{"title": "Not Found Error"}]}, status_code=404)
+        return _Resp(
+            {"data": [{"created_at": "2026-09-20T00:00:00.000Z", "text": "in"}], "meta": {}}
+        )
+
+    return fake_get
+
+
+def test_x_api_reuses_cached_user_id(monkeypatch, _user_id_cache):
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    calls: list[str] = []
+    monkeypatch.setenv("X_BEARER_TOKEN", "t")
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_get", _timeline_get(calls))
+    assert [t for _d, t, _e in _x_api("Demo", since)] == ["in"]
+    assert [t for _d, t, _e in _x_api("demo", since)] == ["in"]
+    assert calls == [
+        "/2/users/by/username/Demo",
+        "/2/users/42/tweets",
+        "/2/users/42/tweets",
+    ]
+    assert '"demo": "42"' in _user_id_cache.read_text(encoding="utf-8")
+
+
+def test_x_api_looks_up_again_when_cached_id_fails(monkeypatch, _user_id_cache):
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    _user_id_cache.write_text('{"demo": "7"}', encoding="utf-8")
+    calls: list[str] = []
+    monkeypatch.setenv("X_BEARER_TOKEN", "t")
+    monkeypatch.setattr(
+        "bot.workflow_kpi1_twitter._x_get",
+        _timeline_get(calls, bad_ids=frozenset({"7"})),
+    )
+    assert [t for _d, t, _e in _x_api("Demo", since)] == ["in"]
+    assert calls == [
+        "/2/users/7/tweets",
+        "/2/users/by/username/Demo",
+        "/2/users/42/tweets",
+    ]
+    assert '"demo": "42"' in _user_id_cache.read_text(encoding="utf-8")
 
 
 def test_utc_stamp_is_actual_utc_not_shanghai_labeled_z():

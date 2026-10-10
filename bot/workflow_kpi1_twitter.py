@@ -10,6 +10,7 @@ import re
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
@@ -55,6 +56,9 @@ _PR_TEXT_LIMIT = 800
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
+_USER_ID_CACHE_PATH = (
+    Path(__file__).resolve().parent.parent / "data" / "x_user_id_cache.json"
+)
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
@@ -708,16 +712,49 @@ def _x_get(
     return last
 
 
-def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, Any]]] | None:
-    """Official X timeline. None = call failed. [] = user/tweets empty."""
-    bearer = _x_bearer()
-    if not bearer:
-        return None
+def _load_user_ids() -> dict[str, str]:
+    try:
+        raw = json.loads(_USER_ID_CACHE_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k): str(v) for k, v in raw.items() if str(v).isdigit()}
+
+
+def _save_user_ids(ids: dict[str, str]) -> None:
+    try:
+        _USER_ID_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _USER_ID_CACHE_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps(ids, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp.replace(_USER_ID_CACHE_PATH)
+    except OSError:
+        logger.exception("kpi1: X user id cache write failed")
+
+
+def _cached_user_id(handle: str) -> str:
+    return _load_user_ids().get(handle.lower(), "")
+
+
+def _remember_user_id(handle: str, user_id: str) -> None:
+    ids = _load_user_ids()
+    key = handle.lower()
+    if user_id:
+        if ids.get(key) == user_id:
+            return
+        ids[key] = user_id
+    elif ids.pop(key, None) is None:
+        return
+    _save_user_ids(ids)
+
+
+def _lookup_user_id(handle: str, bearer: str) -> str | None:
+    """X user id for ``handle``. None = call failed. '' = no such user."""
     user_resp = _x_get(f"/2/users/by/username/{handle}", bearer)
     if user_resp is None:
         return None
     if user_resp.status_code == 404:
-        return []
+        return ""
     if user_resp.status_code >= 400:
         logger.warning(
             "kpi1: X user lookup HTTP %s handle=%s", user_resp.status_code, handle
@@ -727,9 +764,34 @@ def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, 
         user_id = str(((user_resp.json().get("data") or {}).get("id") or "")).strip()
     except ValueError:
         return None
+    if user_id:
+        _remember_user_id(handle, user_id)
+    return user_id
+
+
+def _x_api(handle: str, since: datetime) -> list[tuple[datetime, str, dict[str, Any]]] | None:
+    """Official X timeline. None = call failed. [] = user/tweets empty."""
+    bearer = _x_bearer()
+    if not bearer:
+        return None
+    cached = _cached_user_id(handle)
+    if cached:
+        rows = _x_timeline(handle, cached, bearer, since)
+        if rows is not None:
+            return rows
+        logger.info("kpi1: X cached user id failed handle=%s; looking up again", handle)
+        _remember_user_id(handle, "")
+    user_id = _lookup_user_id(handle, bearer)
+    if user_id is None:
+        return None
     if not user_id:
         return []
+    return _x_timeline(handle, user_id, bearer, since)
 
+
+def _x_timeline(
+    handle: str, user_id: str, bearer: str, since: datetime
+) -> list[tuple[datetime, str, dict[str, Any]]] | None:
     start = _utc_stamp(since)
     params: dict[str, Any] = {
         "max_results": 100,
