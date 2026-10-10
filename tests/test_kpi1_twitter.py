@@ -123,10 +123,10 @@ def test_kpi1_copy_capped_shows_at_least():
 
 
 @pytest.mark.parametrize(
-    ("kpi2", "want"),
-    [("https://x.com/demo/status/9", 5), ("", None)],
+    ("kpi2", "posts", "capped"),
+    [("https://x.com/demo/status/9", 6, True), ("", 6, True), ("", 5, False)],
 )
-def test_audit_reads_less_only_when_kpi2_filled(monkeypatch, kpi2, want):
+def test_audit_reads_six_originals(monkeypatch, kpi2, posts, capped):
     from types import SimpleNamespace
 
     from bot import workflow_kpi1_twitter as mod
@@ -134,7 +134,7 @@ def test_audit_reads_less_only_when_kpi2_filled(monkeypatch, kpi2, want):
     asked: list[int | None] = []
     rows = [
         (datetime(2026, 10, 1 + i, tzinfo=SH), f"t{i}", {"id": str(i + 1)})
-        for i in range(5)
+        for i in range(posts)
     ]
 
     def fake_fetch(handle, *, since, enough=None):
@@ -161,9 +161,9 @@ def test_audit_reads_less_only_when_kpi2_filled(monkeypatch, kpi2, want):
     if kpi2:
         fields[mod._KPI2_LINK] = kpi2
     out = mod.audit_kpi1_for_fields("tok", cfg, "rec1", fields, project_name="Demo")
-    assert asked == [want]
+    assert asked == [6]
     assert out["passed"] is True
-    assert out["capped"] is (want is not None)
+    assert out["capped"] is capped
 
 
 def test_utc_stamp_is_actual_utc_not_shanghai_labeled_z():

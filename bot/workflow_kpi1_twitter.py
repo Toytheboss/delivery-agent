@@ -39,6 +39,7 @@ _DEFAULT_RESULT_FIELD = "推特验证结果"
 _PASS = "通过"
 _FAIL = "不通过"
 _THRESHOLD = 5
+_READ_ENOUGH = 6
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
 _KPI2_LINK = "KPI 2 - PR 新闻链接验证"
@@ -518,7 +519,7 @@ def fill_kpi2_pr_from_twitter(
     if not handle:
         return ""
     since = now_shanghai() - timedelta(days=30)
-    _source, rows = fetch_timeline(handle, since=since)
+    _source, rows = fetch_timeline(handle, since=since, enough=_READ_ENOUGH)
     if not rows:
         return ""
     return maybe_write_kpi2_from_tweets(
@@ -1003,9 +1004,7 @@ def audit_kpi1_for_fields(
     capped = False
     links: list[str] = []
     rows: list[tuple[datetime, str, dict[str, Any]]] = []
-    pr_link_field = str(getattr(config, "pr_capture_link_field", "") or _KPI2_LINK)
-    # PR hunt only reads the timeline when KPI 2 is empty.
-    enough = _THRESHOLD if field_is_filled(fields, pr_link_field) else None
+    enough = _READ_ENOUGH
     if handle:
         source, fetched = fetch_timeline(handle, since=since, enough=enough)
         if fetched is None:
