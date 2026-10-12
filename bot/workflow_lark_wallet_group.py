@@ -111,11 +111,11 @@ def _build_digest_text(
     *,
     title: str | None = None,
     at_open_id: str = "",
-    at_name: str = "Angela-财务",
+    at_name: str = "财务",
 ) -> str:
     lines: list[str] = []
     oid = (at_open_id or "").strip()
-    name = (at_name or "Angela-财务").strip()
+    name = (at_name or "财务").strip()
     if oid:
         lines.append(f'<at user_id="{oid}">{name}</at>')
     lines.append(title or f"【项目方地址日报】{date_str}")
@@ -324,7 +324,7 @@ async def run_lark_daily_digest_once(config: Any, *, force_date: str | None = No
         date_str,
         projects,
         at_open_id=str(getattr(config, "workflow_lark_digest_at_open_id", "") or ""),
-        at_name=str(getattr(config, "workflow_lark_digest_at_name", "") or "Angela-财务"),
+        at_name=str(getattr(config, "workflow_lark_digest_at_name", "") or "财务"),
     )
 
     try:

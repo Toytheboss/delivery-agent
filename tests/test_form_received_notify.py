@@ -3,17 +3,17 @@ from bot.workflow_form_received_notify import build_form_received_message
 
 def test_form_received_copy():
     text = build_form_received_message(
-        project="mettelia",
-        group="BOTCHAIN/mettelia",
-        bd_name="Weison",
-        bd_open_id="ou_387acc25ce11c7676a191e364655aa21",
+        project="exampleapp",
+        group="BOTCHAIN/exampleapp",
+        bd_name="Ada",
+        bd_open_id="ou_bd",
     )
     assert text.startswith(
-        '<at user_id="ou_387acc25ce11c7676a191e364655aa21">Weison</at>'
+        '<at user_id="ou_bd">Ada</at>'
     )
-    assert "**Project:** `mettelia`" in text
+    assert "**Project:** `exampleapp`" in text
     assert "**Status:** Google Onboarding form received" in text
-    assert "**TG group:** `BOTCHAIN/mettelia`" in text
+    assert "**TG group:** `BOTCHAIN/exampleapp`" in text
     assert (
         "**Form:** Submitted; Twitter, contract, logo and intro are in Lark"
         in text
@@ -26,8 +26,8 @@ def test_form_received_fallback_at():
     text = build_form_received_message(
         project="sparrowpost",
         group="",
-        bd_name="Weison",
+        bd_name="Ada",
         bd_open_id="",
     )
-    assert text.startswith("@Weison")
+    assert text.startswith("@Ada")
     assert "**TG group:** `not matched`" in text

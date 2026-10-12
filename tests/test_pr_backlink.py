@@ -63,14 +63,14 @@ def test_progress_tg_id_beats_a_title():
         {
             "record_id": "rec_live",
             "fields": {
-                "项目名称 Project Name": "AgentForge",
+                "项目名称 Project Name": "ExampleForge",
                 "TG群ID": "-100111",
             },
         }
     ]
-    titles = {-100222: "AgentForge delivery"}
+    titles = {-100222: "ExampleForge delivery"}
     chat_id, reason = resolve_project_chat(
-        "AgentForge",
+        "ExampleForge",
         progress,
         titles,
         name_field="项目名称 Project Name",

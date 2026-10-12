@@ -12,9 +12,9 @@ from bot.workflow_lark_bridge import (
 
 
 def test_push_copy_is_name_then_body():
-    assert format_inbound_push("Lighter", "看到了") == "Lighter：看到了"
+    assert format_inbound_push("品宣甲", "看到了") == "品宣甲：看到了"
     assert format_inbound_push("张三", "ok", group_name="交付群") == "张三（交付群）：ok"
-    assert format_inbound_push("Lighter", "") == "Lighter：[非文字，先只转文字]"
+    assert format_inbound_push("品宣甲", "") == "品宣甲：[非文字，先只转文字]"
 
 
 def test_session_expires_after_24_hours(monkeypatch, tmp_path):
@@ -22,8 +22,8 @@ def test_session_expires_after_24_hours(monkeypatch, tmp_path):
     now = 1_000_000.0
     session = upsert_session(
         kind="user",
-        peer_id="ou_lighter",
-        peer_name="Lighter",
+        peer_id="ou_a",
+        peer_name="品宣甲",
         roy_chat_id="oc_roy",
         outbound_message_id="om_out",
         now=now,
@@ -37,17 +37,17 @@ def test_p2p_inbound_only_after_send_to(monkeypatch, tmp_path):
     now = time.time()
     upsert_session(
         kind="user",
-        peer_id="ou_lighter",
-        peer_name="Lighter",
+        peer_id="ou_a",
+        peer_name="品宣甲",
         roy_chat_id="oc_roy",
         outbound_message_id="om_out",
         now=now,
     )
     message = {"chat_type": "p2p", "chat_id": "oc_p2p", "message_id": "om_in"}
-    sender = {"sender_id": {"open_id": "ou_lighter"}, "sender_type": "user"}
+    sender = {"sender_id": {"open_id": "ou_a"}, "sender_type": "user"}
     hit = match_inbound(message, sender, now=now)
     assert hit is not None
-    assert hit["peer_name"] == "Lighter"
+    assert hit["peer_name"] == "品宣甲"
 
     other = {"sender_id": {"open_id": "ou_stranger"}, "sender_type": "user"}
     assert match_inbound(message, other, now=now) is None
@@ -64,7 +64,7 @@ def test_group_inbound_only_when_replying_to_bot(monkeypatch, tmp_path):
         outbound_message_id="om_out",
         now=now,
     )
-    sender = {"sender_id": {"open_id": "ou_jasper"}, "sender_type": "user"}
+    sender = {"sender_id": {"open_id": "ou_b"}, "sender_type": "user"}
     reply = {
         "chat_type": "group",
         "chat_id": "oc_group",
@@ -87,8 +87,8 @@ def test_roy_reply_maps_to_the_push(monkeypatch, tmp_path):
     now = time.time()
     upsert_session(
         kind="user",
-        peer_id="ou_lighter",
-        peer_name="Lighter",
+        peer_id="ou_a",
+        peer_name="品宣甲",
         roy_chat_id="oc_roy",
         outbound_message_id="om_out",
         now=now,
@@ -99,13 +99,13 @@ def test_roy_reply_maps_to_the_push(monkeypatch, tmp_path):
     assert session is None
     live = upsert_session(
         kind="user",
-        peer_id="ou_lighter",
-        peer_name="Lighter",
+        peer_id="ou_a",
+        peer_name="品宣甲",
         roy_chat_id="oc_roy",
         now=now,
     )
     _touch(live, bridge_message_id="om_push", last_peer_message_id="om_in", now=now)
     found = find_session_by_bridge("om_push")
     assert found is not None
-    assert found["peer_id"] == "ou_lighter"
+    assert found["peer_id"] == "ou_a"
     assert found["last_peer_message_id"] == "om_in"

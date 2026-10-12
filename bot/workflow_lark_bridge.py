@@ -1,7 +1,7 @@
 """Bridge replies through roy's lark agent after a send-to.
 
 send to opens a 24h session. The other person DMs the bot (or replies to the
-bot in a group) → push to Roy. Roy replies to that push → send back, quoting
+bot in a group) → push to the audit owner. Their reply to that push is sent back, quoting
 their last message when possible.
 """
 
@@ -400,18 +400,18 @@ def maybe_handle_lark_bridge(
         if dest_kind == "user":
             from bot.workflow_lark_relay import _send_to
 
-            bridge_id = _send_to(token, {"kind": "user", "id": dest_id, "name": "Roy"}, push)
+            bridge_id = _send_to(token, {"kind": "user", "id": dest_id, "name": "审核号"}, push)
         else:
             from bot.workflow_tech_support import _send_lark_text
 
             bridge_id = _send_lark_text(token, dest, push)
     except Exception:
-        logger.exception("lark bridge push to Roy failed")
+        logger.exception("lark bridge push to audit owner failed")
         return {"ok": False, "bridge": "push_failed"}
     _touch(
         session,
         bridge_message_id=bridge_id,
         last_peer_message_id=command_id,
     )
-    logger.info("lark bridge inbound name=%s to Roy message=%s", name, bridge_id)
+    logger.info("lark bridge inbound name=%s to audit owner message=%s", name, bridge_id)
     return {"ok": True, "bridge": "pushed", "name": name}

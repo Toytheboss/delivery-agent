@@ -3,7 +3,7 @@ from bot.dashboard_snapshot import _project_state_events, _timeline_events
 
 def test_timeline_keeps_telegram_outbound_drops_faq_wrappers():
     rows = [
-        {"kind": "telegram_outbound", "ts": "2026-09-28T10:00:00+08:00", "text": "Roy号在项目群发出：hi"},
+        {"kind": "telegram_outbound", "ts": "2026-09-28T10:00:00+08:00", "text": "审核号在项目群发出：hi"},
         {"kind": "qa_silent", "ts": "2026-09-28T10:01:00+08:00", "text": "未回复"},
         {"kind": "qa_replied", "ts": "2026-09-28T10:02:00+08:00", "text": "回答了一次"},
         {"kind": "pr_support_written", "ts": "2026-09-28T10:03:00+08:00", "text": "PR"},

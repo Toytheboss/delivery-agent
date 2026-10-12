@@ -4,10 +4,10 @@ tech_support:
   owner: "delivery"   # qa | delivery — which bot owns TG reply for tickets it opens
   lark_chat_id: "oc_xxxxxxxx"  # 交付 & 技术 & 项目方答疑群
   assignees:
-    - name: "Cisco-BE"
+    - name: "技术员"
       open_id: "ou_xxxxxxxx"
-    - name: "Roy"
-      open_id: "ou_xxxxxxxx"
+    - name: "审核号"
+      open_id: "ou_yyyyyyyy"
   state_file: "/opt/botchain-shared/tech_support_tickets.json"
   poll_enabled: true
   poll_seconds: 45
@@ -17,7 +17,7 @@ tech_support:
   auto_learn_state_file: "/opt/botchain-shared/tech_support_auto_learn.json"
 
 # Snippet for config.yaml → workflow.lark_relay
-# Private chat to roy's lark agent:
+# Private chat to the audit Lark agent:
 #   <message>
 #   send to <Lark display name or group name>
 #   <original>
@@ -26,4 +26,4 @@ tech_support:
 # Session closes after 24h with no messages.
 lark_relay:
   enabled: true
-  owner_open_ids: []  # extra ou_ ids; assignee named Roy is included automatically
+  owner_open_ids: []  # extra ou_ ids; an assignee named 审核号 is included automatically

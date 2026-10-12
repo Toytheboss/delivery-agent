@@ -34,10 +34,10 @@ _CONTRACT_FIELDS = (
 
 
 def kpi_checks_on_this_host() -> bool:
-    """KPI checks and result-cell writes run on Roy号 only.
+    """KPI checks and result-cell writes run on 审核号 only.
 
     The delivery-agent install at ``/opt/delivery-agent`` never writes KPI
-    cells. Local checkouts and Roy号 (``botchain-qa-tg-bot``) still can.
+    cells. Local checkouts and 审核号 (``botchain-qa-tg-bot``) still can.
     """
     root = str(_ROOT).replace("\\", "/").lower().rstrip("/")
     return root != "/opt/delivery-agent" and not root.startswith(

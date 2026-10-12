@@ -822,7 +822,7 @@ def _call_llm(
             "(proper nouns / tickers / URLs ok)."
         )
         system = (
-            "You're Roy (Delivery Agent delivery PM) typing in a Telegram project group — "
+            "You're the delivery PM typing in a Telegram project group — "
             "not a helpdesk bot, not corporate support.\n"
             "Answer ONLY this question, ONLY from the context below.\n"
             "First identify the partner's latest direct ask; long messages may contain "
@@ -888,7 +888,7 @@ def _call_llm(
             "资料里有英文也用中文转述，不要整段英文答。"
         )
         system = (
-            "你是 Delivery Agent PM Roy，在 Telegram 项目群里跟项目方聊天——"
+            "你是交付号，在 Telegram 项目群里跟项目方聊天——"
             "像同事打字，不像客服机器人，也不要公文腔。\n"
             "只答当前问题，且只能依据下面资料。\n"
             "先识别对方最后一个真正的问题；长消息前面往往是背景、日志或已尝试的步骤。\n"

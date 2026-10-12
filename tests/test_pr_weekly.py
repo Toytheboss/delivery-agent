@@ -68,13 +68,13 @@ def test_ping_mentions_lighter_jasper_and_copy():
         end=end,
         count=5,
         assignees=[
-            {"name": "Lighter", "open_id": "ou_lighter"},
-            {"name": "Jasper", "open_id": "ou_jasper"},
+            {"name": "品宣甲", "open_id": "ou_a"},
+            {"name": "品宣乙", "open_id": "ou_b"},
         ],
         table_url_value="https://example.com/pr-table",
     )
     assert text.startswith(
-        '<at user_id="ou_lighter">Lighter</at> <at user_id="ou_jasper">Jasper</at>'
+        '<at user_id="ou_a">品宣甲</at> <at user_id="ou_b">品宣乙</at>'
     )
     assert "9/20–9/27" in text
     assert "Botchain 生态项目方推特转发需求已汇总" in text

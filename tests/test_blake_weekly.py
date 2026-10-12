@@ -68,10 +68,10 @@ def test_build_ping_mentions_blake_and_count():
         count=8,
         monday=monday,
         at_open_id="ou_blake",
-        at_name="Blake-APP-Android (布莱克)",
+        at_name="前端",
         table_url_value="https://example.com/table",
     )
-    assert '<at user_id="ou_blake">Blake-APP-Android (布莱克)</at>' in text
+    assert '<at user_id="ou_blake">前端</at>' in text
     assert "一共 8 个" in text
     assert "9/21–9/27" in text
     assert "Botchain 主网上线" in text
@@ -210,7 +210,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         workflow_blake_weekly_state_file=str(tmp_path / "state.json"),
         workflow_blake_weekly_chat_id="oc_chat",
         workflow_blake_weekly_at_open_id="",
-        workflow_blake_weekly_at_name="Blake",
+        workflow_blake_weekly_at_name="前端",
         workflow_blake_weekly_table_url="",
         workflow_base_app_token="app",
         workflow_progress_table_id="tbl",

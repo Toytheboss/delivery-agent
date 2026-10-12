@@ -1,5 +1,5 @@
 # Add under workflow: in config/config.yaml.
-# Leave enabled false until this is deployed to Roy号.
+# Leave enabled false until this is deployed to 审核号.
 # No poll. Lark automation on 项目方PR链接推送 calls this path once per edit.
   pr_backlink:
     enabled: false

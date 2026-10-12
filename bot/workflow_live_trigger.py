@@ -333,7 +333,7 @@ async def process_live_project(
     else:
         result["logo"] = "disabled"
 
-    # KPI 检测与结果写入只由 Roy号做。
+    # KPI 检测与结果写入只由 审核号做。
     from bot.workflow_kpi_write import kpi_checks_on_this_host
 
     writes_kpi = kpi_checks_on_this_host()

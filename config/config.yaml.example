@@ -58,7 +58,7 @@ rules:
   - "禁止答非所问：主题必须对上；相关度不够或答不上就保持沉默，绝不硬答"
   - "宁可沉默，也不要用擦边资料凑一篇看似相关的回复"
   - "资料里有相关文档/帮助中心/表单等链接时，回复必须带上；勿编造链接"
-  - "口吻像群里同事 Josh：口语、短、自然；少套话，别说「作为AI」「根据资料」「希望有帮助」"
+  - "口吻像群里同事：口语、短、自然；少套话，别说「作为AI」「根据资料」「希望有帮助」"
   - "不要编造报价、合同、排期、上币承诺；优先 1–3 条短消息，用单独一行 --- 分隔"
   - "禁止反问澄清：不要「要哪家/需要我再发吗」；有多选项一次列全（带链接）；答不上就 NEEDS_HUMAN 沉默，不拉同事"
 
@@ -74,8 +74,8 @@ learn:
   # absorb/学习成功后 upsert 到 Lark「Agent 词条库」
   agent_kb:
     enabled: true
-    app_token: "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
-    table_id: "tblP28CyWdY5ml8r"
+    app_token: "basetoken"
+    table_id: "tblxxxxxxxx"
     # view_id 仅便于人工打开表格，写入 API 不需要：vew2pHKxps
 
 safety:
@@ -107,14 +107,14 @@ workflow:
   form_logo_poll_enabled: false
   live_webhook_enabled: true
   live_webhook_host: "0.0.0.0"
-  # Delivery-agent (Josh) keeps 8787. Roy号 on the same ECS uses 8786 so
-  # /workflow/tech-support/event (考核群补交) is not stolen by Josh.
+  # 交付号 keeps 8787. 审核号 on the same ECS uses 8786 so
+  # /workflow/tech-support/event (考核群补交) is not stolen by 交付号.
   live_webhook_port: 8787
   live_webhook_path: "/workflow/live"
   live_webhook_secret: ""
   live_startup_scan: false
   # Backup when Feishu automation HTTP is missing: detect NEW live status only
-  # 两边都可开。KPI 检测仍只由 Roy号写入结果。
+  # 两边都可开。KPI 检测仍只由 审核号写入结果。
   live_status_watch_enabled: true
   live_status_watch_seconds: 60
   live_watch_state_file: "data/live_status_watch_state.json"
@@ -123,8 +123,8 @@ workflow:
   deploy_status_watch_enabled: true
   deploy_status_watch_seconds: 60
   deploy_status_watch_state_file: "data/deploy_status_watch_state.json"
-  base_app_token: "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
-  progress_table_id: "tbl5wXOwCptng06w"
+  base_app_token: "basetoken"
+  progress_table_id: "tblxxxxxxxx"
   status_field: "项目状态"
   trigger_status: "Mainnet Live"
   tg_chat_id_field: ""
@@ -139,7 +139,7 @@ workflow:
     - "mark live"
     - "上线完成"
   operators:
-    - username: "Josh_0zh"
+    - username: "operator_username"
   mark_live_also_send_form: true
   manual_commands:
     - "/send_form"
@@ -176,7 +176,7 @@ workflow:
   logo_state_file: "data/logo_fill_state.json"
   # Off by default: form data only syncs to Lark wallet table via Apps Script (no TG broadcast).
   wallet_notify_enabled: false
-  wallet_table_id: "tblj0FdKPrlc7PrM"
+  wallet_table_id: "tblxxxxxxxx"
   wallet_required_fields:
     - "Project name"
     - "Contract Addresss/主网合约"
@@ -206,33 +206,33 @@ workflow:
 
     Thanks!
   live_onboard_enabled: true
-  # roy | josh; empty = infer (group_replies on → roy). Lark ping is Roy号 only.
+  # roy | josh; empty = infer (group_replies on → roy). Lark ping is 审核号 only.
   live_onboard_account: ""
   # Project verification push
-  live_onboard_lark_chat_id: "oc_d7e4175580c970a4f7853b6a4d10368e"
+  live_onboard_lark_chat_id: "oc_xxxxxxxx"
   live_onboard_bd_field: "BD"
   live_onboard_peer_wait_seconds: 90
   live_onboard_state_file: "/opt/botchain-shared/live_onboard_state.json"
-  # Google form received → Project verification push (Roy号 only)
+  # Google form received → Project verification push (审核号 only)
   form_received_notify_enabled: false
   form_received_notify_state_file: "/opt/botchain-shared/form_received_notify_state.json"
   notify_chat_ids: []
   notify_group_titles: []
   lark_digest_enabled: true
-  lark_digest_chat_id: "oc_74ee8d69f6c00ff153bd78c301545a7f"
+  lark_digest_chat_id: "oc_xxxxxxxx"
   lark_digest_hour: 0
   lark_digest_state_file: "data/lark_wallet_digest_state.json"
-  lark_digest_at_open_id: "ou_xxxxxxxx"  # Angela-财务
-  lark_digest_at_name: "Angela-财务"
+  lark_digest_at_open_id: "ou_xxxxxxxx"
+  lark_digest_at_name: "财务"
 
   # Please verify / mainnet-live → 看板人工队列 + Lark「BotChian交付部」提醒
-  # 只 Roy号发。交付号线上配置为 false，避免同一条群消息发两次。
+  # 只 审核号发。交付号线上配置为 false，避免同一条群消息发两次。
   verify_alert_enabled: true
-  verify_alert_lark_chat_id: "oc_717a560011483216c49329fda5e43b41"  # BotChian交付部
+  verify_alert_lark_chat_id: "oc_xxxxxxxx"
   verify_alert_cooldown_hours: 0  # 0 = no same-chat cooldown
   verify_alert_state_file: "data/verify_alert_state.json"
 
-  # KPI 检测与结果写入只在 Roy号（botchain-qa）执行；交付号代码层会跳过。
+  # KPI 检测与结果写入只在 审核号（botchain-qa）执行；交付号代码层会跳过。
   # kpi_diag:
   #   enabled: true
 
@@ -272,7 +272,7 @@ welcome:
   # delay_seconds = seconds from sequence start
   sequence_zh:
     - delay_seconds: 0
-      text: "大家好，我是 Delivery Agent Josh，很高兴和大家对接 👋"
+      text: "大家好，我是交付号，很高兴和大家对接 👋"
     - delay_seconds: 30
       text: |
         这是Delivery集成的一些相关资料，比较详细，可以看一下：
@@ -281,7 +281,7 @@ welcome:
       text: "其他任何相关的问题，随时在群里问我。"
   sequence_en:
     - delay_seconds: 0
-      text: "Hi everyone — I'm Josh from Delivery Agent. Glad to connect with you 👋"
+      text: "Hi everyone — I'm the delivery account. Glad to connect with you 👋"
     - delay_seconds: 30
       text: |
         Here are some detailed Delivery integration docs — feel free to check them out:

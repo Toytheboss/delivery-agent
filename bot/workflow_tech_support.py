@@ -249,7 +249,7 @@ def _assignees_from_config(config: Any) -> list[dict[str, str]]:
     # Backward compat: single cisco_* fields
     if not out:
         oid = str(getattr(config, "tech_support_cisco_open_id", "") or "").strip()
-        name = str(getattr(config, "tech_support_cisco_name", "") or "Cisco-BE").strip()
+        name = str(getattr(config, "tech_support_cisco_name", "") or "").strip()
         if oid:
             out.append({"open_id": oid, "name": name})
     return out
@@ -483,7 +483,7 @@ def maybe_auto_learn_tech_support(
     knowledge_dirs: list[Path] = []
     primary = Path(getattr(config, "knowledge_dir"))
     knowledge_dirs.append(primary)
-    # Keep Roy FAQ in sync when Josh delivers the answer
+    # Keep the audit account FAQ in sync when the delivery account delivers the answer
     qa_knowledge = Path("/opt/botchain-qa-tg-bot/knowledge")
     if qa_knowledge.is_dir() and qa_knowledge.resolve() != primary.resolve():
         knowledge_dirs.append(qa_knowledge)

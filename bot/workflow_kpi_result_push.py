@@ -503,7 +503,7 @@ def audit_first_check(
     from bot.workflow_kpi_write import kpi_checks_on_this_host
 
     if not kpi_checks_on_this_host():
-        raise RuntimeError("KPI checks run on Roy号 only")
+        raise RuntimeError("KPI checks run on 审核号 only")
     from bot.lark_bitable import update_record
     from bot.workflow_kpi1_twitter import audit_kpi1_for_fields, fill_kpi2_pr_from_twitter
     from bot.workflow_kpi3_website import audit_kpi3_for_fields

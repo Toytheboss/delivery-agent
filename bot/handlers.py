@@ -512,7 +512,7 @@ class MessageHandler:
             return
 
         # KPI diag. In a project group, the group title selects the project.
-        # In Roy号's own chat, the project name follows the command.
+        # In 审核号's own chat, the project name follows the command.
         # Other people's private messages never run it.
         if (
             getattr(self.config, "workflow_kpi_diag_enabled", False)

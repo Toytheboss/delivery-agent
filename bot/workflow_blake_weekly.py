@@ -1,4 +1,4 @@
-"""Daily 00:00: refresh this week's mainnet-live rows; ping Blake Monday 00:00:00."""
+"""Daily 00:00: refresh this week's mainnet-live rows; ping frontend Monday 00:00:00."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ _INTRO_WALLET_FIELD = "A brief introduction of your project"
 _CJK_RE = re.compile(r"[\u4e00-\u9fff]")
 _DEFAULT_TABLE_ID = "tblsPBJW1HUmkM6X"
 _DEFAULT_VIEW_ID = "vewVJL9hzD"
-_DEFAULT_AT_NAME = "Blake-APP-Android (布莱克)"
+_DEFAULT_AT_NAME = "前端"
 
 FIELD_PERIOD = "统计周期 （主网上线）"
 _PERIOD_ALIASES = (FIELD_PERIOD, "统计周期")

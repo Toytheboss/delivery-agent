@@ -2,10 +2,10 @@
 # Sunday 23:55 prepare, Monday 00:00:00 send → ping 运营&品宣＆BD对接群
 pr_weekly:
   enabled: true
-  chat_id: "oc_4613e10ffde1fde8dc14c1899b4520dd"  # 运营&品宣＆BD对接群
-  table_id: "tbllA25Mz66e8wpv"
-  view_id: "vew1kZdFkc"
-  table_url: "https://asgnwd2jk3jn.sg.larksuite.com/base/Kb6rbLenJa4FzWsi6pzlTkdjg0e?table=tbllA25Mz66e8wpv&view=vew1kZdFkc"
+  chat_id: "oc_xxxxxxxx"
+  table_id: "tblxxxxxxxx"
+  view_id: "vewxxxxxxxx"
+  table_url: "https://example.larksuite.com/base/basetoken?table=tblxxxxxxxx&view=vewxxxxxxxx"
   weekday: 0   # ping day: Monday=0 = Sunday 24:00
   hour: 0      # send at 00:00:00
   daily_hour: 0
@@ -13,7 +13,7 @@ pr_weekly:
   state_file: "data/pr_weekly_state.json"
   events_file: "/opt/botchain-shared/pr_capture_events.jsonl"
   assignees:
-    - name: "Lighter"
-      open_id: "ou_0bb5c059439445d106e9889ad2d62f0e"
-    - name: "Jasper"
-      open_id: "ou_a98d6abcae8e25344c6ea79262c69db7"
+    - name: "品宣甲"
+      open_id: "ou_xxxxxxxx"
+    - name: "品宣乙"
+      open_id: "ou_yyyyyyyy"

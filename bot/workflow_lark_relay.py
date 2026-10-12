@@ -1,4 +1,4 @@
-"""Private-chat command: Roy tells roy's lark agent to forward a message.
+"""Private-chat command: the audit owner tells the Lark agent to forward a message.
 
 Last line must be ``send to <name>``. Everything above it is the body.
 People are resolved with the app's user search. Groups are the chats this
@@ -135,7 +135,7 @@ def owner_open_ids(config: Any) -> set[str]:
     for assignee in getattr(config, "tech_support_assignees", None) or []:
         name = str((assignee or {}).get("name") or "").strip().casefold()
         open_id = str((assignee or {}).get("open_id") or "").strip()
-        if open_id and name in {"roy"}:
+        if open_id and name in {"审核号", "audit"}:
             ids.add(open_id)
     return ids
 
@@ -435,7 +435,7 @@ def maybe_handle_lark_relay(config: Any, event_data: dict[str, Any]) -> dict[str
     sender_id = _sender_open_id(sender)
     allowed = owner_open_ids(config)
     if not allowed or sender_id not in allowed:
-        _reply(token, chat_id, "这条指令只接受 Roy 的私聊。")
+        _reply(token, chat_id, "这条指令只接受审核号的私聊。")
         logger.info("lark relay rejected sender=%s", sender_id)
         return {"ok": True, "relay": "forbidden"}
 

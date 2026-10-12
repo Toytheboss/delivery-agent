@@ -1,6 +1,6 @@
 """When KPI 1–6 are passed, auto-write KPI 7, coordination, and judgment time.
 
-Used by project diag only (Roy号). Not on the live-status table scan.
+Used by project diag only (审核号). Not on the live-status table scan.
 """
 
 from __future__ import annotations

@@ -34,7 +34,7 @@ def test_second_round_waits_until_the_first_is_sent():
 def test_september_and_already_posted_projects_stay_off_the_calendar():
     records = [
         _row("old", "September", "2026-09-29"),
-        _row("posted", "swing", "2026-09-30"),
+        _row("posted", "pebble", "2026-09-30"),
         _row("fresh", "Newone", "2026-09-30"),
         _row("deploying", "Later", "2026-10-01", status="主网部署中"),
     ]

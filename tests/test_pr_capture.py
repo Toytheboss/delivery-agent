@@ -51,8 +51,8 @@ def test_profile_url_from_tweet_status():
         == "https://x.com/_neonarcade"
     )
     assert (
-        profile_url_from_pr_url("https://twitter.com/OpenLCdev/status/1")
-        == "https://x.com/OpenLCdev"
+        profile_url_from_pr_url("https://twitter.com/exampledev/status/1")
+        == "https://x.com/exampledev"
     )
     assert profile_url_from_pr_url("https://mirror.xyz/post/1") == ""
     assert profile_url_from_pr_url("https://x.com/proj") == ""

@@ -89,7 +89,7 @@ _QUESTIONISH_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Clear project updates / acknowledgements that may mention Roy or contain
+# Clear project updates / acknowledgements that may mention this account or contain
 # delivery keywords, but do not ask the bot to do or explain anything.  These
 # should be recorded as "no reply needed", not as failed FAQ answers.
 _NON_ACTIONABLE_UPDATE_RE = re.compile(
@@ -455,7 +455,7 @@ def delivery_alert_kind(text: str) -> str | None:
     if not without:
         return None
 
-    # Mainnet live posts (Josh form / "Congrats … live on Mainnet") → no Lark alert.
+    # Mainnet live posts (onboarding form / "Congrats … live on Mainnet") → no Lark alert.
     # Keep _MAINNET_LIVE_RE for tests / future; only Verify 提醒 is wanted.
 
     # Clear verify asks inside project intros — same budget as mainnet_live.
@@ -626,7 +626,7 @@ def has_hint_keyword(text: str, keywords: list[str]) -> bool:
 def is_mention_only(text: str) -> bool:
     """True when message is only @mentions (no real question / content).
 
-    Prevents bare ``@Roy4by4`` from entering FAQ + query-rewrite.
+    Prevents a bare @mention of this account from entering FAQ + query-rewrite.
     """
     stripped = (text or "").strip()
     if not stripped:

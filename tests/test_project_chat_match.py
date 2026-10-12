@@ -131,92 +131,92 @@ def test_kolmarket_two_same_title_picks_one():
 
 def _amb() -> dict[int, str]:
     return {
-        101: "Veris X Botchain",
-        102: "VeriSettle <> Botchain",
-        103: "Sent x Bot chain",
-        104: "Sentinel X Botchain",
-        105: "BOT Chain x Consent Registry",
-        106: "Trace Chain <> Botchain",
-        107: "Traceonchain X Botchain",
-        108: "Link Chain <> Botchain",
-        109: "Linkchain | BOT Chain",
-        -100109: "Linkchain | BOT Chain",
-        110: "BotChain <> Chainlink",
-        111: "BOTCHAIN DEX <> BOTCHAIN",
-        112: "ArcadeX <> Botchain (Live)",
-        113: "CrossBiDex | BOT Chain",
-        114: "The Card | BOT Chain",
-        115: "TeavuUcard&botchain",
-        117: "Dappbnb <> Botchain",
+        101: "Nori X Botchain",
+        102: "NoriSettle <> Botchain",
+        103: "Pax x Bot chain",
+        104: "Paxinel X Botchain",
+        105: "BOT Chain x Sample Registry",
+        106: "West Chain <> Botchain",
+        107: "Westonchain X Botchain",
+        108: "East Chain <> Botchain",
+        109: "Eastchain | BOT Chain",
+        -100109: "Eastchain | BOT Chain",
+        110: "BotChain <> Samplelink",
+        111: "NORTH DEX <> BOTCHAIN",
+        112: "PixelX <> Botchain (Live)",
+        113: "Southdex | BOT Chain",
+        114: "The Note | BOT Chain",
+        115: "Notecard&botchain",
+        117: "Samplebnb <> Botchain",
         118: "BotChain",
-        119: "banshanbook&botchain",
-        120: "BanshanBook&botchain",
-        121: "Botfund <> Bot Chain",
-        122: "BOTFUND <> Bot Chain",
+        119: "samplebook&botchain",
+        120: "Samplebook&botchain",
+        121: "Samplefund <> Bot Chain",
+        122: "SAMPLEFUND <> Bot Chain",
         123: "Boost | BOT Chain",
-        125: "BotID Protocol <> Botchain",
-        127: "Agent Vault X Bot Chain",
-        128: "AgentVault | BOT Chain",
-        129: "CompulsePulse X Bot Chain",
-        130: "Pulse Vote <> Botchain",
-        131: "pulsegrid <> Botchain",
+        125: "SampleID Protocol <> Botchain",
+        127: "North Star X Bot Chain",
+        128: "Northstar | BOT Chain",
+        129: "Demopulse X Bot Chain",
+        130: "Pulse Box <> Botchain",
+        131: "pulsebox <> Botchain",
         -100123: "Boost | BOT Chain",
-        -100114: "The Card | BOT Chain",
-        -100111: "BOTCHAIN DEX <> BOTCHAIN",
-        -100125: "BotID Protocol <> Botchain",
+        -100114: "The Note | BOT Chain",
+        -100111: "NORTH DEX <> BOTCHAIN",
+        -100125: "SampleID Protocol <> Botchain",
     }
 
 
 def test_veris_not_verisettle():
-    cid, reason = match_project_to_chat("Veris", _amb())
+    cid, reason = match_project_to_chat("Nori", _amb())
     assert cid == 101, reason
 
 
 def test_sent_not_sentinel():
-    cid, reason = match_project_to_chat("Sent", _amb())
+    cid, reason = match_project_to_chat("Pax", _amb())
     assert cid == 103, reason
 
 
 def test_trace_chain_not_traceonchain():
-    cid, reason = match_project_to_chat("Trace Chain", _amb())
+    cid, reason = match_project_to_chat("West Chain", _amb())
     assert cid == 106, reason
 
 
 def test_link_chain_not_linkchain():
-    cid, reason = match_project_to_chat("Link Chain", _amb())
+    cid, reason = match_project_to_chat("East Chain", _amb())
     assert cid == 108, reason
 
 
 def test_linkchain_still_own_group():
-    cid, reason = match_project_to_chat("Linkchain", _amb())
+    cid, reason = match_project_to_chat("Eastchain", _amb())
     assert cid == -100109, reason
 
 
 def test_botchain_dex_not_other_dex():
-    cid, reason = match_project_to_chat("BOTCHAIN DEX", _amb())
+    cid, reason = match_project_to_chat("NORTH DEX", _amb())
     assert cid == -100111, reason
 
 
 def test_the_card_prefers_migrated():
-    cid, reason = match_project_to_chat("The Card", _amb())
+    cid, reason = match_project_to_chat("The Note", _amb())
     assert cid == -100114, reason
 
 
 def test_dappbnb_url_not_generic_botchain():
     cid, reason = match_project_to_chat(
-        "https://dappbnb-botchain.vercel.app/", _amb()
+        "https://samplebnb-botchain.vercel.app/", _amb()
     )
     assert cid == 117, reason
 
 
-def test_banshanbook_duplicate_titles():
-    cid, reason = match_project_to_chat("BanshanBook", _amb())
+def test_samplebook_duplicate_titles():
+    cid, reason = match_project_to_chat("Samplebook", _amb())
     assert cid in {119, 120}, reason
     assert cid is not None
 
 
 def test_botfund_duplicate_titles():
-    cid, reason = match_project_to_chat("BotFund", _amb())
+    cid, reason = match_project_to_chat("Samplefund", _amb())
     assert cid in {121, 122}, reason
 
 
@@ -226,12 +226,12 @@ def test_boost_prefers_migrated():
 
 
 def test_botid_duplicate_titles():
-    cid, reason = match_project_to_chat("Botid", _amb())
+    cid, reason = match_project_to_chat("Sampleid", _amb())
     assert cid == -100125, reason
 
 
-def test_agentvault_same_project_two_titles():
-    cid, reason = match_project_to_chat("AgentVault", _amb())
+def test_northstar_same_project_two_titles():
+    cid, reason = match_project_to_chat("Northstar", _amb())
     assert cid in {127, 128}, reason
     assert cid is not None
 
@@ -242,21 +242,21 @@ def test_bot_chain_pulse_stays_unmatched():
 
 
 def test_botchain_slash_group_counts_when_bot_is_in_it():
-    cid, reason = match_project_to_chat("mettelia", {201: "BOTCHAIN/mettelia"})
+    cid, reason = match_project_to_chat("exampleapp", {201: "BOTCHAIN/exampleapp"})
     assert cid == 201, reason
 
 
 def test_glued_x_separator_matches_project():
     cid, reason = match_project_to_chat(
-        "traveltochian",
-        {536: "traveltochianX botchain"},
+        "sampletrip",
+        {536: "sampletripX botchain"},
     )
     assert cid == 536, reason
 
 
 def test_short_name_glued_x_stays_distinct():
-    titles = {1: "SpaceX <> Bot Chain", 2: "ArcadeX <> Botchain (Live)"}
+    titles = {1: "SpaceX <> Bot Chain", 2: "PixelX <> Botchain (Live)"}
     cid, _reason = match_project_to_chat("Space", titles)
     assert cid is None
-    cid, reason = match_project_to_chat("ArcadeX", titles)
+    cid, reason = match_project_to_chat("PixelX", titles)
     assert cid == 2, reason

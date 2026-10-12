@@ -36,7 +36,7 @@ _STATE_FILE = ROOT / "data" / "kpi_schedule_state.json"
 
 
 def runs_on_this_host() -> bool:
-    """Only Roy号 posts into Project verification push."""
+    """Only 审核号 posts into Project verification push."""
     return "botchain-qa" in str(ROOT).lower()
 
 

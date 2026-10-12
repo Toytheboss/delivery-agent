@@ -1438,7 +1438,7 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     )
     blake_n = kcount("blake_weekly_row") + kcount("blake_weekly_ping")
     lines.append(
-        f"· Blake 周表相关事件：{blake_n or '无'}（正式 Lark ping 仅周一发送）"
+        f"· 前端周表相关事件：{blake_n or '无'}（正式 Lark ping 仅周一发送）"
     )
 
     lines.extend(["", "八、Agent / 稳定性"])

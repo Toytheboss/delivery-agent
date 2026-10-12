@@ -273,8 +273,8 @@ def _prefer_chat_item(
 def _title_collapse_key(title: str) -> str:
     """Group duplicate chats without gluing different words together.
 
-    ``BanshanBook&botchain`` and ``banshanbook&botchain`` collapse; ``Link Chain``
-    and ``Linkchain`` stay distinct so Sudeep/Nicoley groups are not merged.
+    ``SameWords&botchain`` and ``samewords&botchain`` collapse; ``Two Words``
+    and ``Twowords`` stay distinct so different projects are not merged.
     """
     text = re.sub(r"\([^)]*\)", " ", str(title or ""))
     text = re.sub(r"[^a-z0-9]+", " ", text.lower())

@@ -1,4 +1,4 @@
-"""Roy tells roy's lark agent to recall a message it sent.
+"""The audit owner tells the Lark agent to recall a message it sent.
 
 Private chat (preferred, nothing extra in the group):
 
@@ -356,7 +356,7 @@ def maybe_handle_lark_recall(
     allowed = owner_open_ids(config)
     if not allowed or sender_id not in allowed:
         if is_p2p:
-            _reply(token, chat_id, "这条指令只接受 Roy 的私聊。")
+            _reply(token, chat_id, "这条指令只接受审核号的私聊。")
         logger.info("lark recall rejected sender=%s chat=%s", sender_id, chat_id)
         return {"ok": True, "recall": "forbidden"}
 

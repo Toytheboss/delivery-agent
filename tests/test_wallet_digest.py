@@ -5,20 +5,20 @@ def test_digest_names_each_filled_address_type():
     text = _build_digest_text(
         "2026-09-30",
         [
-            ("AgenticID", [("主网合约", 1), ("收款地址", 1)]),
+            ("ExampleID", [("主网合约", 1), ("收款地址", 1)]),
             ("aspecal", [("主网合约", 1)]),
             ("Iticket", [("主网合约", 1), ("收款地址", 1), ("做市钱包", 1)]),
             ("Bot folio", [("主网合约", 2), ("收款地址", 1)]),
         ],
         at_open_id="ou_angela",
-        at_name="Angela-财务",
+        at_name="财务",
     )
-    assert text.startswith('<at user_id="ou_angela">Angela-财务</at>\n')
+    assert text.startswith('<at user_id="ou_angela">财务</at>\n')
     assert "【项目方地址日报】2026-09-30" in text
     assert "今日新增项目：4 个" in text
     assert "主网合约 5，收款地址 3，做市钱包 1" in text
     assert "地址字段" not in text
-    assert "1. AgenticID：主网合约、收款地址" in text
+    assert "1. ExampleID：主网合约、收款地址" in text
     assert "2. aspecal：主网合约" in text
     assert "3. Iticket：主网合约、收款地址、做市钱包" in text
     assert "4. Bot folio：主网合约 2 个、收款地址" in text

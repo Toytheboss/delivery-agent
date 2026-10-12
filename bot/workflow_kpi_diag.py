@@ -1,8 +1,8 @@
 """Telegram commands that run one KPI check and write Lark.
 
 `onchain diag` / `twitter diag` / `website diag` / `project diag` —
-send in the project group, no quote. In Roy号's own chat, add the project
-name: `project diag Project Name`. Enabled only on Roy号.
+send in the project group, no quote. In 审核号's own chat, add the project
+name: `project diag Project Name`. Enabled only on 审核号.
 """
 
 from __future__ import annotations
@@ -106,7 +106,7 @@ def match_projects_by_name(
 ) -> list[tuple[str, str, dict[str, Any]]]:
     """Prefer space-preserving name hits, then punctuation-stripped ones.
 
-    ``AgentVault`` and ``Agent Vault`` are different projects. Zero or several
+    ``Northstar`` and ``North Star`` are different projects. Zero or several
     remaining hits means do not run.
     """
     exact_key = _display_name_key(query)
@@ -804,7 +804,7 @@ async def run_kpi_diag(
     from bot.workflow_kpi_write import kpi_checks_on_this_host
 
     if not kpi_checks_on_this_host():
-        return "KPI checks run on Roy号 only."
+        return "KPI checks run on 审核号 only."
     if not getattr(config, "workflow_kpi_diag_enabled", False):
         return "This check is disabled on this bot."
     parsed = parse_kpi_diag_request(getattr(command_message, "raw_text", None) or "")

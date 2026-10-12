@@ -232,7 +232,7 @@ async def _maybe_write_tg_chat_id(
 
 
 def _speaker_label(speaker: str) -> str:
-    return "Josh" if speaker == "josh" else "Roy"
+    return "The delivery account" if speaker == "josh" else "The audit account"
 
 
 async def _prepare_mark_live_form_speaker(

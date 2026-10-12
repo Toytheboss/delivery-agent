@@ -131,7 +131,7 @@ _PEER_DATA_DIRS = (
 
 
 def _peer_data_files(filename: str) -> list[Path]:
-    """Unique copies of a state/event file across QA and Josh data dirs."""
+    """Unique copies of a state/event file across the audit and delivery data dirs."""
     seen: set[str] = set()
     out: list[Path] = []
     for root in _PEER_DATA_DIRS:
@@ -179,7 +179,7 @@ def _parse_folder_titles(raw: dict[str, Any]) -> dict[int, str]:
 
 
 def _load_folder_title_caches() -> tuple[dict[int, str], set[int], set[int]]:
-    """Union of Roy号 and 交付号 group titles. Either bot in the group is enough."""
+    """Union of 审核号 and 交付号 group titles. Either bot in the group is enough."""
     titles: dict[int, str] = {}
     roy_ids: set[int] = set()
     josh_ids: set[int] = set()
@@ -1443,7 +1443,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
                                 evidence["sent"] += 1
                                 outbound_text = str(outbound_item.get("text") or "").strip()
                                 account = (
-                                    "Roy号"
+                                    "审核号"
                                     if "botchain-qa" in str(message_path).lower()
                                     else "交付号"
                                 )
@@ -1847,7 +1847,7 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
             delivery_steps: list[dict[str, Any]] = []
             if chat_matches:
                 bot_label = "、".join(
-                    "Roy号" if item == "roy" else "交付号" for item in tg_bots
+                    "审核号" if item == "roy" else "交付号" for item in tg_bots
                 ) or "Bot"
                 delivery_steps.append(
                     step(
@@ -2471,11 +2471,16 @@ def _automation_range_days() -> dict[str, list[str]]:
     }
 
 
+def _tg_account(env_name: str) -> str:
+    handle = os.getenv(env_name, "").strip().lstrip("@")
+    return f"@{handle}" if handle else ""
+
+
 def build_automation_tasks(
     config: Any,
     snapshot_payload: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Expose automation tasks split by bot (delivery Josh vs QA Roy)."""
+    """Expose automation tasks split by the delivery account and the audit account."""
     payload = snapshot_payload or {}
 
     def _yaml_flags(config_path: Path) -> dict[str, Any]:
@@ -2888,19 +2893,19 @@ def build_automation_tasks(
     delivery = _pack(
         bot_id="delivery",
         bot_label="交付号",
-        account="@Josh_0zh",
+        account=_tg_account("DELIVERY_TG_USERNAME"),
         flags=delivery_flags,
         metrics_path=Path("/opt/delivery-agent/data/delivery_metrics.json"),
         events_path=Path("/opt/delivery-agent/data/workflow_events.jsonl"),
         include_dashboard=True,
         peer_digest_enabled=bool(qa_flags.get("workflow_lark_digest_enabled")),
         peer_chase_enabled=bool(qa_flags.get("workflow_form_chase_enabled")),
-        peer_name="QA 号",
+        peer_name="审核号",
     )
     qa = _pack(
         bot_id="qa",
-        bot_label="QA 号",
-        account="@Roy4by4",
+        bot_label="审核号",
+        account=_tg_account("AUDIT_TG_USERNAME"),
         flags=qa_flags,
         metrics_path=Path("/opt/botchain-qa-tg-bot/data/delivery_metrics.json"),
         events_path=Path("/opt/botchain-qa-tg-bot/data/workflow_events.jsonl"),

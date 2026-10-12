@@ -441,7 +441,7 @@ async def main() -> None:
         if getattr(config, "workflow_blake_weekly_enabled", False):
             asyncio.create_task(blake_weekly_loop(config))
             logger.info(
-                "Workflow Blake weekly enabled (chat_id=%s, daily@%02d:00 send Mon %02d:00:00 Asia/Shanghai)",
+                "Workflow frontend weekly enabled (chat_id=%s, daily@%02d:00 send Mon %02d:00:00 Asia/Shanghai)",
                 getattr(config, "workflow_blake_weekly_chat_id", ""),
                 getattr(config, "workflow_blake_weekly_daily_hour", 0),
                 getattr(config, "workflow_blake_weekly_hour", 0),

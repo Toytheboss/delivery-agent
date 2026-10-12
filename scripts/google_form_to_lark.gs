@@ -47,7 +47,8 @@ var FIELD_MAP = {
   'Treasury Address': 'Treasury Address',
   'Fee Collector / Revenue Wallet Address': 'Fee Collector / Revenue Wallet Address',
   'Multi-sig Threshold (Optional)': 'Multi-sig Threshold (Optional)',
-  'Grant Receiving Wallet (Optional)': 'Grant Receiving Wallet (Optional)',
+  'Grant Receiving Wallet': 'Grant Receiving Wallet',
+  'Grant Receiving Wallet (Optional)': 'Grant Receiving Wallet',
   'MM / LP Wallet (Optional)': 'MM / LP Wallet （Optional）',
   'MM / LP Wallet （Optional）': 'MM / LP Wallet （Optional）',
   'Bridge Pool / Relayer Wallet (Optional)': 'Bridge Pool / Relayer Wallet (Optional)'

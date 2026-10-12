@@ -1,4 +1,4 @@
-"""One live-form send per Lark row, shared by Roy号 and 交付号.
+"""One live-form send per Lark row, shared by 审核号 and 交付号.
 
 Mark live reserves the row before the status flip. The speaker is assigned
 next. Every sender calls begin_form_send immediately before the bubbles, so

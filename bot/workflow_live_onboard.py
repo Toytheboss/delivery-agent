@@ -1,4 +1,4 @@
-"""Mainnet-live: check Roy/Josh TG membership, send form, ping Project verification push."""
+"""Mainnet-live: check both TG accounts, send form, ping Project verification push."""
 
 from __future__ import annotations
 
@@ -88,20 +88,20 @@ def build_onboard_message(
         "Help the project submit Twitter and the contract address to the form"
     )
     pr_please = (
-        "Share the mainnet-live PR tweet in the TG group and @ Roy and Josh"
+        "Share the mainnet-live PR tweet in the TG group and @ the audit account and the delivery account"
     )
     roy_in = case in {1, 2}
     josh_in = case in {1, 3}
     if case == 1:
-        delivery = "Roy and Josh have joined"
+        delivery = "The audit account and the delivery account have joined"
     elif case == 2:
-        delivery = "Roy has joined; Josh has not been added"
+        delivery = "The audit account has joined; the delivery account has not been added"
     elif case == 3:
-        delivery = "Josh has joined; Roy has not been added"
+        delivery = "The delivery account has joined; the audit account has not been added"
     elif has_group:
-        delivery = "Roy / Josh were not detected in this TG group"
+        delivery = "Neither account was detected in this TG group"
     else:
-        delivery = "Roy / Josh were not detected in a TG group"
+        delivery = "Neither account was detected in a TG group"
     form = (
         "Onboarding Google Form has been sent"
         if form_sent
@@ -110,14 +110,14 @@ def build_onboard_message(
     please: list[str] = []
     if not has_group:
         please.append(
-            "Create the project TG group, add Roy and Josh, then trigger the form send"
+            "Create the project TG group, add the audit account and the delivery account, then trigger the form send"
         )
     else:
         missing = []
         if not roy_in:
-            missing.append("Roy")
+            missing.append("the audit account")
         if not josh_in:
-            missing.append("Josh")
+            missing.append("the delivery account")
         if missing:
             please.append(f"Add {' and '.join(missing)} to the TG group")
         if not form_sent:
@@ -145,7 +145,7 @@ def account_key(config: Any) -> str:
 
 
 def sends_lark_notify(config: Any) -> bool:
-    """Only Roy号 / roy's lark agent #1 posts to Project verification push."""
+    """Only 审核号 / roy's lark agent #1 posts to Project verification push."""
     return account_key(config) == "roy"
 
 
@@ -485,7 +485,10 @@ async def lookup_peer_in_chat(
     client: TelegramClient, chat_id: int, peer: str
 ) -> bool | None:
     """True/False when Telegram answered; None when the lookup itself failed."""
-    username = {"roy": "Roy4by4", "josh": "Josh_0zh"}.get(str(peer or "").strip().lower(), "")
+    username = {
+        "roy": os.getenv("AUDIT_TG_USERNAME", ""),
+        "josh": os.getenv("DELIVERY_TG_USERNAME", ""),
+    }.get(str(peer or "").strip().lower(), "")
     if not username:
         return None
     try:
@@ -1103,7 +1106,7 @@ async def run_live_onboard(
 async def drain_pending_roy_notifies(
     config: Any, client: TelegramClient | None = None
 ) -> int:
-    """Roy号补发 Josh 留下的通知，以及重启后停在 scheduled/sending 的条目。"""
+    """审核号补发交付号留下的通知，以及重启后停在 scheduled/sending 的条目。"""
     if not sends_lark_notify(config):
         return 0
     if not getattr(config, "workflow_live_onboard_enabled", False):

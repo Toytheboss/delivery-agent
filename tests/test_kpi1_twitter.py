@@ -337,73 +337,73 @@ def test_collect_originals_returns_links_from_x_api(monkeypatch):
 def test_mainnet_pr_live_on_chain_or_partnership():
     extra = {"id": "9"}
     assert is_mainnet_pr_tweet(
-        "BanshanBook is live on Botchain mainnet today",
+        "Samplebook is live on Botchain mainnet today",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert is_mainnet_pr_tweet(
-        "Banshan × BOT Chain  Now live on BOT Chain Mainnet",
+        "Sample × BOT Chain  Now live on BOT Chain Mainnet",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert is_mainnet_pr_tweet(
-        "Ezswap launched on Botchain mainnet",
+        "Demoswap launched on Botchain mainnet",
         extra,
-        project_name="ezswap",
+        project_name="demoswap",
     )
     assert is_mainnet_pr_tweet(
-        "Ezswap go-live on Botchain",
+        "Demoswap go-live on Botchain",
         extra,
-        project_name="ezswap",
+        project_name="demoswap",
     )
     assert is_mainnet_pr_tweet(
-        "Ezswap partnership with Botchain",
+        "Demoswap partnership with Botchain",
         extra,
-        project_name="ezswap",
+        project_name="demoswap",
     )
     assert is_mainnet_pr_tweet(
-        "Ezswap partnership Botchain",
+        "Demoswap partnership Botchain",
         extra,
-        project_name="ezswap",
+        project_name="demoswap",
     )
     assert is_mainnet_pr_tweet(
-        "Ezswap partnership with BotChain",
+        "Demoswap partnership with BotChain",
         extra,
-        project_name="ezswap",
+        project_name="demoswap",
     )
     assert not is_mainnet_pr_tweet(
         "We are live on Botchain mainnet today",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert not is_mainnet_pr_tweet(
-        "BanshanBook shipped a new feature",
+        "Samplebook shipped a new feature",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert not is_mainnet_pr_tweet(
-        "BanshanBook is live. We love Botchain",
+        "Samplebook is live. We love Botchain",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert not is_mainnet_pr_tweet(
-        "BanshanBook partnership with Uniswap",
+        "Samplebook partnership with Uniswap",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
     assert not is_mainnet_pr_tweet(
-        "RT @x BanshanBook is live on Botchain mainnet",
+        "RT @x Samplebook is live on Botchain mainnet",
         extra,
-        project_name="BanshanBook",
+        project_name="SampleBook",
     )
-    assert tweet_has_project_name("go live with Banshan Book now", "BanshanBook")
+    assert tweet_has_project_name("go live with Sample Book now", "SampleBook")
     assert tweet_has_project_name(
-        "Banshan × BOT Chain  Now live on BOT Chain Mainnet",
-        "BanshanBook",
+        "Sample × BOT Chain  Now live on BOT Chain Mainnet",
+        "SampleBook",
     )
     assert not tweet_has_project_name(
         "Books evolved. Now live on BOT Chain Mainnet",
-        "BanshanBook",
+        "SampleBook",
     )
     assert not is_mainnet_pr_tweet(
         "Foo is live on Botchain mainnet",
@@ -417,12 +417,12 @@ def test_find_mainnet_pr_url_takes_newest_hit():
     rows = [
         (
             datetime(2026, 9, 10, tzinfo=timezone.utc),
-            "BanshanBook is live on Botchain mainnet",
+            "Samplebook is live on Botchain mainnet",
             {"id": "10"},
         ),
         (
             datetime(2026, 9, 20, tzinfo=timezone.utc),
-            "BanshanBook now live on BOT Chain",
+            "Samplebook now live on BOT Chain",
             {"id": "20"},
         ),
         (
@@ -432,8 +432,8 @@ def test_find_mainnet_pr_url_takes_newest_hit():
         ),
     ]
     assert (
-        find_mainnet_pr_url("banshanbook", rows, since=since, project_name="BanshanBook")
-        == "https://x.com/banshanbook/status/20"
+        find_mainnet_pr_url("samplebook", rows, since=since, project_name="SampleBook")
+        == "https://x.com/samplebook/status/20"
     )
 
 
@@ -468,8 +468,8 @@ def test_mainnet_pr_prompt_counts_live_and_partnership():
     from bot.workflow_kpi1_twitter import mainnet_pr_prompt
 
     text = mainnet_pr_prompt(
-        "BanshanBook",
-        "banshanbook",
+        "Samplebook",
+        "samplebook",
         [("20", "2026-09-20", "now live on BOT Chain")],
     )
     assert "live, go-live, or launched on BOT Chain" in text
@@ -489,12 +489,12 @@ def test_judge_skips_without_credentials(monkeypatch):
 
     url, reason = judge_mainnet_pr_url(
         Cfg(),
-        project_name="BanshanBook",
-        handle="banshanbook",
+        project_name="SampleBook",
+        handle="samplebook",
         rows=[
             (
                 datetime(2026, 9, 20, tzinfo=timezone.utc),
-                "BanshanBook is live on Botchain",
+                "Samplebook is live on Botchain",
                 {"id": "20"},
             )
         ],
@@ -524,8 +524,8 @@ def test_judge_api_failure_returns_empty(monkeypatch):
 
     url, reason = judge_mainnet_pr_url(
         Cfg(),
-        project_name="BanshanBook",
-        handle="banshanbook",
+        project_name="SampleBook",
+        handle="samplebook",
         rows=[
             (
                 datetime(2026, 9, 20, tzinfo=timezone.utc),
@@ -566,7 +566,7 @@ def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
     rows = [
         (
             datetime(2026, 9, 20, tzinfo=timezone.utc),
-            "BanshanBook is live on Botchain mainnet",
+            "Samplebook is live on Botchain mainnet",
             {"id": "20"},
         )
     ]
@@ -575,8 +575,8 @@ def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
         Cfg(),
         "rec1",
         {"KPI 2 - PR 新闻链接验证": "https://x.com/keep/status/1"},
-        project_name="BanshanBook",
-        handle="banshanbook",
+        project_name="SampleBook",
+        handle="samplebook",
         rows=rows,
         since=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
@@ -598,7 +598,7 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
     monkeypatch.setattr(
         "bot.workflow_kpi1_twitter.judge_mainnet_pr_url",
         lambda *args, **kwargs: (
-            "https://x.com/banshanbook/status/20",
+            "https://x.com/samplebook/status/20",
             "live on BOT Chain",
         ),
     )
@@ -613,7 +613,7 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
     rows = [
         (
             datetime(2026, 9, 20, tzinfo=timezone.utc),
-            "BanshanBook is live on Botchain mainnet",
+            "Samplebook is live on Botchain mainnet",
             {"id": "20"},
         )
     ]
@@ -622,15 +622,15 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
         Cfg(),
         "rec1",
         {},
-        project_name="BanshanBook",
-        handle="banshanbook",
+        project_name="SampleBook",
+        handle="samplebook",
         rows=rows,
         since=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
-    assert url == "https://x.com/banshanbook/status/20"
+    assert url == "https://x.com/samplebook/status/20"
     assert patches == [
         {
-            "KPI 2 - PR 新闻链接验证": "https://x.com/banshanbook/status/20",
+            "KPI 2 - PR 新闻链接验证": "https://x.com/samplebook/status/20",
             "新闻验证结果": "通过",
         }
     ]
@@ -659,8 +659,8 @@ def test_maybe_write_kpi2_leaves_empty_when_model_declines(monkeypatch):
         Cfg(),
         "rec1",
         {},
-        project_name="BanshanBook",
-        handle="banshanbook",
+        project_name="SampleBook",
+        handle="samplebook",
         rows=[
             (
                 datetime(2026, 9, 20, tzinfo=timezone.utc),

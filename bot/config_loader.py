@@ -296,7 +296,7 @@ _DEFAULT_DOCS_URL = (
 _DEFAULT_WELCOME_SEQUENCE_ZH: list[dict[str, Any]] = [
     {
         "delay_seconds": 0,
-        "text": "大家好，我是 Delivery Agent Josh，很高兴和大家对接 👋",
+        "text": "大家好，我是交付号，很高兴和大家对接 👋",
     },
     {
         "delay_seconds": 30,
@@ -315,7 +315,7 @@ _DEFAULT_WELCOME_SEQUENCE_EN: list[dict[str, Any]] = [
     {
         "delay_seconds": 0,
         "text": (
-            "Hi everyone — I'm Josh from Delivery Agent. "
+            "Hi everyone — I'm the delivery account. "
             "Glad to connect with you 👋"
         ),
     },
@@ -951,7 +951,7 @@ def load_config() -> AppConfig:
             workflow.get("lark_digest_at_open_id") or ""
         ).strip(),
         workflow_lark_digest_at_name=str(
-            workflow.get("lark_digest_at_name") or "Angela-财务"
+            workflow.get("lark_digest_at_name") or "财务"
         ).strip(),
         workflow_lark_group_notify_enabled=bool(
             workflow.get(
@@ -1010,7 +1010,7 @@ def load_config() -> AppConfig:
         ).strip(),
         workflow_blake_weekly_at_name=str(
             (workflow.get("blake_weekly") or {}).get("at_name")
-            or "Blake-APP-Android (布莱克)"
+            or "前端"
         ).strip(),
         workflow_blake_weekly_table_id=str(
             (workflow.get("blake_weekly") or {}).get("table_id")
@@ -1092,7 +1092,7 @@ def load_config() -> AppConfig:
         tech_support_owner=str((workflow.get("tech_support") or {}).get("owner") or "delivery").strip(),
         tech_support_lark_chat_id=str((workflow.get("tech_support") or {}).get("lark_chat_id") or "").strip(),
         tech_support_cisco_open_id=str((workflow.get("tech_support") or {}).get("cisco_open_id") or "").strip(),
-        tech_support_cisco_name=str((workflow.get("tech_support") or {}).get("cisco_name") or "Cisco-BE").strip(),
+        tech_support_cisco_name=str((workflow.get("tech_support") or {}).get("cisco_name") or "").strip(),
         tech_support_assignees=[
             {
                 "name": str(x.get("name") or "").strip(),
@@ -1103,7 +1103,7 @@ def load_config() -> AppConfig:
         ] or (
             [
                 {
-                    "name": str((workflow.get("tech_support") or {}).get("cisco_name") or "Cisco-BE").strip(),
+                    "name": str((workflow.get("tech_support") or {}).get("cisco_name") or "").strip(),
                     "open_id": str((workflow.get("tech_support") or {}).get("cisco_open_id") or "").strip(),
                 }
             ]

@@ -41,10 +41,7 @@ _DEFAULT_TABLE_URL = (
     f"?table={_DEFAULT_TABLE_ID}&view={_DEFAULT_VIEW_ID}"
 )
 _DEFAULT_CHAT_ID = "oc_4613e10ffde1fde8dc14c1899b4520dd"
-_DEFAULT_ASSIGNEES = [
-    {"name": "Lighter", "open_id": "ou_0bb5c059439445d106e9889ad2d62f0e"},
-    {"name": "Jasper", "open_id": "ou_a98d6abcae8e25344c6ea79262c69db7"},
-]
+_DEFAULT_ASSIGNEES: list[dict[str, str]] = []
 
 FIELD_NAME = "项目方"
 FIELD_SITE = "官网"

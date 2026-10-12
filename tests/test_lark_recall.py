@@ -25,7 +25,7 @@ def test_inline_recall_and_plus():
 def test_bare_recall_is_reply_only():
     assert parse_recall_command("recall") == ("", True)
     assert parse_recall_command("hello") is None
-    assert parse_recall_command("send to Blake") is None
+    assert parse_recall_command("send to 前端") is None
 
 
 def test_unique_snippet_picks_one():
@@ -54,7 +54,7 @@ def test_send_to_log_lets_recall_find_a_private_chat(monkeypatch, tmp_path):
     log_sent_message(
         message_id="om_stella",
         text="How are you doing, my friend?",
-        name="Stella",
+        name="Ada",
         kind="user",
         target_id="ou_stella",
     )

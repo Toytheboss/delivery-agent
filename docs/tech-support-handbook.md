@@ -7,7 +7,7 @@
 | 环节 | 说明 |
 |------|------|
 | 触发 | 交付号或审核号在项目群 **回复/quote 问题** 后发送 `tech support` |
-| 推送 | 发到 Lark「交付 & 技术 & 项目方答疑群」，@ **Cisco-BE**、**审核号** |
+| 推送 | 发到 Lark「交付 & 技术 & 项目方答疑群」，@ 配置里的技术员和审核号 |
 | 回传 | 技术员 **回复该工单消息**；Bot 用 ticket 映射到原 TG 群，quote 原问题发出答案 |
 | 学习 | 回传成功后，自动学习「原问 + 答案」，写入本地 `learned/`，并同步到 **Agent 词条库** |
 
@@ -31,7 +31,7 @@
 
 > 仅 **交付号 / 审核号本账号**发出的指令会触发（避免双端重复建单）。
 
-### 2. 技术员（Cisco / 审核号）：在 Lark 作答
+### 2. 技术员：在 Lark 作答
 
 1. 打开 **交付 & 技术 & 项目方答疑群**。  
 2. 找到带 `【Tech Support】T-…` 的工单（会 @ 你）。  
@@ -61,5 +61,4 @@
 - 配置：`config.yaml` → `workflow.tech_support`
 - 工单状态：`/opt/botchain-shared/tech_support_tickets.json`
 - 服务：`botchain-qa.service`（审核号）、`delivery-agent.service`（交付号）
-- 可选秒级回传：Lark 开放平台给审核号应用订阅 `im.message.receive_v1`，请求地址  
-  `http://8-222-166-120.sslip.io/workflow/tech-support/event`（Nginx 转到审核号 `127.0.0.1:8786`，交付号不处理）
+- 可选秒级回传：Lark 开放平台给审核号应用订阅 `im.message.receive_v1`，请求地址为审核号的 `/workflow/tech-support/event`（本机 `127.0.0.1:8786`，交付号不处理）

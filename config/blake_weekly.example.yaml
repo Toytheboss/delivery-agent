@@ -1,11 +1,11 @@
 # Daily 00:00 Asia/Shanghai → refresh 项目推送至前端-每周更新
-# Sunday 23:55 prepare, Monday 00:00:00 send → ping Blake
+# Sunday 23:55 prepare, Monday 00:00:00 send → ping the frontend owner
 # Skip live projects missing 项目logo（文件） or 已上线链接🔗 (not counted)
 blake_weekly:
   enabled: true
   chat_id: "oc_xxxxxxxx"  # 项目方信息整理&推送（钱包/ logo/官网）
-  at_open_id: "ou_xxxxxxxx"  # Blake-APP-Android (布莱克)
-  at_name: "Blake-APP-Android (布莱克)"
+  at_open_id: "ou_xxxxxxxx"
+  at_name: "前端"
   table_id: "tblsPBJW1HUmkM6X"
   view_id: "vewVJL9hzD"
   weekday: 0   # ping day: Monday=0 = Sunday 24:00

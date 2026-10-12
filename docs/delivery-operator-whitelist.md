@@ -2,7 +2,7 @@
 
 面向交付同学：谁能触发交付动作、发什么口令、和「BD 忽略名单」有何区别。
 
-生产交付号：`@Josh_0zh`（服务器 systemd 服务 `delivery-agent`）。
+生产交付号的 Telegram 用户名写在服务器环境变量里，不记在本文。服务名是 `delivery-agent`。
 
 ---
 
@@ -12,14 +12,7 @@
 
 `/opt/delivery-agent/config/config.yaml` → `workflow.operators`
 
-当前操作员（2026-08-10）：
-
-| Telegram | 说明 |
-|----------|------|
-| `@Josh_0zh` | 交付操作员 |
-| `@Xuanxi_zhao` | 交付操作员 |
-| `@Josh_0zh` | 交付号本人（始终可用，无需写进 operators） |
-| `@Trent_one` | QA 测试号（`qa_testers.yaml`，权限与操作员类似） |
+当前操作员以服务器 `config.yaml` 的 `workflow.operators` 为准，本文不列具体账号。交付号本人始终可用，无需写进 operators。审核测试号写在 `qa_testers.yaml`。
 
 普通项目方、未列入上表的同事：**发口令无效**。
 
@@ -122,7 +115,7 @@ send form
 
 - BD / 内部拉群账号通常在此列表，避免刷屏式自动答疑
 - **操作员白名单**在 `config.yaml` 的 `operators`，管的是交付口令权限
-- 某人若既要交付口令、又曾在忽略名单：应加入 `operators`，并视需要从 `ignore_users` 移除（如 `@Xuanxi_zhao`）
+- 某人若既要交付口令、又曾在忽略名单：应加入 `operators`，并视需要从 `ignore_users` 移除
 
 ---
 
@@ -139,9 +132,9 @@ send form
 ```yaml
 workflow:
   operators:
-    - username: Josh_0zh
-    - user_id: 1359647881   # 可选但更稳
-      username: Xuanxi_zhao
+    - username: operator_username
+    - user_id: 1000000001   # 可选但更稳
+      username: another_operator
     - username: NewPerson
 ```
 
@@ -167,9 +160,9 @@ Workflow operator @xxx -> user_id=...
 2. 需要上线收尾时，单独发一行：`项目已上线`  
 3. Bot 会改飞书状态、发表单、尝试填 Logo  
 4. 只要表单时发：`发送上线表单`  
-5. 看周数据时私聊 `@Josh_0zh` 发：`交付周报`
+5. 看周数据时私聊交付号发：`交付周报`
 
-当前可操作账号：`@Josh_0zh`、`@Xuanxi_zhao`，以及交付号本人。
+当前可操作账号以服务器配置为准，加上交付号本人。
 
 ---
 

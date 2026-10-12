@@ -49,13 +49,13 @@ def test_diag_commands_match_plain_text_not_quote():
     assert is_kpi_diag_command("ONCHAIN DIAG")
     assert not is_kpi_diag_command("pr support")
     assert not is_kpi_diag_command("please onchain diag this")
-    assert parse_kpi_diag_request("project diag BOT Multisender") == (
+    assert parse_kpi_diag_request("project diag Demo Tool") == (
         "project",
-        "BOT Multisender",
+        "Demo Tool",
     )
-    assert parse_kpi_diag_request("onchain diag BOT Multisender") == (
+    assert parse_kpi_diag_request("onchain diag Demo Tool") == (
         "onchain",
-        "BOT Multisender",
+        "Demo Tool",
     )
     assert parse_kpi_diag_request("website diag!") == ("website", "")
 
@@ -65,13 +65,13 @@ def test_private_diag_matches_one_normalized_project_name():
         workflow_project_name_field = "项目名称 Project Name"
 
     records = [
-        {"record_id": "a", "fields": {"项目名称 Project Name": "BOT Multisender"}},
-        {"record_id": "b", "fields": {"项目名称 Project Name": "BOT MULTISENDER"}},
-        {"record_id": "c", "fields": {"项目名称 Project Name": "swing"}},
+        {"record_id": "a", "fields": {"项目名称 Project Name": "Demo Tool"}},
+        {"record_id": "b", "fields": {"项目名称 Project Name": "DEMO TOOL"}},
+        {"record_id": "c", "fields": {"项目名称 Project Name": "pebble"}},
     ]
-    one = match_projects_by_name(Config(), records[:1] + records[2:], "bot multisender")
+    one = match_projects_by_name(Config(), records[:1] + records[2:], "demo tool")
     assert [item[0] for item in one] == ["a"]
-    two = match_projects_by_name(Config(), records, "BOT Multisender")
+    two = match_projects_by_name(Config(), records, "Demo Tool")
     assert len(two) == 2
 
 
@@ -80,17 +80,17 @@ def test_diag_name_keeps_space_as_a_different_project():
         workflow_project_name_field = "项目名称 Project Name"
 
     records = [
-        {"record_id": "spaced", "fields": {"项目名称 Project Name": "Agent Vault"}},
-        {"record_id": "glued", "fields": {"项目名称 Project Name": "AgentVault"}},
+        {"record_id": "spaced", "fields": {"项目名称 Project Name": "North Star"}},
+        {"record_id": "glued", "fields": {"项目名称 Project Name": "Northstar"}},
     ]
     cfg = Config()
-    glued = match_projects_by_name(cfg, records, "AgentVault")
+    glued = match_projects_by_name(cfg, records, "Northstar")
     assert [item[0] for item in glued] == ["glued"]
-    spaced = match_projects_by_name(cfg, records, "Agent Vault")
+    spaced = match_projects_by_name(cfg, records, "North Star")
     assert [item[0] for item in spaced] == ["spaced"]
-    folded = match_projects_by_name(cfg, records, "agentvault")
+    folded = match_projects_by_name(cfg, records, "northstar")
     assert [item[0] for item in folded] == ["glued"]
-    only_spaced = match_projects_by_name(cfg, records[:1], "AgentVault")
+    only_spaced = match_projects_by_name(cfg, records[:1], "Northstar")
     assert [item[0] for item in only_spaced] == ["spaced"]
 
 
@@ -177,14 +177,14 @@ def test_find_wallet_row_keeps_space_as_a_different_project(monkeypatch):
         {
             "record_id": "spaced",
             "fields": {
-                "Project name": "Agent Vault",
+                "Project name": "North Star",
                 "Mainnet Contract Addresss": "0x" + ("11" * 20),
             },
         },
         {
             "record_id": "glued",
             "fields": {
-                "Project name": "AgentVault",
+                "Project name": "Northstar",
                 "Mainnet Contract Addresss": "0x" + ("22" * 20),
             },
         },
@@ -198,10 +198,10 @@ def test_find_wallet_row_keeps_space_as_a_different_project(monkeypatch):
         workflow_wallet_table_id="tbl",
         workflow_wallet_name_field="Project name",
     )
-    glued = find_wallet_row("tok", cfg, "AgentVault")
+    glued = find_wallet_row("tok", cfg, "Northstar")
     assert glued is not None
     assert glued[0] == "glued"
-    spaced = find_wallet_row("tok", cfg, "Agent Vault")
+    spaced = find_wallet_row("tok", cfg, "North Star")
     assert spaced is not None
     assert spaced[0] == "spaced"
 
@@ -375,7 +375,7 @@ def test_recheck_appends_and_only_upgrades_pass():
 
 def test_twitter_handle_and_no_account_copy():
     assert twitter_handle_from_url("https://x.com/SubscribeOneHQ") == "SubscribeOneHQ"
-    assert twitter_handle_from_url("@OpenLCdev") == "OpenLCdev"
+    assert twitter_handle_from_url("@exampledev") == "exampledev"
     assert twitter_handle_from_url("https://x.com/i/status/1") == ""
     assert is_retweet("RT @foo hello")
     assert not is_retweet("mainnet is live")
