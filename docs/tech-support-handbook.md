@@ -2,12 +2,12 @@
 
 ## 一、功能说明
 
-把项目方 TG 群里的技术问题，经交付/QA 一键升级到 Lark 答疑群；技术员回复后，Bot 自动 quote 原问题回传到对应项目群，并可选把 Q&A 写入知识库 / Agent 词条库。
+把项目方 TG 群里的技术问题，经交付号/审核号一键升级到 Lark 答疑群；技术员回复后，Bot 自动 quote 原问题回传到对应项目群，并可选把 Q&A 写入知识库 / Agent 词条库。
 
 | 环节 | 说明 |
 |------|------|
-| 触发 | Josh（交付号）或 Roy（QA 号）在项目群 **回复/quote 问题** 后发送 `tech support` |
-| 推送 | 发到 Lark「交付 & 技术 & 项目方答疑群」，@ **Cisco-BE**、**Roy** |
+| 触发 | 交付号或审核号在项目群 **回复/quote 问题** 后发送 `tech support` |
+| 推送 | 发到 Lark「交付 & 技术 & 项目方答疑群」，@ **Cisco-BE**、**审核号** |
 | 回传 | 技术员 **回复该工单消息**；Bot 用 ticket 映射到原 TG 群，quote 原问题发出答案 |
 | 学习 | 回传成功后，自动学习「原问 + 答案」，写入本地 `learned/`，并同步到 **Agent 词条库** |
 
@@ -17,7 +17,7 @@
 
 ## 二、操作手册
 
-### 1. 交付 / QA：升级问题
+### 1. 交付号 / 审核号：升级问题
 
 1. 在项目方 TG 群找到技术问题。  
 2. **长按 / 右键 → 回复（quote）** 该消息。  
@@ -29,9 +29,9 @@
    `Escalated to Lark tech support as T-YYYYMMDD-XXXX …`  
 5. 未 quote 就发指令时，Bot 会提示先回复原问题。
 
-> 仅 **Josh / Roy 本账号**发出的指令会触发（避免双端重复建单）。
+> 仅 **交付号 / 审核号本账号**发出的指令会触发（避免双端重复建单）。
 
-### 2. 技术员（Cisco / Roy）：在 Lark 作答
+### 2. 技术员（Cisco / 审核号）：在 Lark 作答
 
 1. 打开 **交付 & 技术 & 项目方答疑群**。  
 2. 找到带 `【Tech Support】T-…` 的工单（会 @ 你）。  
@@ -53,13 +53,13 @@
 |------|------|
 | `Failed to escalate…` | 看服务日志；常见为共享目录权限（`/opt/botchain-shared`） |
 | Lark 有工单但 TG 不回 | 确认是否 **回复工单本身**；等待一轮轮询（约 45s） |
-| 两边都建了单 | 只用 Josh 或 Roy 其中一个号发 `tech support` |
+| 两边都建了单 | 只用交付号或审核号其中一个号发 `tech support` |
 | 想改 @ 人员 | 改配置 `workflow.tech_support.assignees` 后重启 bot |
 
 ### 5. 相关配置（运维）
 
 - 配置：`config.yaml` → `workflow.tech_support`
 - 工单状态：`/opt/botchain-shared/tech_support_tickets.json`
-- 服务：`botchain-qa.service`（Roy）、`delivery-agent.service`（Josh）
-- 可选秒级回传：Lark 开放平台给 Roy 应用订阅 `im.message.receive_v1`，请求地址  
-  `http://8-222-166-120.sslip.io/workflow/tech-support/event`（Nginx 转到 Roy号 `127.0.0.1:8786`，交付号不处理）
+- 服务：`botchain-qa.service`（审核号）、`delivery-agent.service`（交付号）
+- 可选秒级回传：Lark 开放平台给审核号应用订阅 `im.message.receive_v1`，请求地址  
+  `http://8-222-166-120.sslip.io/workflow/tech-support/event`（Nginx 转到审核号 `127.0.0.1:8786`，交付号不处理）
