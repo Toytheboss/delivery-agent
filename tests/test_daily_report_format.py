@@ -2,9 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
+
 from bot.metrics import (
     _classify_kpi_write,
     _fmt_kind_line,
+    _form_first_send_names,
+    _live_without_form,
     format_daily_report_zh,
     split_telegram_text,
 )
@@ -20,6 +24,31 @@ def test_split_telegram_text_splits_long_lines() -> None:
     assert len(chunks) >= 2
     assert all(len(c) <= 500 for c in chunks)
     assert "\n".join(chunks) == body
+
+
+def test_form_first_sends_include_every_path_in_window() -> None:
+    tz = timezone(timedelta(hours=8))
+    since = datetime(2026, 10, 12, tzinfo=tz)
+    projects = {
+        "a": {"project_name": "Parliament", "first_sent_at": since.timestamp() + 3600, "source": "form_speaker"},
+        "b": {"project_name": "Clearance", "first_sent_at": since.timestamp() + 7200, "source": "live_status_watch"},
+        "c": {"project_name": "Old", "first_sent_at": since.timestamp() - 10, "source": "form_dispatch"},
+    }
+    assert _form_first_send_names(projects, since=since) == ["Parliament", "Clearance"]
+    missing = _live_without_form(
+        {"today_mainnet_live_records": [
+            {"record_id": "a", "name": "Parliament"},
+            {"record_id": "z", "name": "Orbit"},
+        ]},
+        projects,
+    )
+    assert missing == ["Orbit"]
+
+
+def test_fmt_kind_line_does_not_invent_unnamed_extra() -> None:
+    lines: list[str] = []
+    _fmt_kind_line(lines, label="表单新发", count=12, names=["A", "B", "C", "D"])
+    assert lines == ["· 表单新发：12（A、B、C、D）"]
 
 
 def test_fmt_kind_line_caps_name_list() -> None:
@@ -132,3 +161,24 @@ def test_format_daily_report_has_eight_sections() -> None:
     assert "补交终审" in text
     assert "Verify 告警：2" in text
     assert "字段写入：3" in text
+    assert "表单新发：1" in text
+
+
+def test_format_daily_report_counts_every_form_send() -> None:
+    text = format_daily_report_zh(
+        {
+            "today": "2026-10-12",
+            "window_label": "2026-10-12 全天",
+            "bot_messages": {"form": 12},
+            "form_first_send_names": ["ProofPass", "Parliament", "Engrow"],
+            "live_without_form_names": ["Orbit", "Pikachu"],
+            "workflow": {"by_kind": {"form_sent": 4}, "names_by_kind": {"form_sent": ["ProofPass"]}},
+            "progress": {},
+            "wallet": {},
+            "deploy_changes": {"baselined": True, "total": 0},
+            "message_mix": {},
+        }
+    )
+    assert "表单新发：3（ProofPass、Parliament、Engrow）" in text
+    assert "主网上线但没有表单记录：2（Orbit、Pikachu）" in text
+    assert "另" not in text.split("表单新发")[1].split("\n", 1)[0]

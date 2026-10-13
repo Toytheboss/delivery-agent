@@ -990,6 +990,72 @@ def _message_window_summary(
     return out
 
 
+def _read_chase_projects(config: Any) -> dict[str, dict[str, Any]] | None:
+    """Projects with a recorded first form send.
+
+    ``None`` means the chase file is absent, so the caller should fall back
+    to workflow events. An empty dict means tracking exists and nobody was sent.
+    """
+    rel = str(
+        getattr(config, "workflow_form_chase_state_file", "data/form_chase_state.json")
+        or "data/form_chase_state.json"
+    )
+    path = ROOT / rel
+    inbox = Path("/opt/botchain-shared/form_chase_inbox.json")
+    if not path.exists() and not inbox.exists():
+        return None
+    projects: dict[str, dict[str, Any]] = {}
+    raw = _safe_json(path) if path.exists() else {}
+    stored = raw.get("projects") if isinstance(raw, dict) else None
+    if isinstance(stored, dict):
+        for rid, meta in stored.items():
+            if isinstance(meta, dict) and meta.get("first_sent_at"):
+                projects[str(rid)] = meta
+    if inbox.exists():
+        incoming = _safe_json(inbox).get("projects")
+        if isinstance(incoming, dict):
+            for rid, meta in incoming.items():
+                if str(rid) in projects or not isinstance(meta, dict):
+                    continue
+                if meta.get("first_sent_at"):
+                    projects[str(rid)] = meta
+    return projects
+
+
+def _form_first_send_names(
+    projects: dict[str, dict[str, Any]], *, since: datetime
+) -> list[str]:
+    """Project names whose form was first posted inside the report window."""
+    rows: list[tuple[datetime, str]] = []
+    for rid, meta in projects.items():
+        try:
+            ts = float(meta.get("first_sent_at"))
+        except (TypeError, ValueError):
+            continue
+        sent_at = datetime.fromtimestamp(ts, TZ)
+        if sent_at < since:
+            continue
+        name = str(meta.get("project_name") or "").strip() or str(rid)
+        rows.append((sent_at, name))
+    rows.sort(key=lambda item: (item[0], item[1].lower()))
+    return _dedupe_names([name for _, name in rows], limit=10_000)
+
+
+def _live_without_form(
+    progress: dict[str, Any], projects: dict[str, dict[str, Any]]
+) -> list[str]:
+    """Live rows in the window that never got a tracked form send."""
+    missing: list[str] = []
+    for item in progress.get("today_mainnet_live_records") or []:
+        if not isinstance(item, dict):
+            continue
+        rid = str(item.get("record_id") or "").strip()
+        name = str(item.get("name") or "").strip()
+        if rid and rid not in projects and name:
+            missing.append(name)
+    return _dedupe_names(sorted(missing, key=str.lower), limit=10_000)
+
+
 def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     """Assemble ops report for a rolling window (default past 24 hours)."""
     hours = max(int(hours), 1)
@@ -1065,6 +1131,13 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
 
     workflow = _workflow_window_summary(config, since=since)
     messages = _message_window_summary(config, since=since, window_days=window_days)
+    chase_projects = _read_chase_projects(config)
+    form_first_send_names: list[str] | None = None
+    live_without_form_names: list[str] | None = None
+    if chase_projects is not None:
+        form_first_send_names = _form_first_send_names(chase_projects, since=since)
+        if not progress.get("error"):
+            live_without_form_names = _live_without_form(progress, chase_projects)
 
     # Live count stays on the progress table: current mainnet-live status and
     # 主网上线时间 inside the window. A status that was flipped to live and
@@ -1121,6 +1194,8 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "deploy_changes": deploy_changes,
         "workflow": workflow,
         "message_mix": messages,
+        "form_first_send_names": form_first_send_names,
+        "live_without_form_names": live_without_form_names,
     }
 
 
@@ -1162,7 +1237,7 @@ def _fmt_kind_line(
     if names:
         unique = _dedupe_names(list(names), limit=10_000)
         shown = unique[: max(int(name_limit), 1)]
-        extra = max(max(n, len(unique)) - len(shown), 0)
+        extra = max(len(unique) - len(shown), 0)
         suffix = f" 等另 {extra} 个" if extra else ""
         joined = "、".join(shown) if shown else empty
         lines.append(f"· {label}：{n}（{joined}{suffix}）")
@@ -1311,12 +1386,29 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         count=kcount("verification_push_onboard"),
         names=knames("verification_push_onboard"),
     )
-    _fmt_kind_line(
-        lines,
-        label="表单新发",
-        count=int(bm.get("form") or kcount("form_sent") or 0),
-        names=knames("form_sent"),
-    )
+    form_names = daily.get("form_first_send_names")
+    if isinstance(form_names, list):
+        _fmt_kind_line(
+            lines,
+            label="表单新发",
+            count=len(form_names),
+            names=form_names,
+        )
+    else:
+        _fmt_kind_line(
+            lines,
+            label="表单新发",
+            count=int(bm.get("form") or kcount("form_sent") or 0),
+            names=knames("form_sent"),
+        )
+    missing_forms = daily.get("live_without_form_names")
+    if isinstance(missing_forms, list) and missing_forms:
+        _fmt_kind_line(
+            lines,
+            label="主网上线但没有表单记录",
+            count=len(missing_forms),
+            names=missing_forms,
+        )
     _fmt_kind_line(
         lines,
         label="表单催收",
@@ -1462,6 +1554,7 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
             f"· 本报告统计「{window}」滚动窗口内的新增（Asia/Shanghai）。",
             "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
             "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
+            "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",
             "· 工作流事件来自 workflow_events；消息结构来自 message_logs；计数器按日桶近似。",
             "· form_dispatch_skip / 轮询次数等噪声不进正文。",
         ]

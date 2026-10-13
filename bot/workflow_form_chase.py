@@ -220,11 +220,11 @@ def enqueue_shared_chase(
     chat_id: int,
     source: str = "",
     now: float | None = None,
-) -> None:
+) -> bool:
     """Let the chasing bot pick up a form send that this account does not track."""
     rid = str(record_id or "").strip()
     if not rid:
-        return
+        return False
     now = time.time() if now is None else now
     inbox.parent.mkdir(parents=True, exist_ok=True)
     with inbox.open("a+", encoding="utf-8") as handle:
@@ -242,7 +242,8 @@ def enqueue_shared_chase(
             projects = {}
             data["projects"] = projects
         existing = projects.get(rid)
-        if not (isinstance(existing, dict) and existing.get("first_sent_at")):
+        created = not (isinstance(existing, dict) and existing.get("first_sent_at"))
+        if created:
             projects[rid] = {
                 "project_name": project_name or "",
                 "chat_id": int(chat_id),
@@ -256,6 +257,30 @@ def enqueue_shared_chase(
         handle.truncate()
         handle.write(json.dumps(data, ensure_ascii=False, indent=2) + "\n")
         handle.flush()
+        return created
+
+
+def _log_form_sent(
+    *,
+    project_name: str,
+    record_id: str,
+    chat_id: int,
+    source: str,
+) -> None:
+    """One workflow event per project, whichever path actually posted the form."""
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "form_sent",
+            source or "form_chase",
+            project_name=project_name,
+            record_id=record_id,
+            chat_id=chat_id,
+            text=f"Google 表单已发到项目群（{source or 'form_chase'}）",
+        )
+    except Exception:
+        logger.exception("form_sent event failed record=%s", record_id)
 
 
 def absorb_shared_chase_inbox(config: AppConfig, *, inbox: Path | None = None) -> int:
@@ -309,12 +334,20 @@ def note_form_sent(
     """Register / refresh chase tracking when a Google Form is first sent."""
     if not getattr(config, "workflow_form_chase_enabled", False):
         inbox = _shared_chase_inbox()
+        created = False
         if inbox is not None:
-            enqueue_shared_chase(
+            created = enqueue_shared_chase(
                 inbox,
                 record_id=record_id,
                 project_name=project_name,
                 chat_id=chat_id,
+                source=source,
+            )
+        if created:
+            _log_form_sent(
+                project_name=project_name,
+                record_id=str(record_id or ""),
+                chat_id=int(chat_id),
                 source=source,
             )
         return
@@ -328,6 +361,7 @@ def note_form_sent(
     existing = projects.get(rid)
     if isinstance(existing, dict) and existing.get("done"):
         return
+    created = not (isinstance(existing, dict) and existing.get("first_sent_at"))
     if isinstance(existing, dict) and existing.get("first_sent_at"):
         # Keep original first_sent_at; refresh chat/name if needed.
         existing["project_name"] = project_name or existing.get("project_name") or ""
@@ -348,6 +382,13 @@ def note_form_sent(
             "source": source or "",
         }
     _save_state(path, state)
+    if created:
+        _log_form_sent(
+            project_name=project_name,
+            record_id=rid,
+            chat_id=int(chat_id),
+            source=source,
+        )
     logger.info(
         "form-chase tracked record=%s project=%r chat_id=%s source=%s",
         rid,
