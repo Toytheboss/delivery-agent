@@ -4,6 +4,8 @@ from zoneinfo import ZoneInfo
 from bot.workflow_kpi_schedule import due_round, mark_rounds_done, select_due
 
 SH = ZoneInfo("Asia/Shanghai")
+BEFORE = datetime(2026, 10, 13, 12, tzinfo=SH)
+AFTER = datetime(2026, 10, 16, 10, tzinfo=SH)
 
 
 def _row(record_id: str, name: str, live: str, status: str = "主网上线") -> dict:
@@ -19,16 +21,74 @@ def _row(record_id: str, name: str, live: str, status: str = "主网上线") -> 
 
 def test_first_round_is_seven_days_after_live():
     live = datetime(2026, 9, 30, tzinfo=SH)
-    assert due_round(live, date(2026, 10, 6), first_done=False, second_done=False) is None
-    assert due_round(live, date(2026, 10, 7), first_done=False, second_done=False) == "first"
+    assert (
+        due_round(
+            live, date(2026, 10, 6), first_done=False, second_done=False, at=BEFORE
+        )
+        is None
+    )
+    assert (
+        due_round(
+            live, date(2026, 10, 7), first_done=False, second_done=False, at=BEFORE
+        )
+        == "first"
+    )
 
 
 def test_second_round_waits_until_the_first_is_sent():
     live = datetime(2026, 9, 30, tzinfo=SH)
-    assert due_round(live, date(2026, 10, 21), first_done=False, second_done=False) == "first"
-    assert due_round(live, date(2026, 10, 20), first_done=True, second_done=False) is None
-    assert due_round(live, date(2026, 10, 21), first_done=True, second_done=False) == "second"
-    assert due_round(live, date(2026, 10, 21), first_done=True, second_done=True) is None
+    assert (
+        due_round(
+            live, date(2026, 10, 21), first_done=False, second_done=False, at=BEFORE
+        )
+        == "first"
+    )
+    assert (
+        due_round(
+            live, date(2026, 10, 20), first_done=True, second_done=False, at=BEFORE
+        )
+        is None
+    )
+    assert (
+        due_round(
+            live, date(2026, 10, 21), first_done=True, second_done=False, at=BEFORE
+        )
+        == "second"
+    )
+    assert (
+        due_round(
+            live, date(2026, 10, 21), first_done=True, second_done=True, at=BEFORE
+        )
+        is None
+    )
+
+
+def test_after_cutover_first_is_three_days_and_second_is_two_weeks_later():
+    live = datetime(2026, 10, 16, tzinfo=SH)
+    assert (
+        due_round(
+            live, date(2026, 10, 18), first_done=False, second_done=False, at=AFTER
+        )
+        is None
+    )
+    assert (
+        due_round(
+            live, date(2026, 10, 19), first_done=False, second_done=False, at=AFTER
+        )
+        == "first"
+    )
+    assert (
+        due_round(
+            live, date(2026, 11, 1), first_done=True, second_done=False, at=AFTER
+        )
+        is None
+    )
+    assert (
+        due_round(
+            live, date(2026, 11, 2), first_done=True, second_done=False, at=AFTER
+        )
+        == "second"
+    )
 
 
 def test_september_and_already_posted_projects_stay_off_the_calendar():
@@ -45,6 +105,7 @@ def test_september_and_already_posted_projects_stay_off_the_calendar():
         status_field="项目状态",
         name_field="项目名称 Project Name",
         already_posted={"posted"},
+        at=BEFORE,
     )
     assert [item["project"] for item in due] == ["Newone"]
     assert due[0]["round"] == "first"

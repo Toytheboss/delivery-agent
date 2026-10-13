@@ -125,7 +125,7 @@ End-to-end path when a project goes **Mainnet Live**:
 
 ### 7. KPI audit (audit account)
 
-Standard product checks on the Progress Tracker. Eligible rows: already mainnet-live, live date on or after `2026-09-01`. Auto cadence is **live day 0** → **+7 days** first check → **+21 days** final recheck of held items only (calendar days; audit host daily scan).
+Standard product checks on the Progress Tracker. Eligible rows: already mainnet-live, live date on or after `2026-09-01`. Until `2026-10-15 19:00` Shanghai the auto cadence is **live day 0** → **+7 days** first check → **+21 days** final recheck. After that moment it is **+3 days** first check → **+17 days** final recheck (14 days after the first check). Calendar days; audit host daily scan.
 
 Telegram replies in the project group use English labels (Twitter / News/PR / Website / …), not the word “KPI”.
 

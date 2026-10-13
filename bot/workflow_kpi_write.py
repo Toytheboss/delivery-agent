@@ -24,6 +24,13 @@ _FAIL = "不通过"
 _LIVE_TIME_FIELD = "主网上线时间"
 _STATUS_FIELD = "项目状态"
 _MIN_LIVE_DATE = datetime(2026, 9, 1, tzinfo=SH).date()
+# September held projects are final-reviewed at this moment. The shorter
+# cadence applies only after it: first check live+3, second check two weeks later.
+CADENCE_CHANGE_AT = datetime(2026, 10, 15, 19, 0, tzinfo=SH)
+_FIRST_DAYS_BEFORE = 7
+_SECOND_DAYS_BEFORE = 21
+_FIRST_DAYS_AFTER = 3
+_SECOND_DAYS_AFTER = 17
 _ADDR_RE = re.compile(r"0x[a-fA-F0-9]{40}")
 _CONTRACT_RE = re.compile(r"(?<![0-9a-fA-F])0x[a-fA-F0-9]{40}(?![0-9a-fA-F])")
 _CONTRACT_FIELDS = (
@@ -47,6 +54,22 @@ def kpi_checks_on_this_host() -> bool:
 
 def now_shanghai() -> datetime:
     return datetime.now(SH)
+
+
+def review_offsets(when: datetime | None = None) -> tuple[int, int]:
+    """Return (first_check_days, second_check_days) for a scan moment.
+
+    Before 2026-10-15 19:00 Shanghai the calendar stays live+7 and live+21.
+    After that, the first check is live+3 and the second check is 14 days later.
+    """
+    moment = when or now_shanghai()
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=SH)
+    else:
+        moment = moment.astimezone(SH)
+    if moment >= CADENCE_CHANGE_AT:
+        return _FIRST_DAYS_AFTER, _SECOND_DAYS_AFTER
+    return _FIRST_DAYS_BEFORE, _SECOND_DAYS_BEFORE
 
 
 def merge_kpi_copy(existing: str, new_copy: str, when: datetime | None = None) -> str:

@@ -86,7 +86,10 @@ def test_held_post_omits_kpi7_and_lists_only_the_failed_fix():
     assert text.index("**Failed**") < text.index("**Passed**")
     assert "**KPI 2 PR:** Not submitted" in text
     assert "Any successful submit triggers a **final** recheck now" in text
-    assert "live day `21`" in text
+    from bot.workflow_kpi_write import review_offsets
+
+    _, second_days = review_offsets()
+    assert f"live day `{second_days}`" in text
     assert "share the Twitter PR link" not in text
     assert "within `2` weeks" not in text
     assert "Day `1`" in text
@@ -139,7 +142,10 @@ def test_final_fail_post_is_not_a_hold():
         first_check_date="2026-10-08",
     )
     assert "**First check:** `2026-10-08` · Held for rectification" in text
-    assert "**Second check:** `2026-10-22` · Day `21` recheck" in text
+    from bot.workflow_kpi_write import review_offsets
+
+    _, second_days = review_offsets()
+    assert f"**Second check:** `2026-10-22` · Day `{second_days}` recheck" in text
     assert "**Result:** KPI failed" in text
     assert "KPI 7" not in text
     assert "no further fix window" in text

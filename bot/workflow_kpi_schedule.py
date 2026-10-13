@@ -1,8 +1,10 @@
 """Automatic KPI checks for projects that go mainnet-live from 2026-09-30.
 
-First check is 7 days after the live date. Second check is 21 days after it
-and is final. Projects that already have a September result post are left
-on that earlier review and are not placed on this calendar.
+Until 2026-10-15 19:00 Shanghai the first check is 7 days after the live
+date and the second check is 21 days after it. After that moment the first
+check is 3 days after the live date and the second check is 14 days later.
+Projects that already have a September result post are left on that earlier
+review and are not placed on this calendar.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -20,7 +22,12 @@ from bot.workflow_kpi_result_push import (
     posted_ids,
     send_result_post,
 )
-from bot.workflow_kpi_write import is_mainnet_live, now_shanghai, parse_live_start
+from bot.workflow_kpi_write import (
+    is_mainnet_live,
+    now_shanghai,
+    parse_live_start,
+    review_offsets,
+)
 
 if TYPE_CHECKING:
     from bot.config_loader import AppConfig
@@ -29,8 +36,6 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 SCHEDULE_START = date(2026, 9, 30)
-FIRST_DAYS = 7
-SECOND_DAYS = 21
 RUN_HOUR = 10
 _STATE_FILE = ROOT / "data" / "kpi_schedule_state.json"
 
@@ -46,6 +51,7 @@ def due_round(
     *,
     first_done: bool,
     second_done: bool,
+    at: datetime | None = None,
 ) -> str | None:
     """Return the next round that is due, or None."""
     live_day = live.date()
@@ -53,9 +59,10 @@ def due_round(
         return None
     if second_done:
         return None
-    if not first_done and today >= live_day + timedelta(days=FIRST_DAYS):
+    first_days, second_days = review_offsets(at)
+    if not first_done and today >= live_day + timedelta(days=first_days):
         return "first"
-    if first_done and today >= live_day + timedelta(days=SECOND_DAYS):
+    if first_done and today >= live_day + timedelta(days=second_days):
         return "second"
     return None
 
@@ -129,6 +136,7 @@ def select_due(
     status_field: str,
     name_field: str,
     already_posted: set[str],
+    at: datetime | None = None,
 ) -> list[dict[str, str]]:
     """Projects whose next automatic round is due today or earlier."""
     first_done = state.get("first") or {}
@@ -152,6 +160,7 @@ def select_due(
             today,
             first_done=rid in first_done,
             second_done=rid in second_done,
+            at=at,
         )
         if not round_name:
             continue
@@ -189,7 +198,12 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
     )
     path = _STATE_FILE
     state = _load_state(path)
-    day = today or now_shanghai().date()
+    moment = now_shanghai()
+    day = today or moment.date()
+    if today is not None:
+        moment = datetime(
+            today.year, today.month, today.day, 12, 0, tzinfo=moment.tzinfo
+        )
     status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
     name_field = str(
         getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
@@ -245,6 +259,7 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
         status_field=status_field,
         name_field=name_field,
         already_posted=posted,
+        at=moment,
     )
     stats["due"] = len(due)
     _send_batch(records, due)
@@ -264,6 +279,7 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
                 status_field=status_field,
                 name_field=name_field,
                 already_posted=posted,
+                at=moment,
             )
             if item["round"] == "second"
         ]
@@ -286,10 +302,11 @@ async def kpi_schedule_loop(config: AppConfig) -> None:
     """Run once each Shanghai day at 10:00, and catch up if the process starts later."""
     if not runs_on_this_host():
         return
+    first_days, second_days = review_offsets()
     logger.info(
         "kpi schedule enabled (first +%d days, second +%d days, daily %02d:00)",
-        FIRST_DAYS,
-        SECOND_DAYS,
+        first_days,
+        second_days,
         RUN_HOUR,
     )
     while True:

@@ -22,6 +22,7 @@ from bot.workflow_kpi_write import (
     field_result,
     now_shanghai,
     parse_live_start,
+    review_offsets,
 )
 from bot.workflow_pr_capture import _display_pr_url
 
@@ -322,6 +323,7 @@ def format_result_post(
         if (bd_open_id or "").strip()
         else f"@{name}"
     )
+    _, second_days = review_offsets()
     valid = twitter_ok and pr_ok and website_ok and onchain_ok
     if final:
         result = _VALID if valid else _FAILED
@@ -358,7 +360,7 @@ def format_result_post(
         if trigger == "submit":
             second_label = "final (triggered by submit)"
         else:
-            second_label = "Day `21` recheck"
+            second_label = f"Day `{second_days}` recheck"
         lines.append(f"**Second check:** `{check_date}` · {second_label}")
     else:
         lines.append(f"**First check:** `{check_date}` · {result}")
@@ -393,7 +395,7 @@ def format_result_post(
             "PR tweet. Any successful submit triggers a **final** recheck now: "
             "pass → `Valid KPI`; fail → `KPI failed` (no further chance). "
             "Website issues must be fixed on the live site — a URL paste here "
-            "does not count. No submit → final review on live day `21`."
+            f"does not count. No submit → final review on live day `{second_days}`."
         )
     return "\n".join(lines).rstrip() + "\n"
 
