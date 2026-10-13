@@ -23,6 +23,8 @@ from bot.workflow_kpi_result_push import (
     send_result_post,
 )
 from bot.workflow_kpi_write import (
+    CADENCE_CHANGE_AT,
+    field_result,
     is_mainnet_live,
     now_shanghai,
     parse_live_start,
@@ -37,6 +39,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCHEDULE_START = date(2026, 9, 30)
 RUN_HOUR = 10
+_COORD_FIELD = "KPI 统筹"
+_HELD_COORD = "暂扣整改"
 _STATE_FILE = ROOT / "data" / "kpi_schedule_state.json"
 
 
@@ -82,6 +86,7 @@ def _load_state(path: Path) -> dict[str, Any]:
         "first": {str(k): str(v) for k, v in first.items()},
         "second": {str(k): str(v) for k, v in second.items()},
         "last_run_date": str(raw.get("last_run_date") or ""),
+        "september_final_done": bool(raw.get("september_final_done")),
     }
 
 
@@ -290,6 +295,124 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
     return stats
 
 
+def select_september_held(
+    records: list[dict[str, Any]],
+    *,
+    state: dict[str, Any],
+    status_field: str,
+    name_field: str,
+) -> list[dict[str, str]]:
+    """September 2026 mainnet-live rows still held. Already-final rows are skipped."""
+    second_done = state.get("second") or {}
+    out: list[dict[str, str]] = []
+    for row in records:
+        rid = str(row.get("record_id") or "").strip()
+        fields = row.get("fields") or {}
+        if not rid or not isinstance(fields, dict) or rid in second_done:
+            continue
+        if not is_mainnet_live(fields, status_field):
+            continue
+        live = parse_live_start(fields)
+        if live is None or live.year != 2026 or live.month != 9:
+            continue
+        if field_result(fields, _COORD_FIELD) != _HELD_COORD:
+            continue
+        name = _field_text(fields, name_field)
+        if not name:
+            continue
+        out.append(
+            {
+                "record_id": rid,
+                "project": name,
+                "round": "second",
+                "live_date": live.strftime("%Y-%m-%d"),
+            }
+        )
+    out.sort(key=lambda item: (item["live_date"], item["project"].casefold()))
+    return out
+
+
+def run_september_final_once(config: AppConfig) -> dict[str, int]:
+    """Final-check every September held project once, at or after the cutover."""
+    import os
+
+    from bot.lark_bitable import get_tenant_access_token, list_records
+
+    stats = {"due": 0, "sent": 0, "failed": 0}
+    if not runs_on_this_host():
+        return stats
+    path = _STATE_FILE
+    state = _load_state(path)
+    if state.get("september_final_done"):
+        return stats
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        logger.warning("september final skipped: missing LARK credentials")
+        return stats
+    token = get_tenant_access_token(app_id, app_secret)
+    records = list_records(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+    )
+    status_field = str(getattr(config, "workflow_status_field", "") or "项目状态")
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
+    )
+    due = select_september_held(
+        records,
+        state=state,
+        status_field=status_field,
+        name_field=name_field,
+    )
+    stats["due"] = len(due)
+    day = now_shanghai().date()
+    for item in due:
+        rid = item["record_id"]
+        fields = next(
+            (
+                row.get("fields") or {}
+                for row in records
+                if str(row.get("record_id") or "") == rid
+            ),
+            {},
+        )
+        try:
+            audited = audit_first_check(
+                token,
+                config,
+                rid,
+                fields,
+                project_name=item["project"],
+                final=True,
+                final_trigger="batch",
+                first_check_date=first_check_date_for(rid, path),
+            )
+            send_result_post(token, config, audited["markdown"])
+        except Exception:
+            stats["failed"] += 1
+            logger.exception(
+                "september final failed project=%s",
+                item["project"],
+            )
+            continue
+        mark_rounds_done(
+            rid, rounds=("first", "second"), day=day, path=path
+        )
+        stats["sent"] += 1
+        logger.info(
+            "september final sent project=%s valid=%s",
+            item["project"],
+            audited.get("valid"),
+        )
+    if stats["failed"] == 0:
+        state = _load_state(path)
+        state["september_final_done"] = True
+        _save_state(path, state)
+    return stats
+
+
 def _seconds_until_hour(hour: int) -> float:
     now = now_shanghai()
     target = now.replace(hour=hour, minute=0, second=5, microsecond=0)
@@ -312,17 +435,34 @@ async def kpi_schedule_loop(config: AppConfig) -> None:
     while True:
         now = now_shanghai()
         state = _load_state(_STATE_FILE)
-        if state.get("last_run_date") == now.date().isoformat():
-            await asyncio.sleep(_seconds_until_hour(RUN_HOUR))
-            continue
-        if now.hour < RUN_HOUR:
-            await asyncio.sleep(_seconds_until_hour(RUN_HOUR))
-            continue
-        try:
-            stats = await asyncio.get_running_loop().run_in_executor(
-                None, lambda: run_due_once(config)
-            )
-            logger.info("kpi schedule cycle %s", stats)
-        except Exception:
-            logger.exception("kpi schedule cycle failed")
-        await asyncio.sleep(_seconds_until_hour(RUN_HOUR))
+        if not state.get("september_final_done") and now >= CADENCE_CHANGE_AT:
+            try:
+                stats = await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: run_september_final_once(config)
+                )
+                logger.info("september final cycle %s", stats)
+            except Exception:
+                logger.exception("september final cycle failed")
+            state = _load_state(_STATE_FILE)
+            if not state.get("september_final_done"):
+                await asyncio.sleep(300)
+                continue
+        now = now_shanghai()
+        state = _load_state(_STATE_FILE)
+        if (
+            state.get("last_run_date") != now.date().isoformat()
+            and now.hour >= RUN_HOUR
+        ):
+            try:
+                stats = await asyncio.get_running_loop().run_in_executor(
+                    None, lambda: run_due_once(config)
+                )
+                logger.info("kpi schedule cycle %s", stats)
+            except Exception:
+                logger.exception("kpi schedule cycle failed")
+        now = now_shanghai()
+        state = _load_state(_STATE_FILE)
+        waits = [_seconds_until_hour(RUN_HOUR)]
+        if not state.get("september_final_done") and now < CADENCE_CHANGE_AT:
+            waits.append(max((CADENCE_CHANGE_AT - now).total_seconds(), 1.0))
+        await asyncio.sleep(max(min(waits), 1.0))

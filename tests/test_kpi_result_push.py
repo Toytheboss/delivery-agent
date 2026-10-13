@@ -151,6 +151,30 @@ def test_final_fail_post_is_not_a_hold():
     assert "no further fix window" in text
 
 
+def test_batch_final_label_does_not_use_the_calendar_day():
+    text = format_result_post(
+        project="example",
+        bd_name="Ada",
+        bd_open_id="ou_ada",
+        live_date="2026-09-09",
+        check_date="2026-10-15",
+        twitter_ok=False,
+        twitter_line="`2` original posts. Does not meet the Twitter requirement.",
+        pr_ok=True,
+        pr_line="https://x.com/example/status/1",
+        website_ok=True,
+        website_line="Website display verification: website display verification passed",
+        onchain_ok=True,
+        onchain_line="`3` wallets, `5` txs. Meets the wallet and on-chain requirement.",
+        fixes=[],
+        final=True,
+        final_trigger="batch",
+        first_check_date="2026-09-16",
+    )
+    assert "**Second check:** `2026-10-15` · final" in text
+    assert "Day `" not in text.split("Second check")[1]
+
+
 def test_submit_triggered_final_label():
     text = format_result_post(
         project="example",

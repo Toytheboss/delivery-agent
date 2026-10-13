@@ -359,6 +359,8 @@ def format_result_post(
         trigger = (final_trigger or "calendar").strip().lower()
         if trigger == "submit":
             second_label = "final (triggered by submit)"
+        elif trigger == "batch":
+            second_label = "final"
         else:
             second_label = f"Day `{second_days}` recheck"
         lines.append(f"**Second check:** `{check_date}` · {second_label}")

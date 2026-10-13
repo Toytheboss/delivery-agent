@@ -1,7 +1,12 @@
 from datetime import date, datetime
 from zoneinfo import ZoneInfo
 
-from bot.workflow_kpi_schedule import due_round, mark_rounds_done, select_due
+from bot.workflow_kpi_schedule import (
+    due_round,
+    mark_rounds_done,
+    select_due,
+    select_september_held,
+)
 
 SH = ZoneInfo("Asia/Shanghai")
 BEFORE = datetime(2026, 10, 13, 12, tzinfo=SH)
@@ -109,6 +114,29 @@ def test_september_and_already_posted_projects_stay_off_the_calendar():
     )
     assert [item["project"] for item in due] == ["Newone"]
     assert due[0]["round"] == "first"
+
+
+def test_september_held_batch_skips_other_rows():
+    records = [
+        _row("held", "Held", "2026-09-12"),
+        _row("passed", "Passed", "2026-09-12"),
+        _row("october", "October", "2026-10-02"),
+        _row("deploying", "Deploying", "2026-09-20", status="主网部署中"),
+        _row("done", "Already", "2026-09-08"),
+    ]
+    records[0]["fields"]["KPI 统筹"] = ["暂扣整改"]
+    records[1]["fields"]["KPI 统筹"] = ["通过"]
+    records[2]["fields"]["KPI 统筹"] = ["暂扣整改"]
+    records[3]["fields"]["KPI 统筹"] = ["暂扣整改"]
+    records[4]["fields"]["KPI 统筹"] = ["暂扣整改"]
+    due = select_september_held(
+        records,
+        state={"second": {"done": "2026-10-15"}},
+        status_field="项目状态",
+        name_field="项目名称 Project Name",
+    )
+    assert [item["project"] for item in due] == ["Held"]
+    assert due[0]["round"] == "second"
 
 
 def test_mark_rounds_done_skips_calendar_second(tmp_path):
