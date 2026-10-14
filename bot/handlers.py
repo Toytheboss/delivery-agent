@@ -255,6 +255,7 @@ class MessageHandler:
             self.config.qa_tester_usernames,
         )
 
+        # Scope is every group this account has joined, not Telegram folder membership.
         in_folder = (
             self.config.group_replies_enabled
             and self.scope.contains(chat_id)

@@ -616,7 +616,7 @@ async def build_folder_title_map(
 
         try:
             cache_path.parent.mkdir(parents=True, exist_ok=True)
-            # Drop entries not in current folder set to keep file small
+            # Drop entries the account is no longer in.
             keep = {str(cid) for cid in chat_ids}
             pruned = {k: v for k, v in cache.items() if k in keep}
             # merge freshly resolved

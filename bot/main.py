@@ -85,7 +85,7 @@ async def folder_refresh_loop(scope: FolderScope, interval_minutes: int) -> None
         try:
             await scope.refresh()
         except Exception:
-            logging.getLogger(__name__).exception("Folder refresh failed")
+            logging.getLogger(__name__).exception("Joined-group scope refresh failed")
 
 
 async def knowledge_refresh_loop(kb: KnowledgeBase, interval_minutes: int) -> None:
@@ -201,10 +201,7 @@ async def main() -> None:
     scope = FolderScope(client, config)
     chat_ids = await scope.refresh()
     if not chat_ids:
-        logger.warning(
-            "No chats found in folders %s. Add groups to the folders in Telegram.",
-            config.folder_names,
-        )
+        logger.warning("No joined groups in scope. The account is not in any group.")
 
     # Warm native deps (openai/pydantic_core) once at startup to avoid
     # macOS Gatekeeper prompts on every incoming message.

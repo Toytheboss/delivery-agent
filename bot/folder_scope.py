@@ -1,9 +1,16 @@
-"""Sync allowed group chat IDs from a Telegram folder (Dialog Filter)."""
+"""Working set of groups this account has joined.
+
+Telegram folders stay as a way to file chats in the client. Automation
+(replies, form matching, onboard) follows membership, not folder placement.
+"""
 
 from __future__ import annotations
 
+import json
 import logging
 import re
+import time
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from telethon import TelegramClient, utils
@@ -14,8 +21,85 @@ if TYPE_CHECKING:
     from bot.config_loader import AppConfig
 
 logger = logging.getLogger(__name__)
+ROOT = Path(__file__).resolve().parent.parent
 
 FOLDER_NUM_RE = re.compile(r"^(?P<prefix>.+?)\s*#\s*(?P<num>\d+)$", re.IGNORECASE)
+
+
+def chat_in_joined_scope(
+    chat_id: int,
+    *,
+    is_group: bool,
+    deactivated: bool,
+    broadcast_only: bool,
+    ignored: set[int],
+) -> bool:
+    """True for a live group this account belongs to and has not ignored."""
+    if not is_group or deactivated or broadcast_only:
+        return False
+    return chat_id not in ignored
+
+
+def _sync_title_cache(titles: dict[int, str]) -> None:
+    """Rewrite the on-disk title cache so it matches current membership."""
+    path = ROOT / "data" / "folder_title_cache.json"
+    now = time.time()
+    payload = {
+        "titles": {
+            str(chat_id): {"title": title, "ts": now}
+            for chat_id, title in titles.items()
+            if str(title or "").strip()
+        }
+    }
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+    except OSError:
+        logger.exception("Failed to persist joined-group title cache")
+
+
+async def fetch_joined_group_ids(
+    client: TelegramClient, *, ignored: set[int] | None = None
+) -> tuple[set[int], dict[int, str]]:
+    """Every live group/supergroup dialog, skipping broadcasts and ignored ids."""
+    from bot.folder_auto_add import _is_group_or_channel, _is_stale_upgraded_chat
+    from bot.tg_rate_limit import tg_heavy_section
+
+    skipped = set(ignored or ())
+    chat_ids: set[int] = set()
+    titles: dict[int, str] = {}
+    async with tg_heavy_section():
+        async for dialog in client.iter_dialogs():
+            entity = dialog.entity
+            is_group = _is_group_or_channel(entity)
+            deactivated = _is_stale_upgraded_chat(entity)
+            broadcast_only = bool(
+                getattr(entity, "broadcast", False)
+                and not getattr(entity, "megagroup", False)
+            )
+            try:
+                chat_id = utils.get_peer_id(entity)
+            except Exception:  # noqa: BLE001
+                continue
+            if not chat_in_joined_scope(
+                chat_id,
+                is_group=is_group,
+                deactivated=deactivated,
+                broadcast_only=broadcast_only,
+                ignored=skipped,
+            ):
+                continue
+            chat_ids.add(chat_id)
+            title = str(
+                getattr(dialog, "title", None) or getattr(entity, "title", None) or ""
+            ).strip()
+            if title:
+                titles[chat_id] = title
+    logger.info("Joined groups in scope: %d", len(chat_ids))
+    return chat_ids, titles
 
 
 def _folder_title(item: object) -> str | None:
@@ -137,7 +221,7 @@ async def fetch_folder_chat_ids(
 
 
 class FolderScope:
-    """Cached set of chat IDs belonging to the configured folder(s)."""
+    """Cached set of group chat IDs this account has joined."""
 
     def __init__(self, client: TelegramClient, config: AppConfig) -> None:
         self.client = client
@@ -145,20 +229,11 @@ class FolderScope:
         self._chat_ids: set[int] = set()
 
     async def refresh(self) -> set[int]:
-        names = await resolve_folder_names(
-            self.client,
-            self.config.folder_names,
-            prefix=getattr(self.config, "folder_name_prefix", "Delivery"),
+        ignored = set(getattr(self.config, "ignored_group_ids", set()) or set())
+        self._chat_ids, titles = await fetch_joined_group_ids(
+            self.client, ignored=ignored
         )
-        # Keep runtime list current when new folders appear
-        for name in names:
-            if name not in self.config.folder_names:
-                self.config.folder_names.append(name)
-        self._chat_ids = await fetch_folder_chat_ids(
-            self.client,
-            self.config.folder_names,
-            prefix=getattr(self.config, "folder_name_prefix", "Delivery"),
-        )
+        _sync_title_cache(titles)
         return set(self._chat_ids)
 
     def contains(self, chat_id: int) -> bool:
