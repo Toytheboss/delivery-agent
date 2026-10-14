@@ -36,7 +36,7 @@ UA = (
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
 _DEFAULT_COPY_FIELD = "KPI 3 - Website"
-_DEFAULT_RESULT_FIELD = "官网验证结果"
+_DEFAULT_RESULT_FIELD = "Website result"
 _PASS = "通过"
 _FAIL = "不通过"
 _A_HREF_RE = re.compile(

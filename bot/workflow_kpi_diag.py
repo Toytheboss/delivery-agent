@@ -48,14 +48,14 @@ _KIND_LABEL = {
     "project": "Project diag",
 }
 _PASS = "通过"
-_KPI1_RESULT = "推特验证结果"
-_KPI2_LINK = "KPI 2 - PR news link"
-_KPI2_RESULT = "新闻验证结果"
-_KPI3_RESULT = "官网验证结果"
-_KPI4_RESULT = "产品可用验证结果"
-_KPI5_RESULT = "独立性验证结果"
-_KPI6_RESULT = "交互验证结果"
-_KPI7_RESULT = "持续运营要求验证结果"
+_KPI1_RESULT = "Twitter result"
+_KPI2_LINK = "KPI 2 - PR Announcement"
+_KPI2_RESULT = "PR results"
+_KPI3_RESULT = "Website result"
+_KPI4_RESULT = "Usable product result"
+_KPI5_RESULT = "Project independence result"
+_KPI6_RESULT = "Onchain result"
+_KPI7_RESULT = "Ongoing operation result"
 _KPI2_PASS = (
     "News/PR verification: a news URL was submitted; news/PR verification passed"
 )

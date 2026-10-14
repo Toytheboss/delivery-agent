@@ -124,11 +124,11 @@ def test_september_held_batch_skips_other_rows():
         _row("deploying", "Deploying", "2026-09-20", status="主网部署中"),
         _row("done", "Already", "2026-09-08"),
     ]
-    records[0]["fields"]["KPI 统筹"] = ["暂扣整改"]
-    records[1]["fields"]["KPI 统筹"] = ["通过"]
-    records[2]["fields"]["KPI 统筹"] = ["暂扣整改"]
-    records[3]["fields"]["KPI 统筹"] = ["暂扣整改"]
-    records[4]["fields"]["KPI 统筹"] = ["暂扣整改"]
+    records[0]["fields"]["KPI Final"] = ["暂扣整改"]
+    records[1]["fields"]["KPI Final"] = ["通过"]
+    records[2]["fields"]["KPI Final"] = ["暂扣整改"]
+    records[3]["fields"]["KPI Final"] = ["暂扣整改"]
+    records[4]["fields"]["KPI Final"] = ["暂扣整改"]
     due = select_september_held(
         records,
         state={"second": {"done": "2026-10-15"}},

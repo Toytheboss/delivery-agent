@@ -557,7 +557,7 @@ def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
     )
 
     class Cfg:
-        pr_capture_link_field = "KPI 2 - PR news link"
+        pr_capture_link_field = "KPI 2 - PR Announcement"
         workflow_live_link_field = "已上线链接🔗"
         workflow_project_link_field = "项目链接"
         workflow_base_app_token = "app"
@@ -574,7 +574,7 @@ def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):
         "tok",
         Cfg(),
         "rec1",
-        {"KPI 2 - PR news link": "https://x.com/keep/status/1"},
+        {"KPI 2 - PR Announcement": "https://x.com/keep/status/1"},
         project_name="SampleBook",
         handle="samplebook",
         rows=rows,
@@ -604,7 +604,7 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
     )
 
     class Cfg:
-        pr_capture_link_field = "KPI 2 - PR news link"
+        pr_capture_link_field = "KPI 2 - PR Announcement"
         workflow_live_link_field = "已上线链接🔗"
         workflow_project_link_field = "项目链接"
         workflow_base_app_token = "app"
@@ -630,8 +630,8 @@ def test_maybe_write_kpi2_fills_empty_cell(monkeypatch):
     assert url == "https://x.com/samplebook/status/20"
     assert patches == [
         {
-            "KPI 2 - PR news link": "https://x.com/samplebook/status/20",
-            "新闻验证结果": "通过",
+            "KPI 2 - PR Announcement": "https://x.com/samplebook/status/20",
+            "PR results": "通过",
         }
     ]
 
@@ -650,7 +650,7 @@ def test_maybe_write_kpi2_leaves_empty_when_model_declines(monkeypatch):
     )
 
     class Cfg:
-        pr_capture_link_field = "KPI 2 - PR news link"
+        pr_capture_link_field = "KPI 2 - PR Announcement"
         workflow_base_app_token = "app"
         workflow_progress_table_id = "tbl"
 

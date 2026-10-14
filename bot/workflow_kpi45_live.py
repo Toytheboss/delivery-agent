@@ -19,10 +19,10 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
-_DEFAULT_KPI4_COPY_FIELD = "KPI 4 - Usable Product"
-_DEFAULT_KPI4_RESULT_FIELD = "产品可用验证结果"
+_DEFAULT_KPI4_COPY_FIELD = "KPI 4 - Usable product"
+_DEFAULT_KPI4_RESULT_FIELD = "Usable product result"
 _DEFAULT_KPI5_COPY_FIELD = "KPI 5 - Project independence"
-_DEFAULT_KPI5_RESULT_FIELD = "独立性验证结果"
+_DEFAULT_KPI5_RESULT_FIELD = "Project independence result"
 _PASS = "通过"
 _KPI4_COPY = (
     "Product availability verification: mainnet MVP is live; wallet can connect, "

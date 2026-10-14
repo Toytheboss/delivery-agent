@@ -2,8 +2,8 @@
 """Synchronize Progress Tracker KPI 2 results from its PR-link cell.
 
 The criterion is deliberately mechanical:
-  - a non-empty ``KPI 2 - PR news link`` cell → 新闻验证结果 = 通过
-  - an empty cell → 新闻验证结果 = 不通过, but only with ``--include-empty``
+  - a non-empty ``KPI 2 - PR Announcement`` cell → PR results = 通过
+  - an empty cell → PR results = 不通过, but only with ``--include-empty``
 
 This script is intentionally manual (dry-run by default). It does not create a
 Day-based audit schedule, write KPI coordination fields, or send group pushes.
@@ -29,8 +29,8 @@ from bot.workflow_form_dispatch import _field_text  # noqa: E402
 
 DEFAULT_APP_TOKEN = "Kb6rbLenJa4FzWsi6pzlTkdjg0e"
 DEFAULT_TABLE_ID = "tbl5wXOwCptng06w"
-DEFAULT_LINK_FIELD = "KPI 2 - PR news link"
-DEFAULT_RESULT_FIELD = "新闻验证结果"
+DEFAULT_LINK_FIELD = "KPI 2 - PR Announcement"
+DEFAULT_RESULT_FIELD = "PR results"
 PASS = "通过"
 FAIL = "不通过"
 

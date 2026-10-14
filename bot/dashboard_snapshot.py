@@ -3093,14 +3093,14 @@ def build_workflow_overview(
 
 
 _KPI_TIMELINE_FIELDS = (
-    ("推特验证结果", "KPI 1 Twitter 运营"),
-    ("新闻验证结果", "KPI 2 新闻/PR"),
-    ("官网验证结果", "KPI 3 官网"),
-    ("产品可用验证结果", "KPI 4 产品可用"),
-    ("独立性验证结果", "KPI 5 独立性"),
-    ("交互验证结果", "KPI 6 链上交互"),
-    ("持续运营要求验证结果", "KPI 7 持续运营"),
-    ("KPI 统筹", "KPI 统筹"),
+    ("Twitter result", "KPI 1 Twitter 运营"),
+    ("PR results", "KPI 2 新闻/PR"),
+    ("Website result", "KPI 3 官网"),
+    ("Usable product result", "KPI 4 产品可用"),
+    ("Project independence result", "KPI 5 独立性"),
+    ("Onchain result", "KPI 6 链上交互"),
+    ("Ongoing operation result", "KPI 7 持续运营"),
+    ("KPI Final", "KPI Final"),
 )
 
 
@@ -3184,7 +3184,7 @@ def _project_state_events(
             }
         )
 
-    pr_url = _field_text(fields, "KPI 2 - PR news link")
+    pr_url = _field_text(fields, "KPI 2 - PR Announcement")
     if pr_url:
         events.append(
             {

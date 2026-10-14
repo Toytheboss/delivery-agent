@@ -256,7 +256,7 @@ def test_early_final_ignores_pre_september_name_duplicate():
             "fields": {
                 "项目名称 Project Name": "Warden",
                 "主网上线时间": july.isoformat(),
-                "KPI 统筹": "",
+                "KPI Final": "",
             },
         },
         {
@@ -264,7 +264,7 @@ def test_early_final_ignores_pre_september_name_duplicate():
             "fields": {
                 "项目名称 Project Name": "Warden",
                 "主网上线时间": sept.isoformat(),
-                "KPI 统筹": "暂扣整改",
+                "KPI Final": "暂扣整改",
             },
         },
     ]
@@ -408,13 +408,13 @@ def test_audit_skips_passed_items_and_writes_held_coord(monkeypatch):
         workflow_live_onboard_bd_field = "BD"
 
     fields = {
-        "推特验证结果": "通过",
-        "KPI 1 - Twitter operations": "posted 7 original posts",
-        "官网验证结果": "通过",
+        "Twitter result": "通过",
+        "KPI 1 - Twitter": "posted 7 original posts",
+        "Website result": "通过",
         "KPI 3 - Website": "Website display verification passed",
-        "产品可用验证结果": "通过",
-        "独立性验证结果": "通过",
-        "交互验证结果": "不通过",
+        "Usable product result": "通过",
+        "Project independence result": "通过",
+        "Onchain result": "不通过",
         "主网上线时间": "2026-09-14",
         "BD": [{"id": "ou_bd", "name": "Ada"}],
     }

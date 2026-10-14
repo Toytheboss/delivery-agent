@@ -37,7 +37,7 @@ _NAME_FIELD = "Project name"
 _CONTRACT_FIELD = "Mainnet Contract Addresss"
 _TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
 _DEFAULT_PROGRESS_NAME = "项目名称 Project Name"
-_DEFAULT_KPI2_FIELD = "KPI 2 - PR news link"
+_DEFAULT_KPI2_FIELD = "KPI 2 - PR Announcement"
 _DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗"
 _FINAL_FAIL_COORDS = frozenset({"不通过", "KPI未通过"})
 _RESULT_KPI_FAILED_RE = re.compile(
@@ -417,7 +417,7 @@ def progress_coord_is_final_failed(
 ) -> bool:
     """True when the KPI-era progress row is already final-failed.
 
-    Progress ``KPI 统筹`` is the source of truth. If no row is found, fall
+    Progress ``KPI Final`` is the source of truth. If no row is found, fall
     back to the quoted result post text.
     """
     from bot.workflow_kpi_result_push import pick_early_final_progress_row
@@ -442,7 +442,7 @@ def progress_coord_is_final_failed(
             )
             hit = None
         if hit:
-            coord = _field_text(hit.get("fields") or {}, "KPI 统筹").strip()
+            coord = _field_text(hit.get("fields") or {}, "KPI Final").strip()
             return coord in _FINAL_FAIL_COORDS
     return quoted_result_is_kpi_failed(quoted)
 

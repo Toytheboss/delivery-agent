@@ -39,7 +39,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCHEDULE_START = date(2026, 9, 30)
 RUN_HOUR = 10
-_COORD_FIELD = "KPI 统筹"
+_COORD_FIELD = "KPI Final"
 _HELD_COORD = "暂扣整改"
 _STATE_FILE = ROOT / "data" / "kpi_schedule_state.json"
 

@@ -573,19 +573,19 @@ def test_tg_check_reply_splits_rechecks_not_lark_blob():
 
 
 def test_project_diag_skips_already_passed_audits():
-    assert already_passed({"推特验证结果": "通过"}, "推特验证结果")
-    assert not already_passed({"推特验证结果": "不通过"}, "推特验证结果")
-    assert not already_passed({}, "推特验证结果")
+    assert already_passed({"Twitter result": "通过"}, "Twitter result")
+    assert not already_passed({"Twitter result": "不通过"}, "Twitter result")
+    assert not already_passed({}, "Twitter result")
     fields = {
-        "推特验证结果": "通过",
-        "官网验证结果": "通过",
-        "交互验证结果": "不通过",
+        "Twitter result": "通过",
+        "Website result": "通过",
+        "Onchain result": "不通过",
     }
     assert project_diag_audits_to_run(fields) == ["onchain"]
     all_pass = {
-        "推特验证结果": "通过",
-        "官网验证结果": "通过",
-        "交互验证结果": "通过",
+        "Twitter result": "通过",
+        "Website result": "通过",
+        "Onchain result": "通过",
     }
     assert project_diag_audits_to_run(all_pass) == []
     assert project_diag_audits_to_run({}) == ["twitter", "website", "onchain"]
@@ -621,23 +621,23 @@ def test_pass_chain_plan_six_pass_then_seven_coord_time():
     live = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
         "主网上线时间": "2026-09-01T00:10:00+08:00",
-        "推特验证结果": "通过",
-        "新闻验证结果": "通过",
-        "官网验证结果": "通过",
-        "产品可用验证结果": "通过",
-        "独立性验证结果": "通过",
-        "交互验证结果": "通过",
+        "Twitter result": "通过",
+        "PR results": "通过",
+        "Website result": "通过",
+        "Usable product result": "通过",
+        "Project independence result": "通过",
+        "Onchain result": "通过",
     }
     plan = pass_chain_plan(live)
     assert plan["write_kpi7"] is True
     assert plan["write_coord"] is True
     assert plan["write_time"] is True
-    live["持续运营要求验证结果"] = "通过"
+    live["Ongoing operation result"] = "通过"
     plan = pass_chain_plan(live)
     assert plan["write_kpi7"] is False
     assert plan["write_coord"] is True
     assert plan["write_time"] is True
-    live["KPI 统筹"] = "有效 KPI"
+    live["KPI Final"] = "有效 KPI"
     plan = pass_chain_plan(live)
     assert plan["write_kpi7"] is False
     assert plan["write_coord"] is False
@@ -653,7 +653,7 @@ def test_pass_chain_fills_empty_kpi45_on_live_project():
     fields = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
         "主网上线时间": "2026-09-01T00:10:00+08:00",
-        "KPI 统筹": "有效 KPI",
+        "KPI Final": "有效 KPI",
     }
     plan = pass_chain_plan(fields)
     assert plan["write_kpi45"] is True
@@ -666,15 +666,15 @@ def test_pass_chain_writes_kpi2_when_pr_link_exists():
     live = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
         "主网上线时间": "2026-09-01T00:10:00+08:00",
-        "KPI 2 - PR news link": "https://x.com/SprayMe/status/1",
+        "KPI 2 - PR Announcement": "https://x.com/SprayMe/status/1",
     }
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is True
     assert planned_kpi2_result(live) == "通过"
-    live["新闻验证结果"] = "通过"
+    live["PR results"] = "通过"
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is False
-    plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR news link": "https://x.com/x/status/1"})
+    plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR Announcement": "https://x.com/x/status/1"})
     assert plan["write_kpi2"] is False
 
 
@@ -682,13 +682,13 @@ def test_project_diag_kpi2_fail_when_no_pr_link():
     from bot.workflow_kpi_pass_chain import planned_kpi2_result
 
     assert planned_kpi2_result({}) == "不通过"
-    assert planned_kpi2_result({"新闻验证结果": "不通过"}) is None
-    assert planned_kpi2_result({"新闻验证结果": "通过"}) is None
+    assert planned_kpi2_result({"PR results": "不通过"}) is None
+    assert planned_kpi2_result({"PR results": "通过"}) is None
     assert (
         planned_kpi2_result(
             {
-                "KPI 2 - PR news link": "https://x.com/x/status/1",
-                "新闻验证结果": "不通过",
+                "KPI 2 - PR Announcement": "https://x.com/x/status/1",
+                "PR results": "不通过",
             }
         )
         == "通过"
@@ -710,7 +710,7 @@ def test_pass_chain_stamps_time_when_coord_already_passed():
 
     fields = {
         "项目状态": "对接中",
-        "KPI 统筹": ["通过"],
+        "KPI Final": ["通过"],
     }
     plan = pass_chain_plan(fields)
     assert plan["write_time"] is True

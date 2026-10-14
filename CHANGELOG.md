@@ -11,11 +11,18 @@
 
 ---
 
+## 2026-10-14 · 对齐进度表 KPI 英文字段名（含结果栏）
+
+### 修复
+- 补交写 PR / 自动审核因表头与代码不一致报 `FieldNameNotFound`（如 Ai Gateway: table write failed）
+- 考核栏与结果栏统一按现表：KPI 1–7 文案栏、Twitter/PR/Website 等 result、`KPI Final`
+
+---
+
 ## 2026-10-14 · KPI 1–7 考核栏字段名改为英文
 
 ### 优化
-- 进度表 KPI 1–7 考核栏表头对齐英文：Twitter operations / PR news link / Website / Usable Product / Project independence / On-chain interaction / Ongoing operations
-- 自动审核读写改用新字段名；结果栏（如推特验证结果、KPI 统筹）未改
+- 进度表 KPI 1–7 考核栏表头对齐英文（后被现表字段名覆盖，见上条）
 
 ---
 

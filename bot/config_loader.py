@@ -805,7 +805,7 @@ def load_config() -> AppConfig:
         ).strip(),
         workflow_kpi3_result_field=str(
             (workflow.get("kpi3") or {}).get("result_field")
-            or "官网验证结果"
+            or "Website result"
         ).strip(),
         workflow_kpi3_state_file=str(
             (workflow.get("kpi3") or {}).get(
@@ -815,11 +815,11 @@ def load_config() -> AppConfig:
         workflow_kpi45_enabled=bool((workflow.get("kpi45") or {}).get("enabled", True)),
         workflow_kpi4_copy_field=str(
             (workflow.get("kpi45") or {}).get("kpi4_copy_field")
-            or "KPI 4 - Usable Product"
+            or "KPI 4 - Usable product"
         ).strip(),
         workflow_kpi4_result_field=str(
             (workflow.get("kpi45") or {}).get("kpi4_result_field")
-            or "产品可用验证结果"
+            or "Usable product result"
         ).strip(),
         workflow_kpi5_copy_field=str(
             (workflow.get("kpi45") or {}).get("kpi5_copy_field")
@@ -827,7 +827,7 @@ def load_config() -> AppConfig:
         ).strip(),
         workflow_kpi5_result_field=str(
             (workflow.get("kpi45") or {}).get("kpi5_result_field")
-            or "独立性验证结果"
+            or "Project independence result"
         ).strip(),
         workflow_kpi45_state_file=str(
             (workflow.get("kpi45") or {}).get(
@@ -1161,7 +1161,7 @@ def load_config() -> AppConfig:
         ],
         pr_capture_link_field=str(
             (workflow.get("pr_capture") or {}).get("link_field")
-            or "KPI 2 - PR news link"
+            or "KPI 2 - PR Announcement"
         ).strip(),
         pr_capture_notify_enabled=bool(
             (workflow.get("pr_capture") or {}).get("notify_enabled", True)

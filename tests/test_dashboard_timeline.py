@@ -19,9 +19,9 @@ def test_state_events_include_pr_kpi_onboard_and_chase():
         record_id="rec1",
         name="Sample",
         fields={
-            "KPI 2 - PR news link": "https://x.com/sample/status/1",
-            "新闻验证结果": "通过",
-            "推特验证结果": "通过",
+            "KPI 2 - PR Announcement": "https://x.com/sample/status/1",
+            "PR results": "通过",
+            "Twitter result": "通过",
             "KPI 判定时间": 1759000000000,
         },
         updated="2026-09-28T12:00:00+08:00",

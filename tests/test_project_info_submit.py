@@ -192,7 +192,7 @@ def test_pr_writes_kpi2_and_does_not_create_progress_row():
         workflow_base_app_token="app",
         workflow_progress_table_id="tblp",
         workflow_project_name_field="项目名称 Project Name",
-        pr_capture_link_field="KPI 2 - PR news link",
+        pr_capture_link_field="KPI 2 - PR Announcement",
     )
     updated: list[tuple[str, dict]] = []
 
@@ -227,8 +227,8 @@ def test_pr_writes_kpi2_and_does_not_create_progress_row():
             ],
         )
         assert found["action"] == "updated"
-        assert updated[0][1]["KPI 2 - PR news link"] == "https://x.com/a/status/1"
-        assert updated[0][1]["新闻验证结果"] == "通过"
+        assert updated[0][1]["KPI 2 - PR Announcement"] == "https://x.com/a/status/1"
+        assert updated[0][1]["PR results"] == "通过"
 
 
 def test_reply_copy():
@@ -286,7 +286,7 @@ def test_progress_coord_final_failed_uses_table():
             "fields": {
                 "项目名称 Project Name": "Relay",
                 "主网上线时间": "2026-09-10T00:00:00+08:00",
-                "KPI 统筹": "不通过",
+                "KPI Final": "不通过",
             },
         }
     ]
@@ -311,7 +311,7 @@ def test_progress_coord_held_is_not_final_failed():
             "fields": {
                 "项目名称 Project Name": "Relay",
                 "主网上线时间": "2026-09-10T00:00:00+08:00",
-                "KPI 统筹": "暂扣整改",
+                "KPI Final": "暂扣整改",
             },
         }
     ]
