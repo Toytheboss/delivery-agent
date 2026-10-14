@@ -254,6 +254,51 @@ async def start_live_webhook_server(
         app.router.add_get(path, health)
         app.router.add_post(path, live_handler)
 
+    live_link_path = str(
+        getattr(config, "workflow_live_link_sync_path", "")
+        or "/workflow/live-link-sync"
+    ).strip() or "/workflow/live-link-sync"
+    if not live_link_path.startswith("/"):
+        live_link_path = "/" + live_link_path
+
+    async def live_link_sync_handler(request: web.Request) -> web.Response:
+        """Lark automation: progress row created → sync 项目链接 into 已上线链接."""
+        try:
+            raw = await request.read()
+            data = json.loads(raw.decode("utf-8") or "{}") if raw else {}
+        except Exception:
+            data = {}
+        if isinstance(data, dict) and data.get("type") == "url_verification":
+            return web.json_response({"challenge": data.get("challenge", "")})
+        if not _authorized(request, config):
+            return web.json_response({"ok": False, "error": "unauthorized"}, status=401)
+        record_id, _project_name = _extract_payload(data)
+        if not record_id:
+            record_id = (request.rel_url.query.get("record_id") or "").strip() or None
+        if not record_id:
+            return web.json_response(
+                {"ok": False, "error": "need record_id"},
+                status=400,
+            )
+        try:
+            from bot.workflow_live_link_sync import sync_live_link_by_record_id
+
+            result = sync_live_link_by_record_id(config, record_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("live-link sync webhook failed record=%s", record_id)
+            return web.json_response(
+                {"ok": False, "error": str(exc)[:200]}, status=500
+            )
+        code = 200 if result.get("ok") else 422
+        return web.json_response(result, status=code)
+
+    if getattr(config, "workflow_live_link_sync_enabled", True) and _webhook_secret(
+        config
+    ):
+        app.router.add_get(live_link_path, health)
+        app.router.add_post(live_link_path, live_link_sync_handler)
+        logger.info("live-link sync webhook %s", live_link_path)
+
     backlink_path = str(
         getattr(config, "pr_backlink_path", "") or "/workflow/pr-backlink"
     ).strip() or "/workflow/pr-backlink"
@@ -311,6 +356,10 @@ async def start_live_webhook_server(
         routes.append(path)
     if tech_on:
         routes.append(tech_path)
+    if getattr(config, "workflow_live_link_sync_enabled", True) and _webhook_secret(
+        config
+    ):
+        routes.append(live_link_path)
     if backlink_on:
         routes.append(backlink_path)
     logger.info(

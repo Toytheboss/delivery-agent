@@ -100,13 +100,14 @@ async def run_live_status_watch_once(
         except Exception:
             logger.exception("live-status-watch: deploy-status piggyback failed")
 
+    # New progress rows only: copy 项目链接 → empty 已上线链接 (no full-table rewrite).
     if getattr(config, "workflow_live_link_sync_enabled", True):
         try:
-            from bot.workflow_live_link_sync import sync_live_links_once
+            from bot.workflow_live_link_sync import process_new_progress_records
 
-            sync_live_links_once(config, records=records)
+            process_new_progress_records(config, records)
         except Exception:
-            logger.exception("live-status-watch: live-link sync piggyback failed")
+            logger.exception("live-status-watch: new-row live-link sync failed")
 
     live_now: list[tuple[str, str]] = []
     for record in records:

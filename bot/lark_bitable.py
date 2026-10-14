@@ -69,6 +69,21 @@ def list_records(
     return items
 
 
+def get_record(
+    token: str,
+    app_token: str,
+    table_id: str,
+    record_id: str,
+) -> dict[str, Any]:
+    resp = requests.get(
+        f"{LARK_API_BASE}/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}",
+        headers={"Authorization": f"Bearer {token}"},
+        timeout=30,
+    )
+    data = _parse(resp, "get record")
+    return (data.get("data") or {}).get("record") or {}
+
+
 def update_record(
     token: str,
     app_token: str,

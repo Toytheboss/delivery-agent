@@ -51,7 +51,6 @@ from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loo
 from bot.workflow_form_chase import form_chase_loop
 from bot.workflow_kpi_schedule import kpi_schedule_loop, runs_on_this_host
 from bot.workflow_logo_link_sync import logo_link_sync_loop
-from bot.workflow_live_link_sync import live_link_sync_loop
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -432,11 +431,10 @@ async def main() -> None:
                 int(getattr(config, "workflow_lark_digest_hour", 0) or 0),
             )
         if getattr(config, "workflow_live_link_sync_enabled", True):
-            asyncio.create_task(live_link_sync_loop(config))
             logger.info(
-                "Workflow live-link sync enabled (项目链接 → %r, every %d min)",
+                "Workflow live-link sync enabled (new progress row → "
+                "项目链接 into empty %r; no timed full-table scan)",
                 getattr(config, "workflow_live_link_field", "已上线链接🔗"),
-                int(getattr(config, "workflow_live_link_sync_minutes", 5) or 5),
             )
         if config.workflow_lark_digest_enabled:
             await sync_wallet_first_seen(config)
