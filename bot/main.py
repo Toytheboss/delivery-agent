@@ -19,6 +19,7 @@ from bot.config_loader import (
     resolve_pilot_groups,
     resolve_qa_test_groups,
     resolve_qa_tester_ids,
+    resolve_report_operator_ids,
     resolve_workflow_operator_ids,
 )
 from bot.folder_scope import FolderScope
@@ -183,6 +184,7 @@ async def main() -> None:
     await resolve_ignored_groups(client, config)
     await resolve_pilot_groups(client, config)
     await resolve_workflow_operator_ids(client, config)
+    await resolve_report_operator_ids(client, config)
 
     kb = KnowledgeBase(config.knowledge_dir, config.chunk_size, config.chunk_overlap)
     if config.lark_sync_enabled:

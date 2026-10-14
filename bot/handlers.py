@@ -35,6 +35,7 @@ from bot.triggers import (
     is_qa_tester,
     is_social_chitchat,
     is_whitelisted,
+    is_report_operator,
     is_workflow_operator,
     pick_casual_reply,
     should_process,
@@ -276,6 +277,12 @@ class MessageHandler:
             self.config.workflow_operator_user_ids,
             self.config.workflow_operator_usernames,
         )
+        report_op = is_report_operator(
+            sender_id,
+            sender_username,
+            self.config.workflow_report_operator_user_ids,
+            self.config.workflow_report_operator_usernames,
+        )
         is_mark_live = is_mark_live_command(
             text, self.config.workflow_mark_live_commands
         )
@@ -294,6 +301,8 @@ class MessageHandler:
             self.my_id is not None and sender_id == self.my_id
         )
         can_ops = qa_tester or delivery_account or workflow_op
+        # Daily / weekly reports: full operators + report-only allowlist.
+        can_report = can_ops or report_op
 
         # Mark-live: quote Ambiguous reply + project name, or quote website
         # reminder + site URL. Runs before BD ignore so project teams can paste
@@ -406,7 +415,10 @@ class MessageHandler:
                 )
 
         # Operator stats / exec report / daily report
-        if (is_stats_cmd or is_report_cmd or is_daily_cmd) and can_ops:
+        # Stats stay on full operators; daily/weekly also allow report_operators.
+        if (is_stats_cmd and can_ops) or (
+            (is_report_cmd or is_daily_cmd) and can_report
+        ):
             msg_id = message.id
             if msg_id in self._processing:
                 return

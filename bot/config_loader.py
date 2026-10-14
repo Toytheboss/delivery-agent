@@ -152,6 +152,9 @@ class AppConfig:
     workflow_mark_live_also_send_form: bool
     workflow_operator_user_ids: set[int]
     workflow_operator_usernames: set[str]
+    # Report-only: 交付日报 / 交付周报 (not mark-live / send-form).
+    workflow_report_operator_user_ids: set[int]
+    workflow_report_operator_usernames: set[str]
     workflow_baseline_existing_live: bool
     workflow_logo_fill_enabled: bool
     workflow_logo_field: str
@@ -512,6 +515,22 @@ async def resolve_workflow_operator_ids(client, config: AppConfig) -> None:
             )
 
 
+async def resolve_report_operator_ids(client, config: AppConfig) -> None:
+    """Resolve report-only operator usernames to user_ids at startup."""
+    logger = __import__("logging").getLogger(__name__)
+    for username in list(config.workflow_report_operator_usernames):
+        try:
+            entity = await client.get_entity(username)
+            config.workflow_report_operator_user_ids.add(entity.id)
+            logger.info(
+                "Report operator @%s -> user_id=%s", username, entity.id
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "Could not resolve report operator @%s: %s", username, exc
+            )
+
+
 def load_config() -> AppConfig:
     cfg = _load_yaml(CONFIG_DIR / "config.yaml")
     wl = _load_yaml(CONFIG_DIR / "whitelist.yaml")
@@ -543,6 +562,9 @@ def load_config() -> AppConfig:
     workflow = cfg.get("workflow", {}) or {}
     workflow_operator_user_ids, workflow_operator_usernames = _parse_user_entries(
         workflow.get("operators")
+    )
+    workflow_report_operator_user_ids, workflow_report_operator_usernames = (
+        _parse_user_entries(workflow.get("report_operators"))
     )
 
     knowledge_dir = ROOT / knowledge.get("directory", "knowledge")
@@ -759,6 +781,8 @@ def load_config() -> AppConfig:
         ),
         workflow_operator_user_ids=workflow_operator_user_ids,
         workflow_operator_usernames=workflow_operator_usernames,
+        workflow_report_operator_user_ids=workflow_report_operator_user_ids,
+        workflow_report_operator_usernames=workflow_report_operator_usernames,
         workflow_baseline_existing_live=bool(
             workflow.get("baseline_existing_live", True)
         ),

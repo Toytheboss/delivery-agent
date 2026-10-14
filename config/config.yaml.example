@@ -140,6 +140,9 @@ workflow:
     - "上线完成"
   operators:
     - username: "operator_username"
+  # Report-only (交付日报 / 交付周报). No mark-live / send-form.
+  report_operators:
+    - username: "report_only_username"
   mark_live_also_send_form: true
   manual_commands:
     - "/send_form"

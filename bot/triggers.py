@@ -356,6 +356,18 @@ def is_workflow_operator(
     return False
 
 
+def is_report_operator(
+    sender_id: int | None,
+    username: str | None,
+    operator_user_ids: set[int],
+    operator_usernames: set[str],
+) -> bool:
+    """Users allowed to trigger 交付日报 / 交付周报 only (not mark-live)."""
+    return is_workflow_operator(
+        sender_id, username, operator_user_ids, operator_usernames
+    )
+
+
 def mentions_me(message: Message, my_id: int, my_username: str | None) -> bool:
     if getattr(message, "mentioned", False):
         return True
