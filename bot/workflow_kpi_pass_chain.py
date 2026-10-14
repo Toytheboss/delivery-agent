@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _PASS = "通过"
 _FAIL = "不通过"
+# Read both: legacy rows may still say 有效 KPI until backfilled to 通过.
 _COORD_PASS_VALUES = frozenset({_PASS, "有效 KPI"})
 _COORD_FIELD = "KPI Final"
 _JUDGE_FIELD = "written time"
@@ -185,32 +186,33 @@ def write_judge_time(token: str, config: Any, record_id: str) -> None:
 
 
 def write_coord_and_time(token: str, config: Any, record_id: str) -> None:
+    """Passed finals always use KPI Final = 通过 (not 有效 KPI)."""
     stamp = judge_time_ms()
-    last_error: Exception | None = None
-    for coord in (_PASS, "有效 KPI"):
-        try:
-            update_record(
-                token,
-                config.workflow_base_app_token,
-                config.workflow_progress_table_id,
-                record_id,
-                {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
-            )
-            return
-        except Exception as exc:  # noqa: BLE001
-            last_error = exc
-    if last_error:
+    try:
         update_record(
             token,
             config.workflow_base_app_token,
             config.workflow_progress_table_id,
             record_id,
-            {_COORD_FIELD: "有效 KPI"},
+            {_COORD_FIELD: _PASS, _JUDGE_FIELD: stamp},
         )
-        try:
-            write_judge_time(token, config, record_id)
-        except Exception:
-            logger.exception("kpi pass-chain: judge time write failed record=%s", record_id)
+        return
+    except Exception:
+        logger.exception(
+            "kpi pass-chain: coord+time write failed record=%s; retrying separately",
+            record_id,
+        )
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        record_id,
+        {_COORD_FIELD: _PASS},
+    )
+    try:
+        write_judge_time(token, config, record_id)
+    except Exception:
+        logger.exception("kpi pass-chain: judge time write failed record=%s", record_id)
 
 
 def apply_pass_chain(

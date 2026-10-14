@@ -637,7 +637,7 @@ def test_pass_chain_plan_six_pass_then_seven_coord_time():
     assert plan["write_kpi7"] is False
     assert plan["write_coord"] is True
     assert plan["write_time"] is True
-    live["KPI Final"] = "有效 KPI"
+    live["KPI Final"] = "通过"
     plan = pass_chain_plan(live)
     assert plan["write_kpi7"] is False
     assert plan["write_coord"] is False
@@ -653,7 +653,7 @@ def test_pass_chain_fills_empty_kpi45_on_live_project():
     fields = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
         "主网上线时间": "2026-09-01T00:10:00+08:00",
-        "KPI Final": "有效 KPI",
+        "KPI Final": "通过",
     }
     plan = pass_chain_plan(fields)
     assert plan["write_kpi45"] is True
