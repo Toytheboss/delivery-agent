@@ -49,7 +49,7 @@ _KIND_LABEL = {
 }
 _PASS = "通过"
 _KPI1_RESULT = "推特验证结果"
-_KPI2_LINK = "KPI 2 - PR 新闻链接验证"
+_KPI2_LINK = "KPI 2 - PR news link"
 _KPI2_RESULT = "新闻验证结果"
 _KPI3_RESULT = "官网验证结果"
 _KPI4_RESULT = "产品可用验证结果"

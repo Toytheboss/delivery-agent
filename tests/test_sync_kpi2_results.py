@@ -9,7 +9,7 @@ def test_plan_updates_passes_previously_entered_pr_link():
             "record_id": "rec_link",
             "fields": {
                 "项目名称 Project Name": "Existing PR",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/project/status/1",
+                "KPI 2 - PR news link": "https://x.com/project/status/1",
                 "新闻验证结果": ["不通过"],
             },
         }
@@ -17,7 +17,7 @@ def test_plan_updates_passes_previously_entered_pr_link():
 
     assert plan_updates(
         records,
-        link_field="KPI 2 - PR 新闻链接验证",
+        link_field="KPI 2 - PR news link",
         result_field="新闻验证结果",
     ) == [
         {
@@ -36,7 +36,7 @@ def test_plan_updates_skips_empty_pr_links_by_default():
             "record_id": "rec_empty",
             "fields": {
                 "Project name": "No PR",
-                "KPI 2 - PR 新闻链接验证": "",
+                "KPI 2 - PR news link": "",
                 "新闻验证结果": [PASS],
             },
         },
@@ -44,7 +44,7 @@ def test_plan_updates_skips_empty_pr_links_by_default():
             "record_id": "rec_current",
             "fields": {
                 "Project name": "Already correct",
-                "KPI 2 - PR 新闻链接验证": "https://example.com/press",
+                "KPI 2 - PR news link": "https://example.com/press",
                 "新闻验证结果": [PASS],
             },
         },
@@ -52,13 +52,13 @@ def test_plan_updates_skips_empty_pr_links_by_default():
 
     assert plan_updates(
         records,
-        link_field="KPI 2 - PR 新闻链接验证",
+        link_field="KPI 2 - PR news link",
         result_field="新闻验证结果",
     ) == []
 
     assert plan_updates(
         records,
-        link_field="KPI 2 - PR 新闻链接验证",
+        link_field="KPI 2 - PR news link",
         result_field="新闻验证结果",
         include_empty=True,
     ) == [

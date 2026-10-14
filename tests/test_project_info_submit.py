@@ -192,7 +192,7 @@ def test_pr_writes_kpi2_and_does_not_create_progress_row():
         workflow_base_app_token="app",
         workflow_progress_table_id="tblp",
         workflow_project_name_field="项目名称 Project Name",
-        pr_capture_link_field="KPI 2 - PR 新闻链接验证",
+        pr_capture_link_field="KPI 2 - PR news link",
     )
     updated: list[tuple[str, dict]] = []
 
@@ -227,7 +227,7 @@ def test_pr_writes_kpi2_and_does_not_create_progress_row():
             ],
         )
         assert found["action"] == "updated"
-        assert updated[0][1]["KPI 2 - PR 新闻链接验证"] == "https://x.com/a/status/1"
+        assert updated[0][1]["KPI 2 - PR news link"] == "https://x.com/a/status/1"
         assert updated[0][1]["新闻验证结果"] == "通过"
 
 

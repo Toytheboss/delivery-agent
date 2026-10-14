@@ -3184,7 +3184,7 @@ def _project_state_events(
             }
         )
 
-    pr_url = _field_text(fields, "KPI 2 - PR 新闻链接验证")
+    pr_url = _field_text(fields, "KPI 2 - PR news link")
     if pr_url:
         events.append(
             {

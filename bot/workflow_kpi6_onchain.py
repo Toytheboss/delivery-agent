@@ -26,7 +26,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_COPY_FIELD = "KPI 6 - 链上交互验证"
+_DEFAULT_COPY_FIELD = "KPI 6 - On-chain interaction"
 _DEFAULT_RESULT_FIELD = "交互验证结果"
 _PASS = "通过"
 _FAIL = "不通过"

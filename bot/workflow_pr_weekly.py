@@ -504,7 +504,7 @@ def run_pr_weekly_once(
             getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
         ),
         pr_field=str(
-            getattr(config, "pr_capture_link_field", "") or "KPI 2 - PR 新闻链接验证"
+            getattr(config, "pr_capture_link_field", "") or "KPI 2 - PR news link"
         ),
     )
     result["count"] = len(projects)

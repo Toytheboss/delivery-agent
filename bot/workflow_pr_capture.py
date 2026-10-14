@@ -60,7 +60,7 @@ _DEFAULT_COMMANDS = ["pr support"]
 _PR_CMD_RE = re.compile(
     r"(?is)^\s*(?:[/@])?pr[\s_-]*support\s*[!.。！]*\s*$"
 )
-_DEFAULT_LINK_FIELD = "KPI 2 - PR 新闻链接验证"
+_DEFAULT_LINK_FIELD = "KPI 2 - PR news link"
 _DEFAULT_RESULT_FIELD = "新闻验证结果"
 _KPI2_PASSED = "通过"
 _DEFAULT_NOTIFY_CHAT = "oc_717a560011483216c49329fda5e43b41"

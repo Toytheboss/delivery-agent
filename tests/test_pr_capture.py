@@ -66,10 +66,10 @@ def test_fallback_to_first_http_url():
 
 def test_kpi2_pass_fields_sets_link_and_pass_result():
     assert kpi2_pass_fields(
-        link_field="KPI 2 - PR 新闻链接验证",
+        link_field="KPI 2 - PR news link",
         url="https://x.com/project/status/123",
     ) == {
-        "KPI 2 - PR 新闻链接验证": "https://x.com/project/status/123",
+        "KPI 2 - PR news link": "https://x.com/project/status/123",
         "新闻验证结果": "通过",
     }
 

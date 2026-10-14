@@ -35,7 +35,7 @@ UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
     "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 )
-_DEFAULT_COPY_FIELD = "KPI 3 - 官网展示验证"
+_DEFAULT_COPY_FIELD = "KPI 3 - Website"
 _DEFAULT_RESULT_FIELD = "官网验证结果"
 _PASS = "通过"
 _FAIL = "不通过"

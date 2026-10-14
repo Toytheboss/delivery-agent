@@ -34,7 +34,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_COPY_FIELD = "KPI 1 - Twitter运营验证"
+_DEFAULT_COPY_FIELD = "KPI 1 - Twitter operations"
 _DEFAULT_RESULT_FIELD = "推特验证结果"
 _PASS = "通过"
 _FAIL = "不通过"
@@ -42,7 +42,7 @@ _THRESHOLD = 5
 _READ_ENOUGH = 6
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
-_KPI2_LINK = "KPI 2 - PR 新闻链接验证"
+_KPI2_LINK = "KPI 2 - PR news link"
 _CHAIN = r"(?:bot\s*chain|botchain)"
 _LIVE_ON_CHAIN_RE = re.compile(
     rf"\b(?:go[\s-]?live|live|launched)\s+on\s+{_CHAIN}\b",

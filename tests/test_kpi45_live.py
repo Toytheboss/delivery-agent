@@ -13,9 +13,9 @@ from bot.workflow_kpi45_live import (
 
 def test_kpi45_pass_fields_use_string_not_array():
     assert kpi45_pass_fields() == {
-        "KPI 4 - 产品可用验证": _KPI4_COPY,
+        "KPI 4 - Usable Product": _KPI4_COPY,
         "产品可用验证结果": "通过",
-        "KPI 5 - 项目独立性验证": _KPI5_COPY,
+        "KPI 5 - Project independence": _KPI5_COPY,
         "独立性验证结果": "通过",
     }
 
@@ -30,9 +30,9 @@ def test_kpi45_copy_is_the_locked_english():
 
 class _Cfg:
     workflow_kpi45_enabled = True
-    workflow_kpi4_copy_field = "KPI 4 - 产品可用验证"
+    workflow_kpi4_copy_field = "KPI 4 - Usable Product"
     workflow_kpi4_result_field = "产品可用验证结果"
-    workflow_kpi5_copy_field = "KPI 5 - 项目独立性验证"
+    workflow_kpi5_copy_field = "KPI 5 - Project independence"
     workflow_kpi5_result_field = "独立性验证结果"
     workflow_kpi45_state_file = "data/kpi45_live_state.json"
     workflow_base_app_token = "app"
@@ -49,9 +49,9 @@ def test_skips_when_both_kpis_already_filled(tmp_path: Path):
         "bot.workflow_kpi45_live.update_record", fake_update
     ):
         fields = {
-            "KPI 4 - 产品可用验证": _KPI4_COPY,
+            "KPI 4 - Usable Product": _KPI4_COPY,
             "产品可用验证结果": ["通过"],
-            "KPI 5 - 项目独立性验证": _KPI5_COPY,
+            "KPI 5 - Project independence": _KPI5_COPY,
             "独立性验证结果": "通过",
         }
         assert (
@@ -72,7 +72,7 @@ def test_writes_only_empty_kpi(tmp_path: Path):
         "bot.workflow_kpi45_live.update_record", fake_update
     ):
         fields = {
-            "KPI 4 - 产品可用验证": _KPI4_COPY,
+            "KPI 4 - Usable Product": _KPI4_COPY,
             "产品可用验证结果": "通过",
         }
         assert (
@@ -81,7 +81,7 @@ def test_writes_only_empty_kpi(tmp_path: Path):
         )
     assert captured["rid"] == "rec2"
     assert captured["payload"] == {
-        "KPI 5 - 项目独立性验证": _KPI5_COPY,
+        "KPI 5 - Project independence": _KPI5_COPY,
         "独立性验证结果": "通过",
     }
 

@@ -666,7 +666,7 @@ def test_pass_chain_writes_kpi2_when_pr_link_exists():
     live = {
         "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
         "主网上线时间": "2026-09-01T00:10:00+08:00",
-        "KPI 2 - PR 新闻链接验证": "https://x.com/SprayMe/status/1",
+        "KPI 2 - PR news link": "https://x.com/SprayMe/status/1",
     }
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is True
@@ -674,7 +674,7 @@ def test_pass_chain_writes_kpi2_when_pr_link_exists():
     live["新闻验证结果"] = "通过"
     plan = pass_chain_plan(live)
     assert plan["write_kpi2"] is False
-    plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR 新闻链接验证": "https://x.com/x/status/1"})
+    plan = pass_chain_plan({"项目状态": "对接中", "KPI 2 - PR news link": "https://x.com/x/status/1"})
     assert plan["write_kpi2"] is False
 
 
@@ -687,7 +687,7 @@ def test_project_diag_kpi2_fail_when_no_pr_link():
     assert (
         planned_kpi2_result(
             {
-                "KPI 2 - PR 新闻链接验证": "https://x.com/x/status/1",
+                "KPI 2 - PR news link": "https://x.com/x/status/1",
                 "新闻验证结果": "不通过",
             }
         )

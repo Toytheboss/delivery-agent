@@ -205,7 +205,7 @@ def test_first_check_date_prefers_sept30_cell_stamp_over_live_plus_7():
     from bot.workflow_kpi_result_push import resolve_first_check_date
 
     fields = {
-        "KPI 3 - 官网展示验证": (
+        "KPI 3 - Website": (
             "Website display verification failed\n"
             "Recheck 2026-09-30 03:26: Website display verification failed"
         )
@@ -409,9 +409,9 @@ def test_audit_skips_passed_items_and_writes_held_coord(monkeypatch):
 
     fields = {
         "推特验证结果": "通过",
-        "KPI 1 - Twitter运营验证": "posted 7 original posts",
+        "KPI 1 - Twitter operations": "posted 7 original posts",
         "官网验证结果": "通过",
-        "KPI 3 - 官网展示验证": "Website display verification passed",
+        "KPI 3 - Website": "Website display verification passed",
         "产品可用验证结果": "通过",
         "独立性验证结果": "通过",
         "交互验证结果": "不通过",

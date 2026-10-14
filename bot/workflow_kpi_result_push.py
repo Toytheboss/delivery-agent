@@ -32,7 +32,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
-_KPI2_LINK = "KPI 2 - PR 新闻链接验证"
+_KPI2_LINK = "KPI 2 - PR news link"
 _SENT_FILE = ROOT / "data" / "kpi_result_push_sent.json"
 # Already posted by hand. A missing state file must not send these again.
 _ALREADY_POSTED = frozenset({"rec28ah3MsNpTG", "rec28abJciwa4a"})
@@ -66,14 +66,14 @@ _FAIL_COORD = "不通过"
 _COORD_FIELD = "KPI 统筹"
 _JUDGE_FIELD = "KPI 判定时间"
 _KPI1_RESULT = "推特验证结果"
-_KPI1_COPY = "KPI 1 - Twitter运营验证"
+_KPI1_COPY = "KPI 1 - Twitter operations"
 _KPI2_RESULT = "新闻验证结果"
 _KPI3_RESULT = "官网验证结果"
-_KPI3_COPY = "KPI 3 - 官网展示验证"
+_KPI3_COPY = "KPI 3 - Website"
 _KPI4_RESULT = "产品可用验证结果"
 _KPI5_RESULT = "独立性验证结果"
 _KPI6_RESULT = "交互验证结果"
-_KPI6_COPY = "KPI 6 - 链上交互验证"
+_KPI6_COPY = "KPI 6 - On-chain interaction"
 _POSTED_RE = re.compile(r"posted (\d+) original", re.I)
 _WALLETS_RE = re.compile(r"(\d+) unique wallets, (\d+) successful", re.I)
 

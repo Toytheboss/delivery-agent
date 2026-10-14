@@ -94,7 +94,7 @@ def test_collect_prefers_event_over_record_mtime():
             "fields": {
                 "项目名称 Project Name": "PromptMint",
                 "已上线链接🔗": {"link": "https://prompt.example/"},
-                "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
+                "KPI 2 - PR news link": "https://x.com/a/status/1",
             },
         },
         {
@@ -103,7 +103,7 @@ def test_collect_prefers_event_over_record_mtime():
             "fields": {
                 "项目名称 Project Name": "Old",
                 "已上线链接🔗": "https://old.example/",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/old/status/1",
+                "KPI 2 - PR news link": "https://x.com/old/status/1",
             },
         },
         {
@@ -131,7 +131,7 @@ def test_collect_prefers_event_over_record_mtime():
         end=end,
         name_field="项目名称 Project Name",
         live_link_field="已上线链接🔗",
-        pr_field="KPI 2 - PR 新闻链接验证",
+        pr_field="KPI 2 - PR news link",
     )
     assert [r["name"] for r in rows] == ["PromptMint"]
     assert rows[0]["url"] == "https://x.com/a/status/99"
@@ -148,7 +148,7 @@ def test_collect_falls_back_to_record_mtime():
             "fields": {
                 "项目名称 Project Name": "TaskForge",
                 "已上线链接🔗": "https://task.example/",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/t/status/2",
+                "KPI 2 - PR news link": "https://x.com/t/status/2",
             },
         }
     ]
@@ -159,7 +159,7 @@ def test_collect_falls_back_to_record_mtime():
         end=end,
         name_field="项目名称 Project Name",
         live_link_field="已上线链接🔗",
-        pr_field="KPI 2 - PR 新闻链接验证",
+        pr_field="KPI 2 - PR news link",
     )
     assert rows == [
         {
@@ -197,7 +197,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
         workflow_progress_table_id="tbl",
         workflow_project_name_field="项目名称 Project Name",
         workflow_live_link_field="已上线链接🔗",
-        pr_capture_link_field="KPI 2 - PR 新闻链接验证",
+        pr_capture_link_field="KPI 2 - PR news link",
         pr_capture_events_file=str(tmp_path / "events.jsonl"),
     )
     in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
@@ -208,7 +208,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
             "fields": {
                 "项目名称 Project Name": "PromptMint",
                 "已上线链接🔗": "https://prompt.example/",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
+                "KPI 2 - PR news link": "https://x.com/a/status/1",
             },
         }
     ]
@@ -257,7 +257,7 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
         workflow_progress_table_id="tbl",
         workflow_project_name_field="项目名称 Project Name",
         workflow_live_link_field="已上线链接🔗",
-        pr_capture_link_field="KPI 2 - PR 新闻链接验证",
+        pr_capture_link_field="KPI 2 - PR news link",
         pr_capture_events_file=str(tmp_path / "events.jsonl"),
     )
     in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
@@ -268,7 +268,7 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
             "fields": {
                 "项目名称 Project Name": "PromptMint",
                 "已上线链接🔗": "https://prompt.example/",
-                "KPI 2 - PR 新闻链接验证": "https://x.com/a/status/1",
+                "KPI 2 - PR news link": "https://x.com/a/status/1",
             },
         }
     ]

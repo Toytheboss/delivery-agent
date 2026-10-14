@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-14 · KPI 1–7 考核栏字段名改为英文
+
+### 优化
+- 进度表 KPI 1–7 考核栏表头对齐英文：Twitter operations / PR news link / Website / Usable Product / Project independence / On-chain interaction / Ongoing operations
+- 自动审核读写改用新字段名；结果栏（如推特验证结果、KPI 统筹）未改
+
+---
+
 ## 2026-10-14 · Mark live 前检查已上线链接
 
 ### 新增

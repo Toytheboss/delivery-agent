@@ -114,7 +114,7 @@ def test_unreachable_site_fails():
 
 def test_kpi3_result_fields_use_string_not_array():
     assert kpi3_result_fields(
-        copy_field="KPI 3 - 官网展示验证",
+        copy_field="KPI 3 - Website",
         result_field="官网验证结果",
         copy=(
             "Website display verification: no official website URL submitted; "
@@ -122,7 +122,7 @@ def test_kpi3_result_fields_use_string_not_array():
         ),
         result="不通过",
     ) == {
-        "KPI 3 - 官网展示验证": (
+        "KPI 3 - Website": (
             "Website display verification: no official website URL submitted; "
             "website display verification failed"
         ),
