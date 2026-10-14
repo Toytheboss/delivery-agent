@@ -68,8 +68,15 @@ COUNTER_KEYS = (
 )
 
 
+_HOURLY_RETAIN_HOURS = 8 * 24
+
+
 def _today() -> str:
     return datetime.now(TZ).strftime("%Y-%m-%d")
+
+
+def _hour_key(dt: datetime) -> str:
+    return dt.astimezone(TZ).strftime("%Y-%m-%dT%H")
 
 
 def _now() -> datetime:
@@ -133,7 +140,7 @@ def _in_time_window(dt: datetime | None, *, since: datetime) -> bool:
 
 
 def _empty_counter() -> dict[str, Any]:
-    return {"total": 0, "by_day": {}}
+    return {"total": 0, "by_day": {}, "by_hour": {}}
 
 
 def _default_data() -> dict[str, Any]:
@@ -180,12 +187,22 @@ def _ensure_loaded() -> dict[str, Any]:
                         str(d): int(n)
                         for d, n in (src.get("by_day") or {}).items()
                     }
-                    data["counters"][key] = {"total": total, "by_day": by_day}
+                    by_hour = {
+                        str(h): int(n)
+                        for h, n in (src.get("by_hour") or {}).items()
+                    }
+                    data["counters"][key] = {
+                        "total": total,
+                        "by_day": by_day,
+                        "by_hour": by_hour,
+                    }
                 data["updated_at"] = str(raw.get("updated_at") or "")
                 if isinstance(raw.get("notes"), dict):
                     data["notes"].update(raw["notes"])
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             logger.exception("metrics: failed to load %s; starting fresh", _state_path)
+    # Hourly windows are exact only for periods that start after this moment.
+    data["notes"].setdefault("hourly_since", _now_iso())
     _data = data
     return _data
 
@@ -217,13 +234,20 @@ def inc(key: str, n: int = 1) -> None:
         data = _ensure_loaded()
         bucket = data["counters"].setdefault(key, _empty_counter())
         bucket["total"] = int(bucket.get("total") or 0) + n
-        day = _today()
+        now = _now()
+        day = now.strftime("%Y-%m-%d")
         by_day = bucket.setdefault("by_day", {})
         by_day[day] = int(by_day.get(day) or 0) + n
         # Keep by_day bounded (~90 days)
         if len(by_day) > 100:
             for old in sorted(by_day.keys())[:-90]:
                 by_day.pop(old, None)
+        hour = _hour_key(now)
+        by_hour = bucket.setdefault("by_hour", {})
+        by_hour[hour] = int(by_hour.get(hour) or 0) + n
+        cutoff = _hour_key(now - timedelta(hours=_HOURLY_RETAIN_HOURS))
+        for old in [h for h in by_hour if h < cutoff]:
+            by_hour.pop(old, None)
         _save_unlocked()
 
 
@@ -261,6 +285,33 @@ def get_counter_series(keys: list[str] | tuple[str, ...] | None = None) -> dict[
 def _sum_days(by_day: dict[str, Any] | None, days: list[str]) -> int:
     raw = by_day or {}
     return sum(int(raw.get(d) or 0) for d in days)
+
+
+def _hourly_since() -> datetime | None:
+    with _lock:
+        notes = _ensure_loaded().get("notes") or {}
+    return _parse_iso_ts(notes.get("hourly_since"))
+
+
+def _window_count(
+    bucket: dict[str, Any] | None,
+    *,
+    since: datetime,
+    day_days: list[str],
+    hourly_since: datetime | None,
+) -> tuple[int, bool]:
+    """Counter value inside [since, now]; second item is True when hour-exact.
+
+    Hour buckets are used when they cover the whole window; otherwise this
+    falls back to the calendar days that intersect the window.
+    """
+    bucket = bucket or {}
+    oldest_kept = _now() - timedelta(hours=_HOURLY_RETAIN_HOURS)
+    if hourly_since is not None and hourly_since <= since and since >= oldest_kept:
+        start_key = _hour_key(since.replace(minute=0, second=0, microsecond=0))
+        by_hour = bucket.get("by_hour") or {}
+        return sum(int(n or 0) for h, n in by_hour.items() if h >= start_key), True
+    return _sum_days(bucket.get("by_day") or {}, day_days), False
 
 
 def _counter_triple(
@@ -426,10 +477,19 @@ def snapshot(config: Any | None = None, *, include_lark: bool = True) -> dict[st
         data = _ensure_loaded()
         counters: dict[str, dict[str, int]] = {}
         today = _today()
+        hourly_since = _parse_iso_ts((data.get("notes") or {}).get("hourly_since"))
         for key in COUNTER_KEYS:
-            counters[key] = _counter_triple(
+            triple = _counter_triple(
                 data["counters"], key, week_days, day_days=day_days
             )
+            bucket = data["counters"].get(key)
+            triple["today"], _ = _window_count(
+                bucket, since=since_24h, day_days=day_days, hourly_since=hourly_since
+            )
+            triple["week"], _ = _window_count(
+                bucket, since=since_7d, day_days=week_days, hourly_since=hourly_since
+            )
+            counters[key] = triple
         notes = dict(data.get("notes") or {})
         updated_at = data.get("updated_at") or ""
 
@@ -870,14 +930,35 @@ def _message_log_dir(config: Any) -> Path:
     return path
 
 
+# Both bots append to the shared event log, so per-entity counts dedupe the
+# same group or record handled by each bot.
+_CHAT_SCOPED_KINDS = frozenset({"folder_chat_added", "welcome_sequence_sent"})
+# Counted only when the entity's first-ever event falls inside the window.
+_FIRST_EVER_KINDS = frozenset({"folder_chat_added", "welcome_sequence_sent"})
+
+
+def _event_entity(kind: str, row: dict[str, Any]) -> str:
+    fields = ("chat_id",) if kind in _CHAT_SCOPED_KINDS else ("record_id", "chat_id")
+    for field in fields:
+        value = str(row.get(field) or "").strip()
+        if value:
+            return f"{field}:{value}"
+    name = str(row.get("project_name") or "").strip().lower()
+    return f"name:{name}" if name else ""
+
+
 def _workflow_window_summary(
     config: Any, *, since: datetime
 ) -> dict[str, Any]:
     """Aggregate workflow_events.jsonl rows inside the rolling window."""
     out: dict[str, Any] = {
+        "available": False,
         "total": 0,
         "by_kind": {},
         "names_by_kind": {},
+        "unique_by_kind": {},
+        "new_by_kind": {},
+        "new_names_by_kind": {},
         "kpi_writes": {},
         "early_final": [],
         "error": None,
@@ -887,6 +968,8 @@ def _workflow_window_summary(
         return out
     by_kind: dict[str, int] = {}
     names_by_kind: dict[str, list[str]] = {}
+    entities_by_kind: dict[str, dict[str, str]] = {}
+    seen_before: dict[str, set[str]] = {}
     kpi_writes: dict[str, dict[str, int]] = {}
     early_final: list[str] = []
     try:
@@ -900,13 +983,20 @@ def _workflow_window_summary(
                 except json.JSONDecodeError:
                     continue
                 dt = _parse_iso_ts(row.get("ts"))
-                if not _in_time_window(dt, since=since):
-                    continue
                 kind = str(row.get("kind") or "unknown")
+                if not _in_time_window(dt, since=since):
+                    if dt is not None and kind in _FIRST_EVER_KINDS:
+                        entity = _event_entity(kind, row)
+                        if entity:
+                            seen_before.setdefault(kind, set()).add(entity)
+                    continue
                 by_kind[kind] = by_kind.get(kind, 0) + 1
                 name = str(row.get("project_name") or "").strip()
                 if name:
                     names_by_kind.setdefault(kind, []).append(name)
+                entity = _event_entity(kind, row)
+                if entity:
+                    entities_by_kind.setdefault(kind, {}).setdefault(entity, name)
                 if kind == "kpi_result_written":
                     item, ok = _classify_kpi_write(str(row.get("text") or ""))
                     bucket = kpi_writes.setdefault(item, {"pass": 0, "fail": 0, "other": 0})
@@ -915,11 +1005,24 @@ def _workflow_window_summary(
                     text = str(row.get("text") or "").strip()
                     label = f"{name or '—'} · {text}" if text else (name or "—")
                     early_final.append(label)
+        out["available"] = True
         out["total"] = sum(by_kind.values())
         out["by_kind"] = by_kind
         out["names_by_kind"] = {
             k: _dedupe_names(v) for k, v in names_by_kind.items()
         }
+        out["unique_by_kind"] = {k: len(v) for k, v in entities_by_kind.items()}
+        for kind in _FIRST_EVER_KINDS:
+            before = seen_before.get(kind) or set()
+            fresh = {
+                entity: name
+                for entity, name in (entities_by_kind.get(kind) or {}).items()
+                if entity not in before
+            }
+            out["new_by_kind"][kind] = len(fresh)
+            out["new_names_by_kind"][kind] = _dedupe_names(
+                list(fresh.values()), limit=10_000
+            )
         out["kpi_writes"] = kpi_writes
         out["early_final"] = early_final[:40]
     except OSError as exc:
@@ -1072,9 +1175,20 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     with _lock:
         data = _ensure_loaded()
         counters = data["counters"]
+        hourly_since = _parse_iso_ts((data.get("notes") or {}).get("hourly_since"))
+        hour_exact = True
 
         def _c(key: str) -> dict[str, int]:
-            return _counter_triple(counters, key, week_days, day_days=window_days)
+            nonlocal hour_exact
+            triple = _counter_triple(counters, key, week_days, day_days=window_days)
+            triple["today"], exact = _window_count(
+                counters.get(key),
+                since=since,
+                day_days=window_days,
+                hourly_since=hourly_since,
+            )
+            hour_exact = hour_exact and exact
+            return triple
 
         folder = _c("folder_auto_add_success")
         logo_ok = _c("logo_fill_success")
@@ -1139,6 +1253,28 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         if not progress.get("error"):
             live_without_form_names = _live_without_form(progress, chase_projects)
 
+    events_ok = bool(workflow.get("available")) and not workflow.get("error")
+    new_by_kind = workflow.get("new_by_kind") or {}
+    unique_by_kind = workflow.get("unique_by_kind") or {}
+    wf_by_kind = workflow.get("by_kind") or {}
+    if events_ok:
+        folder_window = int(new_by_kind.get("folder_chat_added") or 0)
+        welcome_seq_window = int(new_by_kind.get("welcome_sequence_sent") or 0)
+        welcome_msg_window = int(wf_by_kind.get("welcome_sequence_sent") or 0)
+        logo_window = int(unique_by_kind.get("logo_uploaded_lark") or 0)
+        mark_live_window = int(unique_by_kind.get("mark_live") or 0)
+    else:
+        folder_window = int(folder.get("today") or 0)
+        welcome_seq_window = int(welcome_seq.get("today") or 0)
+        welcome_msg_window = int(welcome_msgs.get("today") or 0)
+        logo_window = int(logo_ok.get("today") or 0)
+        mark_live_window = int(mark_live.get("today") or 0)
+    form_window = (
+        len(form_first_send_names)
+        if isinstance(form_first_send_names, list)
+        else int(form_ok.get("today") or 0)
+    )
+
     # Live count stays on the progress table: current mainnet-live status and
     # 主网上线时间 inside the window. A status that was flipped to live and
     # then reverted must not be added back from the status log.
@@ -1154,18 +1290,22 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "window_until": _now_iso(),
         "window_days": window_days,
         "updated_at": updated_at,
+        "counter_precision": "hourly" if hour_exact else "day_buckets",
+        "event_counts": events_ok,
         # Keep range reports self-contained for the analytics UI.  The
         # counter series already contains this value, but the period report
         # previously omitted it and the browser treated the missing field as
         # zero for every range.
         "metrics": {
-            "folder_auto_add_success": int(folder.get("today") or 0),
+            "folder_auto_add_success": folder_window,
+            "form_first_send": form_window,
+            "messages_processed": processed_window,
             "lark_track_new_projects": int(
                 progress.get("lark_track_new_projects") or 0
             ),
         },
-        "folder_new_groups_today": int(folder.get("today") or 0),
-        "logo_fill_today": int(logo_ok.get("today") or 0),
+        "folder_new_groups_today": folder_window,
+        "logo_fill_today": logo_window,
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
         "messages_processed_24h": processed_window,
         "messages_replied_24h": replied_window,
@@ -1178,12 +1318,12 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
             "faq_bubbles": int(faq_bubbles.get("today") or 0),
             "faq_footer": int(faq_footer.get("today") or 0),
             "social": int(social.get("today") or 0),
-            "welcome": int(welcome_msgs.get("today") or 0),
-            "welcome_sequences": int(welcome_seq.get("today") or 0),
-            "form": int(form_ok.get("today") or 0),
+            "welcome": welcome_msg_window,
+            "welcome_sequences": welcome_seq_window,
+            "form": form_window,
             "form_fail": int(form_fail.get("today") or 0),
             "human_review": int(human_review.get("today") or 0),
-            "mark_live": int(mark_live.get("today") or 0),
+            "mark_live": mark_live_window,
             "wallet_digest_sent": int(wallet_digest_sent.get("today") or 0),
             "wallet_digest_new": int(wallet_digest_new.get("today") or 0),
             "absorb_learn": int(absorb.get("today") or 0),
@@ -1209,6 +1349,46 @@ def build_period_reports(config: Any) -> dict[str, Any]:
             logger.exception("metrics: period report %s failed", key)
             out[key] = {"error": str(exc), "period_key": key, "window_label": key}
     return out
+
+
+def _period_reports_path(config: Any) -> Path | None:
+    raw = str(getattr(config, "metrics_period_reports_file", "") or "").strip()
+    if not raw:
+        return None
+    path = Path(raw)
+    return path if path.is_absolute() else ROOT / path
+
+
+def publish_period_reports(config: Any) -> Path | None:
+    """Write 24h / 7d / 30d reports for the console to render as-is."""
+    path = _period_reports_path(config)
+    if path is None:
+        return None
+    payload = {
+        "generated_at": _now_iso(),
+        "source": str(ROOT),
+        "reports": build_period_reports(config),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(path)
+    return path
+
+
+async def period_reports_publish_loop(config: Any) -> None:
+    import asyncio
+
+    if _period_reports_path(config) is None:
+        return
+    interval = max(int(getattr(config, "metrics_period_reports_interval_minutes", 5) or 5), 1)
+    loop = asyncio.get_running_loop()
+    while True:
+        try:
+            await loop.run_in_executor(None, publish_period_reports, config)
+        except Exception:  # noqa: BLE001
+            logger.exception("metrics: publish period reports failed")
+        await asyncio.sleep(interval * 60)
 
 
 def _append_name_list(lines: list[str], names: list[Any]) -> None:
@@ -1300,20 +1480,28 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     def knames(kind: str) -> list[str]:
         return list(names_by_kind.get(kind) or [])
 
+    precision = (
+        "按小时"
+        if daily.get("counter_precision") == "hourly"
+        else "按自然日近似（小时桶积累中）"
+    )
     lines = [
         "Delivery Agent日报",
         f"统计窗口：{window}（Asia/Shanghai）",
         f"起止：{since or '—'} ~ {until or '—'}",
         f"生成日：{today}",
-        f"数据更新：{daily.get('updated_at') or '—'}",
+        f"数据更新：{daily.get('updated_at') or '—'}；计数器{precision}",
         "",
         "一、群触达",
     ]
-    folder_names = knames("folder_chat_added")
+    if daily.get("event_counts"):
+        folder_names = list((wf.get("new_names_by_kind") or {}).get("folder_chat_added") or [])
+    else:
+        folder_names = knames("folder_chat_added")
     _fmt_kind_line(
         lines,
         label="新群归档",
-        count=int(daily.get("folder_new_groups_today") or len(folder_names) or 0),
+        count=int(daily.get("folder_new_groups_today") or 0),
         names=folder_names,
     )
     lines.append(
@@ -1371,13 +1559,13 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     _fmt_kind_line(
         lines,
         label="Mark live",
-        count=int(bm.get("mark_live") or kcount("mark_live") or 0),
+        count=int(bm.get("mark_live") or 0),
         names=knames("mark_live"),
     )
     _fmt_kind_line(
         lines,
         label="Logo 上传",
-        count=int(daily.get("logo_fill_today") or kcount("logo_uploaded_lark") or 0),
+        count=int(daily.get("logo_fill_today") or 0),
         names=knames("logo_uploaded_lark"),
     )
     _fmt_kind_line(
@@ -1555,7 +1743,8 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
             "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
             "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
             "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",
-            "· 工作流事件来自 workflow_events；消息结构来自 message_logs；计数器按日桶近似。",
+            "· 新群归档 / 问候序列按群去重、只算窗口内首次；Logo / Mark live 按项目去重；两个号合并计。",
+            "· 入站处理、FAQ、沉默等消息类只统计审核号本号；交付面板总览与本日报同一份数据。",
             "· form_dispatch_skip / 轮询次数等噪声不进正文。",
         ]
     )

@@ -260,6 +260,10 @@ metrics:
   message_log_dir: "data/message_logs"
   message_log_retain_days: 90
   message_log_text_max: 500
+  # Set on the audit host only: the console renders this file as its 24h/7d/30d
+  # report so Telegram /日报 and the console share one ledger.
+  # period_reports_file: "/opt/botchain-shared/period_reports.json"
+  # period_reports_interval_minutes: 5
 
 welcome:
   enabled: true

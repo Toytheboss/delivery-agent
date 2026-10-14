@@ -962,6 +962,37 @@ def build_range_summary(
     }
 
 
+_PUBLISHED_PERIOD_REPORTS = "/opt/botchain-shared/period_reports.json"
+_PUBLISHED_MAX_AGE_SECONDS = 30 * 60
+
+
+def load_published_period_reports(config: Any) -> dict[str, Any] | None:
+    """Audit-host 24h / 7d / 30d reports, or None when missing or stale."""
+    raw = str(
+        getattr(config, "dashboard_period_reports_file", "") or _PUBLISHED_PERIOD_REPORTS
+    )
+    path = Path(raw)
+    if not path.is_absolute():
+        path = ROOT / path
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("reports"), dict):
+        return None
+    try:
+        generated = datetime.fromisoformat(str(data.get("generated_at") or ""))
+    except ValueError:
+        return None
+    if generated.tzinfo is None:
+        generated = generated.replace(tzinfo=TZ)
+    age = (datetime.now(TZ) - generated).total_seconds()
+    if age > _PUBLISHED_MAX_AGE_SECONDS:
+        logger.warning("dashboard: published period reports stale (%.0fs) %s", age, path)
+        return None
+    return data
+
+
 def build_dashboard_snapshot(
     config: Any,
     *,
@@ -986,11 +1017,20 @@ def build_dashboard_snapshot(
 
     snap = snapshot(config, include_lark=include_lark)
     period_reports: dict[str, Any] = {}
-    try:
-        period_reports = build_period_reports(config)
-    except Exception:  # noqa: BLE001
-        logger.exception("dashboard: build_period_reports failed")
-        period_reports = {"24h": {"error": "build_period_reports_failed"}}
+    published = load_published_period_reports(config)
+    if published is not None:
+        period_reports = dict(published["reports"])
+        period_source = {
+            "mode": "published",
+            "generated_at": str(published.get("generated_at") or ""),
+        }
+    else:
+        period_source = {"mode": "local", "generated_at": _now_iso()}
+        try:
+            period_reports = build_period_reports(config)
+        except Exception:  # noqa: BLE001
+            logger.exception("dashboard: build_period_reports failed")
+            period_reports = {"24h": {"error": "build_period_reports_failed"}}
     daily = period_reports.get("24h") or {"error": "missing_24h"}
 
     qa = _scan_message_logs(config, lookback_days=lookback, list_limit=limit)
@@ -1040,6 +1080,7 @@ def build_dashboard_snapshot(
         "snapshot": snap,
         "daily": daily,
         "period_reports": period_reports,
+        "period_reports_source": period_source,
         "counters_series": series,
         "qa": qa,
         "calendar": calendar,

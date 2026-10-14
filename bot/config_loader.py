@@ -285,6 +285,8 @@ class AppConfig:
     metrics_message_log_dir: str
     metrics_message_log_retain_days: int
     metrics_message_log_text_max: int
+    metrics_period_reports_file: str = ""
+    metrics_period_reports_interval_minutes: int = 5
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:
@@ -1281,6 +1283,16 @@ def load_config() -> AppConfig:
         ),
         metrics_message_log_text_max=int(
             (cfg.get("metrics") or {}).get("message_log_text_max", 500) or 500
+        ),
+        metrics_period_reports_file=str(
+            (cfg.get("metrics") or {}).get("period_reports_file", "") or ""
+        ).strip(),
+        metrics_period_reports_interval_minutes=max(
+            int(
+                (cfg.get("metrics") or {}).get("period_reports_interval_minutes", 5)
+                or 5
+            ),
+            1,
         ),
     )
     assert_critical_config_fields(config)

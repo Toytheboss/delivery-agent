@@ -290,6 +290,15 @@ async def main() -> None:
 
     asyncio.create_task(folder_refresh_loop(scope, config.refresh_interval_minutes))
     asyncio.create_task(knowledge_refresh_loop(kb, config.refresh_interval_minutes))
+    if config.metrics_period_reports_file:
+        from bot.metrics import period_reports_publish_loop
+
+        asyncio.create_task(period_reports_publish_loop(config))
+        logger.info(
+            "Period reports publish enabled (%s, every %dm)",
+            config.metrics_period_reports_file,
+            config.metrics_period_reports_interval_minutes,
+        )
 
     if config.workflow_enabled:
         # Form + logo: event-driven (no default polling)
