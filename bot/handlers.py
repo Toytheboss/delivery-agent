@@ -45,8 +45,11 @@ from bot.workflow_mark_live import (
     is_mark_live_command,
     mark_live_from_group,
     peek_mark_live_pending,
+    peek_mark_live_site_pending,
     resolve_mark_live_reply,
+    resolve_mark_live_site_reply,
     save_mark_live_pending,
+    save_mark_live_site_pending,
 )
 from bot.workflow_kpi_diag import is_kpi_diag_command, run_kpi_diag
 from bot.workflow_pr_capture import capture_pr_tweet, is_pr_capture_command
@@ -292,13 +295,13 @@ class MessageHandler:
         )
         can_ops = qa_tester or delivery_account or workflow_op
 
-        # Mark-live disambiguation: quote Ambiguous reply + project name.
-        # Runs before BD ignore so ops can resolve even on shared accounts.
+        # Mark-live: quote Ambiguous reply + project name, or quote website
+        # reminder + site URL. Runs before BD ignore so project teams can paste
+        # the website even when the sender is on the no-reply list.
         reply_to_msg_id = getattr(message, "reply_to_msg_id", None)
         if (
             self.config.workflow_enabled
             and not event.is_private
-            and can_ops
             and reply_to_msg_id is not None
             and text
             and not is_mark_live
@@ -310,7 +313,35 @@ class MessageHandler:
             and not is_report_cmd
             and not is_daily_cmd
         ):
-            if peek_mark_live_pending(chat_id, int(reply_to_msg_id)) is not None:
+            quoted_id = int(reply_to_msg_id)
+            if peek_mark_live_site_pending(chat_id, quoted_id) is not None:
+                msg_id = message.id
+                if msg_id not in self._processing:
+                    self._processing.add(msg_id)
+                    try:
+                        site_reply = await resolve_mark_live_site_reply(
+                            self.config,
+                            chat_id=chat_id,
+                            quoted_msg_id=quoted_id,
+                            reply_text=text,
+                        )
+                        if site_reply is not None:
+                            await message.reply(site_reply)
+                            return
+                    except Exception:
+                        logger.exception(
+                            "Mark-live site submit failed in chat %s", chat_id
+                        )
+                        await message.reply(
+                            "Failed to save the website. Check logs."
+                        )
+                        return
+                    finally:
+                        self._processing.discard(msg_id)
+            if (
+                can_ops
+                and peek_mark_live_pending(chat_id, quoted_id) is not None
+            ):
                 msg_id = message.id
                 if msg_id not in self._processing:
                     self._processing.add(msg_id)
@@ -322,12 +353,20 @@ class MessageHandler:
                             self.config,
                             chat_id=chat_id,
                             chat_title=title,
-                            quoted_msg_id=int(reply_to_msg_id),
+                            quoted_msg_id=quoted_id,
                             picked_text=text,
                         )
                         if resolved is not None:
                             inc("mark_live_resolve")
-                            await message.reply(resolved)
+                            reply_msg = await message.reply(resolved.text)
+                            if resolved.need_site:
+                                rid, pname = resolved.need_site
+                                save_mark_live_site_pending(
+                                    chat_id=chat_id,
+                                    reply_msg_id=int(reply_msg.id),
+                                    record_id=rid,
+                                    project_name=pname,
+                                )
                             return
                     except Exception:
                         logger.exception(
@@ -579,6 +618,14 @@ class MessageHandler:
                         reply_msg_id=int(reply_msg.id),
                         chat_title=title,
                         candidates=outcome.candidates,
+                    )
+                if outcome.need_site:
+                    rid, pname = outcome.need_site
+                    save_mark_live_site_pending(
+                        chat_id=chat_id,
+                        reply_msg_id=int(reply_msg.id),
+                        record_id=rid,
+                        project_name=pname,
                     )
             except Exception:
                 logger.exception("Mark-live failed in chat %s", chat_id)

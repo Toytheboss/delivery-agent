@@ -32,8 +32,14 @@ logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parent.parent
 PENDING_PATH = ROOT / "data" / "mark_live_pending.json"
+SITE_PENDING_PATH = ROOT / "data" / "mark_live_site_pending.json"
 PENDING_TTL_SECONDS = 24 * 3600
 _CJK_RE = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]+")
+MISSING_SITE_REMINDER = (
+    "The project website field is empty. Please upload the project website.\n\n"
+    "Quote this message and reply with the official site URL (http:// or https://). "
+    "After it is saved, run mark live again."
+)
 
 
 def _english_status_label(text: str) -> str:
@@ -60,6 +66,8 @@ def _english_status_label(text: str) -> str:
 class MarkLiveOutcome:
     text: str
     candidates: list[tuple[str, str]] | None = None  # (record_id, project_name)
+    # When set, Mark live is blocked until 已上线链接 is filled via quote-reply.
+    need_site: tuple[str, str] | None = None  # (record_id, project_name)
 
 
 def is_mark_live_command(text: str, commands: list[str]) -> bool:
@@ -152,6 +160,88 @@ def peek_mark_live_pending(chat_id: int, reply_msg_id: int) -> dict[str, Any] | 
     if int(entry.get("chat_id") or 0) != int(chat_id):
         return None
     return entry
+
+
+def _load_site_pending() -> dict[str, Any]:
+    if not SITE_PENDING_PATH.exists():
+        return {"by_reply": {}}
+    try:
+        raw = json.loads(SITE_PENDING_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"by_reply": {}}
+    if not isinstance(raw, dict):
+        return {"by_reply": {}}
+    by_reply = raw.get("by_reply")
+    if not isinstance(by_reply, dict):
+        by_reply = {}
+    return {"by_reply": by_reply}
+
+
+def _save_site_pending(state: dict[str, Any]) -> None:
+    SITE_PENDING_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = SITE_PENDING_PATH.with_suffix(".tmp")
+    tmp.write_text(
+        json.dumps(state, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+    )
+    tmp.replace(SITE_PENDING_PATH)
+
+
+def save_mark_live_site_pending(
+    *,
+    chat_id: int,
+    reply_msg_id: int,
+    record_id: str,
+    project_name: str,
+) -> None:
+    """Persist the missing-website reminder so a quote-reply can fill 已上线链接."""
+    now = time.time()
+    state = _load_site_pending()
+    _prune_pending(state, now=now)
+    state["by_reply"][_pending_key(chat_id, reply_msg_id)] = {
+        "chat_id": int(chat_id),
+        "record_id": str(record_id),
+        "project_name": str(project_name),
+        "created_at": now,
+        "expires_at": now + PENDING_TTL_SECONDS,
+    }
+    _save_site_pending(state)
+
+
+def peek_mark_live_site_pending(chat_id: int, reply_msg_id: int) -> dict[str, Any] | None:
+    now = time.time()
+    state = _load_site_pending()
+    _prune_pending(state, now=now)
+    entry = state["by_reply"].get(_pending_key(chat_id, reply_msg_id))
+    if not isinstance(entry, dict):
+        return None
+    if int(entry.get("chat_id") or 0) != int(chat_id):
+        return None
+    return entry
+
+
+def pop_mark_live_site_pending(chat_id: int, reply_msg_id: int) -> dict[str, Any] | None:
+    now = time.time()
+    state = _load_site_pending()
+    _prune_pending(state, now=now)
+    key = _pending_key(chat_id, reply_msg_id)
+    entry = state["by_reply"].pop(key, None)
+    if entry is not None:
+        _save_site_pending(state)
+    if not isinstance(entry, dict):
+        return None
+    if int(entry.get("chat_id") or 0) != int(chat_id):
+        return None
+    return entry
+
+
+def live_site_missing(config: AppConfig, fields: dict[str, Any]) -> bool:
+    """True when progress「已上线链接」has no http(s) URL."""
+    from bot.workflow_live_link_sync import extract_http_site_url
+
+    live_field = str(
+        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+    ).strip()
+    return not extract_http_site_url(fields.get(live_field))
 
 
 def _pick_candidate(
@@ -517,6 +607,17 @@ async def mark_live_from_group(
         return MarkLiveOutcome(_ambiguous_text(candidates), candidates=candidates)
 
     record_id, project_name, fields = matches[0]
+    if live_site_missing(config, fields):
+        logger.info(
+            "Mark-live blocked: empty live site project=%r record=%s chat=%s",
+            project_name,
+            record_id,
+            chat_id,
+        )
+        return MarkLiveOutcome(
+            MISSING_SITE_REMINDER,
+            need_site=(record_id, project_name),
+        )
     text = await _apply_mark_live(
         client,
         config,
@@ -538,10 +639,10 @@ async def resolve_mark_live_reply(
     chat_title: str,
     quoted_msg_id: int,
     picked_text: str,
-) -> str | None:
+) -> MarkLiveOutcome | None:
     """If quote targets an ambiguous mark-live prompt, continue with picked name.
 
-    Returns reply text when handled, or None when this is not a pending prompt.
+    Returns an outcome when handled, or None when this is not a pending prompt.
     """
     pending = peek_mark_live_pending(chat_id, quoted_msg_id)
     if pending is None:
@@ -558,11 +659,13 @@ async def resolve_mark_live_reply(
             candidates.append((rid, name))
     if not candidates:
         pop_mark_live_pending(chat_id, quoted_msg_id)
-        return "Ambiguous mark-live prompt expired or empty. Run mark live again."
+        return MarkLiveOutcome(
+            "Ambiguous mark-live prompt expired or empty. Run mark live again."
+        )
 
     picked = (picked_text or "").strip()
     if not picked:
-        return (
+        return MarkLiveOutcome(
             "Reply with the exact project name, e.g. "
             + (candidates[0][1] if candidates else "Project Name")
         )
@@ -570,13 +673,13 @@ async def resolve_mark_live_reply(
     choice = _pick_candidate(picked, candidates)
     if choice is None:
         names = ", ".join(name for _, name in candidates)
-        return (
+        return MarkLiveOutcome(
             f"No match for {picked!r} among: {names}.\n"
             "Quote the Ambiguous message again and reply with the exact name."
         )
     if isinstance(choice, list):
         names = ", ".join(name for _, name in choice)
-        return (
+        return MarkLiveOutcome(
             f"Still ambiguous ({len(choice)}): {names}.\n"
             "Quote again and reply with the exact project name."
         )
@@ -588,7 +691,7 @@ async def resolve_mark_live_reply(
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
     if not app_id or not app_secret:
-        return "Missing LARK_APP_ID / LARK_APP_SECRET in .env"
+        return MarkLiveOutcome("Missing LARK_APP_ID / LARK_APP_SECRET in .env")
 
     loop = asyncio.get_running_loop()
     try:
@@ -602,7 +705,7 @@ async def resolve_mark_live_reply(
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("mark_live resolve: failed to load Lark records")
-        return f"Failed to read Lark: {exc}"
+        return MarkLiveOutcome(f"Failed to read Lark: {exc}")
 
     fields: dict[str, Any] = {}
     for record in records:
@@ -613,10 +716,24 @@ async def resolve_mark_live_reply(
                 project_name = live_name
             break
     else:
-        return f"Lark record {record_id} no longer found. Run mark live again."
+        return MarkLiveOutcome(
+            f"Lark record {record_id} no longer found. Run mark live again."
+        )
 
     title = (chat_title or "").strip() or str(pending.get("chat_title") or "")
-    return await _apply_mark_live(
+    if live_site_missing(config, fields):
+        logger.info(
+            "Mark-live resolve blocked: empty live site project=%r record=%s chat=%s",
+            project_name,
+            record_id,
+            chat_id,
+        )
+        return MarkLiveOutcome(
+            MISSING_SITE_REMINDER,
+            need_site=(record_id, project_name),
+        )
+
+    text = await _apply_mark_live(
         client,
         config,
         token=token,
@@ -625,4 +742,83 @@ async def resolve_mark_live_reply(
         fields=fields,
         chat_id=chat_id,
         chat_title=title,
+    )
+    return MarkLiveOutcome(text)
+
+
+def _site_url_from_reply(text: str) -> str:
+    from bot.workflow_live_link_sync import extract_http_site_url
+
+    return extract_http_site_url(text or "")
+
+
+async def resolve_mark_live_site_reply(
+    config: AppConfig,
+    *,
+    chat_id: int,
+    quoted_msg_id: int,
+    reply_text: str,
+) -> str | None:
+    """If quote targets a missing-website reminder, write 已上线链接.
+
+    Returns reply text when handled, or None when this is not a site pending.
+    """
+    pending = peek_mark_live_site_pending(chat_id, quoted_msg_id)
+    if pending is None:
+        return None
+
+    record_id = str(pending.get("record_id") or "").strip()
+    project_name = str(pending.get("project_name") or "").strip() or record_id
+    if not record_id:
+        pop_mark_live_site_pending(chat_id, quoted_msg_id)
+        return "Website prompt expired. Run mark live again."
+
+    url = _site_url_from_reply(reply_text)
+    if not url:
+        return (
+            "Please reply with the official site URL starting with http:// or https://.\n"
+            "Quote the website reminder again and paste the link."
+        )
+
+    live_field = str(
+        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+    ).strip()
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        return "Missing LARK_APP_ID / LARK_APP_SECRET in .env"
+
+    loop = asyncio.get_running_loop()
+    try:
+        token = await loop.run_in_executor(
+            None, get_tenant_access_token, app_id, app_secret
+        )
+        await loop.run_in_executor(
+            None,
+            update_record,
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
+            record_id,
+            {live_field: {"link": url, "text": url}},
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.exception(
+            "mark_live site submit failed project=%r record=%s",
+            project_name,
+            record_id,
+        )
+        return f"Couldn't save the website for {project_name}: {exc}"
+
+    pop_mark_live_site_pending(chat_id, quoted_msg_id)
+    logger.info(
+        "mark_live site submitted project=%r record=%s url=%s",
+        project_name,
+        record_id,
+        url[:100],
+    )
+    return (
+        f"Website saved for {project_name}.\n"
+        f"`{url}`\n"
+        "Run mark live again to continue."
     )
