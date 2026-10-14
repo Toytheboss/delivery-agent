@@ -162,6 +162,8 @@ class AppConfig:
     workflow_logo_link_sync_minutes: int
     workflow_live_link_field: str
     workflow_project_link_field: str
+    workflow_live_link_sync_enabled: bool
+    workflow_live_link_sync_minutes: int
     workflow_logo_state_file: str
     workflow_kpi3_enabled: bool
     workflow_kpi3_copy_field: str
@@ -781,6 +783,12 @@ def load_config() -> AppConfig:
         ),
         workflow_project_link_field=str(
             workflow.get("project_link_field", "项目链接")
+        ),
+        workflow_live_link_sync_enabled=bool(
+            workflow.get("live_link_sync_enabled", True)
+        ),
+        workflow_live_link_sync_minutes=int(
+            workflow.get("live_link_sync_minutes", 5) or 5
         ),
         workflow_logo_state_file=str(
             workflow.get("logo_state_file", "data/logo_fill_state.json")

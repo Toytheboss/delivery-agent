@@ -100,6 +100,14 @@ async def run_live_status_watch_once(
         except Exception:
             logger.exception("live-status-watch: deploy-status piggyback failed")
 
+    if getattr(config, "workflow_live_link_sync_enabled", True):
+        try:
+            from bot.workflow_live_link_sync import sync_live_links_once
+
+            sync_live_links_once(config, records=records)
+        except Exception:
+            logger.exception("live-status-watch: live-link sync piggyback failed")
+
     live_now: list[tuple[str, str]] = []
     for record in records:
         rid = str(record.get("record_id") or "")
