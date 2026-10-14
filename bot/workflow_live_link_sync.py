@@ -81,6 +81,11 @@ def sync_live_links_once(
     }
     if not getattr(config, "workflow_live_link_sync_enabled", True):
         return stats
+    # Only the audit host writes progress live links (avoid double writes).
+    from bot.workflow_kpi_write import kpi_checks_on_this_host
+
+    if not kpi_checks_on_this_host():
+        return stats
 
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
