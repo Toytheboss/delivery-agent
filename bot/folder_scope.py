@@ -40,6 +40,19 @@ def chat_in_joined_scope(
     return chat_id not in ignored
 
 
+def select_project_chats(
+    titles: dict[int, str], keywords: list[str]
+) -> dict[int, str]:
+    """Keep joined groups whose title matches the project keywords."""
+    from bot.group_welcome import title_matches_project
+
+    return {
+        chat_id: title
+        for chat_id, title in titles.items()
+        if title_matches_project(title, keywords)
+    }
+
+
 def _sync_title_cache(titles: dict[int, str]) -> None:
     """Rewrite the on-disk title cache so it matches current membership."""
     path = ROOT / "data" / "folder_title_cache.json"
@@ -230,10 +243,20 @@ class FolderScope:
 
     async def refresh(self) -> set[int]:
         ignored = set(getattr(self.config, "ignored_group_ids", set()) or set())
-        self._chat_ids, titles = await fetch_joined_group_ids(
-            self.client, ignored=ignored
+        _joined, titles = await fetch_joined_group_ids(self.client, ignored=ignored)
+        keywords = list(
+            getattr(self.config, "folder_auto_add_keywords", None)
+            or getattr(self.config, "welcome_name_keywords", None)
+            or []
         )
-        _sync_title_cache(titles)
+        project = select_project_chats(titles, keywords)
+        logger.info(
+            "Project groups in scope: %d (joined groups %d)",
+            len(project),
+            len(_joined),
+        )
+        self._chat_ids = set(project)
+        _sync_title_cache(project)
         return set(self._chat_ids)
 
     def contains(self, chat_id: int) -> bool:
