@@ -40,6 +40,14 @@ _DEFAULT_PROGRESS_NAME = "项目名称 Project Name"
 _DEFAULT_KPI2_FIELD = "KPI 2 - PR Announcement"
 _DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗"
 _FINAL_FAIL_COORDS = frozenset({"不通过", "KPI未通过"})
+# When BD submits before first check (or while not held), explain the gate.
+_EARLY_FINAL_ONLY_HELD_NOTICE = (
+    "手动提交信息触发终审，仅适用于一审结果为「暂扣整改」的项目。"
+    "一审尚未完成时提交，不会触发终审，请等待一审结果。\n"
+    "Manually submitting info to trigger a final review is only available when "
+    "the first check result is Held for rectification. Submitting before the "
+    "first check will not start a final review — please wait for the first-check result."
+)
 _RESULT_KPI_FAILED_RE = re.compile(
     r"(?im)^\s*Result:\s*KPI failed\b"
 )
@@ -447,6 +455,13 @@ def progress_coord_is_final_failed(
     return quoted_result_is_kpi_failed(quoted)
 
 
+def early_final_skip_notice(reason: str) -> str:
+    """Bilingual notice when submit cannot trigger final (not held)."""
+    if str(reason or "").startswith("not_held"):
+        return _EARLY_FINAL_ONLY_HELD_NOTICE
+    return ""
+
+
 def format_submit_reply(
     *,
     project: str,
@@ -666,14 +681,21 @@ def maybe_handle_project_info_submit(
                 reply = (
                     f"{reply}\nFinal review posted: {early.get('result') or 'done'}."
                 )
-            elif early.get("reason") and not str(early.get("reason") or "").startswith(
-                "not_held"
-            ):
-                logger.info(
-                    "project info submit early final skipped project=%r reason=%s",
-                    project,
-                    early.get("reason"),
-                )
+            else:
+                notice = early_final_skip_notice(str(early.get("reason") or ""))
+                if notice:
+                    reply = f"{reply}\n{notice}"
+                    logger.info(
+                        "project info submit early final skipped project=%r reason=%s",
+                        project,
+                        early.get("reason"),
+                    )
+                elif early.get("reason"):
+                    logger.info(
+                        "project info submit early final skipped project=%r reason=%s",
+                        project,
+                        early.get("reason"),
+                    )
         except Exception:
             logger.exception(
                 "project info submit early final crashed project=%r", project
