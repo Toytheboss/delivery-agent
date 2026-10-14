@@ -642,7 +642,7 @@ def test_pass_chain_plan_six_pass_then_seven_coord_time():
     assert plan["write_kpi7"] is False
     assert plan["write_coord"] is False
     assert plan["write_time"] is True
-    live["KPI 判定时间"] = "2026-09-26 11:00"
+    live["written time"] = "2026-09-26 11:00"
     plan = pass_chain_plan(live)
     assert plan["write_time"] is False
 
