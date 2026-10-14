@@ -20,6 +20,11 @@ scope:
   auto_add_scan_minutes: 15
   # 最后一条消息在这天或更早（UTC+8）的群不再自动加入 folder。空着表示不限制。
   # inactive_before: "2026-08-20"
+  # 文件夹建满后，腾出最久没动静的群给新群。只移走另一个号文件夹里还留着的群。
+  auto_rotate_enabled: false
+  auto_rotate_inactive_days: 45
+  auto_rotate_keep_free: 15
+  auto_rotate_max_per_scan: 25
   refresh_interval_minutes: 30
   # 是否在 Delivery 分组内的项目群自动回复（测试阶段建议 false）
   group_replies_enabled: false

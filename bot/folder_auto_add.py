@@ -7,13 +7,16 @@ the next folder (Delivery #4, #5, ...) and keep using it.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from telethon import events, utils
+from telethon.errors import BadRequestError
 from telethon.tl.functions.messages import GetDialogFiltersRequest, UpdateDialogFilterRequest
 from telethon.tl.types import (
     Channel,
@@ -98,6 +101,137 @@ def inactive_on_or_before(when: datetime | None, cutoff: str) -> bool:
     except Exception:  # noqa: BLE001
         local = when.astimezone(timezone(timedelta(hours=8)))
     return local.date() <= limit
+
+
+_ACTIVITY_TTL_SECONDS = 30 * 60
+_PEER_DATA_DIRS = (
+    Path("/opt/botchain-qa-tg-bot/data"),
+    Path("/opt/delivery-agent/data"),
+)
+_activity_cache: tuple[float, dict[int, datetime]] | None = None
+
+
+def _parse_ts(value: object) -> datetime | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def _absorb_activity(path: Path, found: dict[int, datetime]) -> None:
+    try:
+        handle = path.open(encoding="utf-8", errors="ignore")
+    except OSError:
+        return
+    with handle:
+        for line in handle:
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            try:
+                chat_id = int(row.get("chat_id"))
+            except (TypeError, ValueError):
+                continue
+            when = _parse_ts(row.get("ts"))
+            if when is not None and when > found.get(chat_id, when - timedelta(seconds=1)):
+                found[chat_id] = when
+
+
+def _activity_by_chat() -> dict[int, datetime]:
+    """Last seen time per chat, from both bots' message logs and workflow events."""
+    global _activity_cache
+    now_mono = time.monotonic()
+    if _activity_cache and now_mono - _activity_cache[0] < _ACTIVITY_TTL_SECONDS:
+        return _activity_cache[1]
+    roots: list[Path] = []
+    for raw in (ROOT / "data", *_PEER_DATA_DIRS):
+        try:
+            resolved = raw.resolve()
+        except OSError:
+            continue
+        if resolved in roots or not resolved.is_dir():
+            continue
+        roots.append(resolved)
+    found: dict[int, datetime] = {}
+    for root in roots:
+        logs = sorted((root / "message_logs").glob("messages-*.jsonl"))[-70:]
+        for path in logs:
+            _absorb_activity(path, found)
+        events = root / "workflow_events.jsonl"
+        if events.is_file():
+            _absorb_activity(events, found)
+    _activity_cache = (now_mono, found)
+    return found
+
+
+def _peer_folder_chat_ids() -> set[int] | None:
+    """Chats the other bot still keeps in its folders, or None when unknown."""
+    try:
+        own = (ROOT / "data").resolve()
+    except OSError:
+        own = None
+    found = False
+    ids: set[int] = set()
+    for raw in _PEER_DATA_DIRS:
+        try:
+            if own is not None and raw.resolve() == own:
+                continue
+        except OSError:
+            continue
+        path = raw / "folder_title_cache.json"
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        titles = payload.get("titles") if isinstance(payload, dict) else None
+        if not isinstance(titles, dict):
+            continue
+        found = True
+        for key in titles:
+            try:
+                ids.add(int(key))
+            except (TypeError, ValueError):
+                continue
+    return ids if found else None
+
+
+def select_rotate_chat_ids(
+    entries: list[tuple[int, datetime | None]],
+    *,
+    pinned_ids: set[int],
+    peer_ids: set[int] | None,
+    now: datetime,
+    inactive_days: int,
+    limit: int,
+) -> list[int]:
+    """Oldest chats quiet for ``inactive_days``, skipping pinned and peer-only copies."""
+    if limit <= 0:
+        return []
+    cutoff = now - timedelta(days=max(int(inactive_days), 1))
+    never = datetime.min.replace(tzinfo=timezone.utc)
+    eligible: list[tuple[datetime, int]] = []
+    for chat_id, last in entries:
+        if chat_id in pinned_ids:
+            continue
+        if peer_ids is not None and chat_id not in peer_ids:
+            continue
+        if last is not None and last >= cutoff:
+            continue
+        eligible.append((last or never, chat_id))
+    eligible.sort()
+    return [chat_id for _, chat_id in eligible[:limit]]
 
 
 def _folder_sort_key(name: str) -> tuple:
@@ -295,6 +429,114 @@ async def _write_folder(
         raise RuntimeError(f"UpdateDialogFilterRequest failed for {folder_name!r}")
 
 
+def _filters_full(exc: BaseException) -> bool:
+    return "DIALOG_FILTERS_TOO_MUCH" in str(exc)
+
+
+async def _load_folder_states(
+    client: TelegramClient, config: AppConfig
+) -> list[tuple[str, int, object, set[int], list[Any], list[Any]]]:
+    prefix = (config.folder_name_prefix or "Delivery").strip() or "Delivery"
+    folders = await discover_project_folders(
+        client,
+        configured_names=list(config.folder_names or []),
+        prefix=prefix,
+    )
+    states: list[tuple[str, int, object, set[int], list[Any], list[Any]]] = []
+    for name, fid, item in folders:
+        if name not in config.folder_names:
+            config.folder_names.append(name)
+        ids, pinned, include = await _folder_peer_ids(client, item)
+        states.append((name, fid, item, ids, pinned, include))
+    return states
+
+
+async def release_stale_chats(
+    client: TelegramClient,
+    config: AppConfig,
+    states: list[tuple[str, int, object, set[int], list[Any], list[Any]]],
+    *,
+    need: int,
+) -> int:
+    """Drop the quietest chats so a full account can take new groups."""
+    if not config.folder_auto_rotate_enabled or need <= 0:
+        return 0
+    limit = min(max(int(need), 1), max(int(config.folder_auto_rotate_max_per_scan), 1))
+    pinned_ids: set[int] = set()
+    entries: list[tuple[int, datetime | None]] = []
+    owner: dict[int, int] = {}
+    activity = _activity_by_chat()
+    for index, (_name, _fid, _item, ids, pinned, _include) in enumerate(states):
+        for peer in pinned:
+            try:
+                pinned_ids.add(utils.get_peer_id(peer))
+            except Exception:  # noqa: BLE001
+                continue
+        for chat_id in ids:
+            if chat_id in owner:
+                continue
+            owner[chat_id] = index
+            entries.append((chat_id, activity.get(chat_id)))
+    chosen = select_rotate_chat_ids(
+        entries,
+        pinned_ids=pinned_ids,
+        peer_ids=_peer_folder_chat_ids(),
+        now=datetime.now(timezone.utc),
+        inactive_days=config.folder_auto_rotate_inactive_days,
+        limit=limit,
+    )
+    if not chosen:
+        logger.info("folder_auto_add: folders full but nothing quiet enough to rotate")
+        return 0
+    drop = set(chosen)
+    removed = 0
+    for name, fid, item, ids, pinned, include in states:
+        gone = ids & drop
+        if not gone:
+            continue
+        kept = [
+            peer
+            for peer in include
+            if _peer_id_or_none(peer) not in gone
+        ]
+        await _write_folder(
+            client,
+            folder_id=fid,
+            folder_name=name,
+            existing=item,
+            pinned_peers=pinned,
+            include_peers=kept,
+        )
+        removed += len(gone)
+        logger.info(
+            "folder_auto_add: rotated %d quiet chat(s) out of %r", len(gone), name
+        )
+        await asyncio.sleep(0.4)
+    return removed
+
+
+def _peer_id_or_none(peer: object) -> int | None:
+    try:
+        return utils.get_peer_id(peer)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def maintain_folder_room(client: TelegramClient, config: AppConfig) -> int:
+    """Rotate when free slots across all folders drop below the target."""
+    if not config.folder_auto_rotate_enabled:
+        return 0
+    states = await _load_folder_states(client, config)
+    if not states:
+        return 0
+    max_per = max(int(config.folder_max_chats or DEFAULT_MAX_PER_FOLDER), 1)
+    free = sum(max(max_per - len(ids), 0) for _n, _f, _i, ids, _p, _c in states)
+    gap = int(config.folder_auto_rotate_keep_free) - free
+    if gap <= 0:
+        return 0
+    return await release_stale_chats(client, config, states, need=gap)
+
+
 async def _resolve_live_chat(
     client: TelegramClient, chat: object
 ) -> tuple[object, int, Any]:
@@ -398,11 +640,26 @@ async def ensure_chat_in_folders(
                 )
                 return None
 
-        target = None
-        for name, fid, item, ids, pinned, include in folder_states:
-            if len(ids) < max_per:
-                target = (name, fid, item, ids, pinned, include)
-                break
+        def _with_room() -> tuple | None:
+            for state in folder_states:
+                if len(state[3]) < max_per:
+                    return state
+            return None
+
+        target = _with_room()
+        if target is None and config.folder_auto_rotate_enabled:
+            freed = await release_stale_chats(
+                client,
+                config,
+                folder_states,
+                need=config.folder_auto_rotate_keep_free,
+            )
+            if freed:
+                folder_states = await _load_folder_states(client, config)
+                for _name, _fid, _item, ids, _pinned, _include in folder_states:
+                    if chat_id in ids:
+                        return None
+                target = _with_room()
 
         if target is None:
             if not config.folder_auto_create_enabled:
@@ -418,24 +675,45 @@ async def ensure_chat_in_folders(
             existing_names = [n for n, *_ in folder_states] or list(config.folder_names)
             new_name = _next_folder_name(existing_names, prefix)
             new_id = await _allocate_folder_id(client)
-            await _write_folder(
-                client,
-                folder_id=new_id,
-                folder_name=new_name,
-                existing=None,
-                pinned_peers=[],
-                include_peers=[input_peer],
-            )
-            _remember_folder_name(config, new_name)
-            logger.info(
-                "folder_auto_add: created %r (id=%s) and added chat_id=%s %r",
-                new_name,
-                new_id,
-                chat_id,
-                chat_title,
-            )
-            name = new_name
-        else:
+            try:
+                await _write_folder(
+                    client,
+                    folder_id=new_id,
+                    folder_name=new_name,
+                    existing=None,
+                    pinned_peers=[],
+                    include_peers=[input_peer],
+                )
+            except BadRequestError as exc:
+                if not _filters_full(exc):
+                    raise
+                logger.warning(
+                    "folder_auto_add: Telegram folder limit reached; rotating quiet chats"
+                )
+                freed = await release_stale_chats(
+                    client,
+                    config,
+                    folder_states,
+                    need=config.folder_auto_rotate_keep_free,
+                )
+                if not freed:
+                    return None
+                folder_states = await _load_folder_states(client, config)
+                target = _with_room()
+                if target is None:
+                    return None
+            else:
+                _remember_folder_name(config, new_name)
+                logger.info(
+                    "folder_auto_add: created %r (id=%s) and added chat_id=%s %r",
+                    new_name,
+                    new_id,
+                    chat_id,
+                    chat_title,
+                )
+                name = new_name
+                target = None
+        if target is not None:
             name, fid, item, _ids, pinned, include = target
             include = list(include) + [input_peer]
             await _write_folder(
@@ -495,6 +773,10 @@ async def scan_and_add_missing(
 
     keywords = config.folder_auto_add_keywords or config.welcome_name_keywords
     added = 0
+    try:
+        await maintain_folder_room(client, config)
+    except Exception:
+        logger.exception("folder_auto_add: rotate before scan failed")
     async with tg_heavy_section():
         async for dialog in client.iter_dialogs():
             entity = dialog.entity

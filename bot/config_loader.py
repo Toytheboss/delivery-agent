@@ -64,6 +64,10 @@ class AppConfig:
     folder_max_chats: int
     folder_auto_add_scan_minutes: int
     folder_inactive_before: str
+    folder_auto_rotate_enabled: bool
+    folder_auto_rotate_inactive_days: int
+    folder_auto_rotate_keep_free: int
+    folder_auto_rotate_max_per_scan: int
     pilot_enabled: bool
     pilot_group_ids: set[int]
     pilot_group_titles: set[str]
@@ -601,6 +605,16 @@ def load_config() -> AppConfig:
         folder_max_chats=int(scope.get("max_chats_per_folder", 100)),
         folder_auto_add_scan_minutes=int(scope.get("auto_add_scan_minutes", 2)),
         folder_inactive_before=str(scope.get("inactive_before") or "").strip()[:10],
+        folder_auto_rotate_enabled=bool(scope.get("auto_rotate_enabled", False)),
+        folder_auto_rotate_inactive_days=max(
+            int(scope.get("auto_rotate_inactive_days", 45) or 45), 1
+        ),
+        folder_auto_rotate_keep_free=max(
+            int(scope.get("auto_rotate_keep_free", 15) or 15), 1
+        ),
+        folder_auto_rotate_max_per_scan=max(
+            int(scope.get("auto_rotate_max_per_scan", 25) or 25), 1
+        ),
         pilot_enabled=bool(scope.get("pilot_enabled", False)),
         pilot_group_ids=pilot_group_ids,
         pilot_group_titles=pilot_group_titles,
