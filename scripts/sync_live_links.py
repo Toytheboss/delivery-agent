@@ -11,6 +11,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from dotenv import load_dotenv
+
 from bot.config_loader import load_config
 from bot.workflow_live_link_sync import sync_live_links_once
 
@@ -21,6 +23,7 @@ def main() -> int:
     parser.add_argument("--limit", type=int, default=None)
     args = parser.parse_args()
     os.chdir(ROOT)
+    load_dotenv(ROOT / ".env")
     cfg = load_config()
     stats = sync_live_links_once(cfg, dry_run=args.dry_run, limit=args.limit)
     print(stats)
