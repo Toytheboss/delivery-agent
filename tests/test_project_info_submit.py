@@ -424,3 +424,88 @@ def test_submit_ignored_on_delivery_host():
         lambda: False,
     ):
         assert maybe_handle_project_info_submit(config, event) is None
+
+
+def test_coord_value_falls_back_to_legacy_field():
+    from bot.workflow_kpi_result_push import _coord_value
+
+    assert _coord_value({"KPI Final": "暂扣整改"}) == "暂扣整改"
+    assert _coord_value({"KPI 统筹": "暂扣整改"}) == "暂扣整改"
+    assert _coord_value({}) == ""
+
+
+def test_submit_unclaims_when_early_final_fails(monkeypatch):
+    config = SimpleNamespace(
+        raw={"workflow": {"project_info_submit": {"enabled": True}}},
+        workflow_live_onboard_lark_chat_id="oc_verify",
+        workflow_base_app_token="app",
+        workflow_progress_table_id="tbl",
+        workflow_project_name_field="项目名称 Project Name",
+    )
+    event = {
+        "sender": {"sender_type": "user"},
+        "message": {
+            "chat_id": "oc_verify",
+            "message_id": "om_retry",
+            "parent_id": "om_parent",
+            "message_type": "text",
+            "content": '{"text":"https://x.com/foo/status/1"}',
+        },
+    }
+    parent = {
+        "message_type": "post",
+        "body": {
+            "content": (
+                '{"content":[[{"tag":"md","text":'
+                '"**Project:** `RetryMe`\\n**Result:** Held for rectification"}]]}'
+            )
+        },
+    }
+    unclaimed: list[str] = []
+    replies: list[str] = []
+    monkeypatch.setattr(
+        "bot.workflow_kpi_write.kpi_checks_on_this_host", lambda: True
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit.claim_message", lambda _m: True
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit.unclaim_message",
+        lambda mid: unclaimed.append(mid),
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit._lark_creds",
+        lambda _c: ("id", "secret"),
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit.get_tenant_access_token",
+        lambda *_a, **_k: "tok",
+    )
+    monkeypatch.setattr(
+        "bot.workflow_lark_recall.get_message", lambda *_a, **_k: parent
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit.progress_coord_is_final_failed",
+        lambda *_a, **_k: False,
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit.write_pr_link",
+        lambda *_a, **_k: {
+            "ok": True,
+            "action": "updated",
+            "pr": "https://x.com/foo/status/1",
+            "record_ids": ["rec1"],
+        },
+    )
+    monkeypatch.setattr(
+        "bot.workflow_kpi_result_push.run_early_final_after_submit",
+        lambda *_a, **_k: {"ran": False, "reason": "audit_or_send_failed"},
+    )
+    monkeypatch.setattr(
+        "bot.workflow_project_info_submit._reply",
+        lambda _t, _m, text: replies.append(text),
+    )
+    out = maybe_handle_project_info_submit(config, event)
+    assert out and out.get("project_info_submit") == "done"
+    assert unclaimed == ["om_retry"]
+    assert "自动终审未完成" in replies[0]

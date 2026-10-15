@@ -64,7 +64,10 @@ _PASS = "通过"
 _HELD_COORD = "暂扣整改"
 _FAIL_COORD = "不通过"
 _COORD_FIELD = "KPI Final"
+# Live table renamed away from these; keep as read fallbacks only.
+_COORD_FIELD_FALLBACKS = ("KPI 统筹",)
 _JUDGE_FIELD = "written time"
+_JUDGE_FIELD_FALLBACKS = ("KPI 判定时间",)
 _KPI1_RESULT = "Twitter result"
 _KPI1_COPY = "KPI 1 - Twitter"
 _KPI2_RESULT = "PR results"
@@ -864,7 +867,14 @@ def push_pending(
 
 
 def _coord_value(fields: dict[str, Any]) -> str:
-    return field_result(fields, _COORD_FIELD) or _field_text(fields, _COORD_FIELD)
+    value = field_result(fields, _COORD_FIELD) or _field_text(fields, _COORD_FIELD)
+    if value:
+        return value
+    for name in _COORD_FIELD_FALLBACKS:
+        value = field_result(fields, name) or _field_text(fields, name)
+        if value:
+            return value
+    return ""
 
 
 def pick_early_final_progress_row(

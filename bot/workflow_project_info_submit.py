@@ -16,7 +16,7 @@ from typing import Any
 from bot.lark_bitable import create_record, get_tenant_access_token, list_records, update_record
 from bot.workflow_form_dispatch import _field_text, _normalize_name
 from bot.workflow_kpi1_twitter import _RESERVED_HANDLES, twitter_handle_from_url
-from bot.workflow_lark_relay import claim_message
+from bot.workflow_lark_relay import claim_message, unclaim_message
 from bot.workflow_pr_capture import (
     _display_pr_url,
     collect_urls_from_text,
@@ -712,12 +712,16 @@ def maybe_handle_project_info_submit(
                     project,
                     reason or "unknown",
                 )
+                # not_held is intentional; other failures must be retryable.
+                if not reason.startswith("not_held"):
+                    unclaim_message(message_id)
         except Exception:
             logger.exception(
                 "project info submit early final crashed project=%r", project
             )
             reply = f"{reply}\n{_EARLY_FINAL_FAILED_NOTICE}"
             early = {"ran": False, "reason": "crashed"}
+            unclaim_message(message_id)
     _reply(token, message_id, reply)
     try:
         from bot.workflow_events import log_delivery

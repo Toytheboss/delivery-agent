@@ -245,6 +245,23 @@ def log_sent_message(
         logger.exception("lark relay sent-file failed")
 
 
+def _read_seen_locked(handle) -> list[str]:
+    handle.seek(0)
+    raw_text = handle.read()
+    try:
+        raw = json.loads(raw_text) if raw_text.strip() else []
+    except json.JSONDecodeError:
+        raw = []
+    return [str(item) for item in raw if str(item).strip()] if isinstance(raw, list) else []
+
+
+def _write_seen_locked(handle, seen: list[str]) -> None:
+    handle.seek(0)
+    handle.truncate()
+    handle.write(json.dumps(seen[-_SEEN_LIMIT:], ensure_ascii=False))
+    handle.flush()
+
+
 def claim_message(message_id: str) -> bool:
     """True the first time this Lark message is handled."""
     message_id = (message_id or "").strip()
@@ -256,26 +273,40 @@ def claim_message(message_id: str) -> bool:
         with path.open("a+", encoding="utf-8") as handle:
             fcntl.flock(handle, fcntl.LOCK_EX)
             try:
-                handle.seek(0)
-                raw_text = handle.read()
-                try:
-                    raw = json.loads(raw_text) if raw_text.strip() else []
-                except json.JSONDecodeError:
-                    raw = []
-                seen = [str(item) for item in raw if str(item).strip()] if isinstance(raw, list) else []
+                seen = _read_seen_locked(handle)
                 if message_id in seen:
                     return False
                 seen.append(message_id)
-                handle.seek(0)
-                handle.truncate()
-                handle.write(json.dumps(seen[-_SEEN_LIMIT:], ensure_ascii=False))
-                handle.flush()
+                _write_seen_locked(handle, seen)
                 return True
             finally:
                 fcntl.flock(handle, fcntl.LOCK_UN)
     except OSError:
         logger.exception("lark relay seen-file failed")
         return True
+
+
+def unclaim_message(message_id: str) -> None:
+    """Allow the same Lark message to be handled again after a partial failure."""
+    message_id = (message_id or "").strip()
+    if not message_id:
+        return
+    path = _seen_path()
+    try:
+        if not path.exists():
+            return
+        with path.open("a+", encoding="utf-8") as handle:
+            fcntl.flock(handle, fcntl.LOCK_EX)
+            try:
+                seen = _read_seen_locked(handle)
+                if message_id not in seen:
+                    return
+                seen = [item for item in seen if item != message_id]
+                _write_seen_locked(handle, seen)
+            finally:
+                fcntl.flock(handle, fcntl.LOCK_UN)
+    except OSError:
+        logger.exception("lark relay unclaim failed message_id=%s", message_id)
 
 
 def search_users(token: str, query: str) -> list[dict[str, str]]:
