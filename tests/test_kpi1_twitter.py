@@ -437,6 +437,23 @@ def test_find_mainnet_pr_url_takes_newest_hit():
     )
 
 
+def test_find_mainnet_pr_url_accepts_botchain_mention_without_project_name():
+    since = datetime(2026, 9, 1, tzinfo=timezone.utc)
+    rows = [
+        (
+            datetime(2026, 10, 6, tzinfo=timezone.utc),
+            "We are live on @BOTChain_ai  Can't wait to see what's ahead!",
+            {"id": "99"},
+        ),
+    ]
+    assert (
+        find_mainnet_pr_url(
+            "signal_ledger_", rows, since=since, project_name="Signalledger"
+        )
+        == "https://x.com/signal_ledger_/status/99"
+    )
+
+
 def test_parse_mainnet_pr_choice_keeps_listed_id():
     from bot.workflow_kpi1_twitter import parse_mainnet_pr_choice
 
@@ -539,7 +556,7 @@ def test_judge_api_failure_returns_empty(monkeypatch):
         rows=[
             (
                 datetime(2026, 9, 20, tzinfo=timezone.utc),
-                "partnership with BOT Chain",
+                "shipping a new feature this week",
                 {"id": "20"},
             )
         ],

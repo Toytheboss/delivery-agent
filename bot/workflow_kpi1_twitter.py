@@ -44,13 +44,14 @@ _READ_ENOUGH = 6
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
 _KPI2_LINK = "KPI 2 - PR Announcement"
-_CHAIN = r"(?:bot\s*chain|botchain)"
+# Official handle posts often say @BOTChain_ai; allow @ and _ai suffix.
+_CHAIN = r"(?:@?bot[\s_]*chain(?:_ai)?|@?botchain(?:_ai)?)"
 _LIVE_ON_CHAIN_RE = re.compile(
-    rf"\b(?:go[\s-]?live|live|launched)\s+on\s+{_CHAIN}\b",
+    rf"(?<![A-Za-z0-9_])(?:go[\s-]?live|live|launched)\s+on\s+{_CHAIN}(?![A-Za-z0-9])",
     re.I,
 )
 _PARTNERSHIP_CHAIN_RE = re.compile(
-    rf"\bpartnership(?:\s+with)?\s+{_CHAIN}\b",
+    rf"(?<![A-Za-z0-9_])partnership(?:\s+with)?\s+{_CHAIN}(?![A-Za-z0-9])",
     re.I,
 )
 _PR_CANDIDATE_LIMIT = 40
@@ -266,6 +267,7 @@ def is_mainnet_pr_tweet(
     extra: dict[str, Any] | None = None,
     *,
     project_name: str,
+    require_project_name: bool = True,
 ) -> bool:
     body = text or ""
     if is_retweet(body, extra):
@@ -274,6 +276,8 @@ def is_mainnet_pr_tweet(
         _LIVE_ON_CHAIN_RE.search(body) or _PARTNERSHIP_CHAIN_RE.search(body)
     ):
         return False
+    if not require_project_name:
+        return True
     return tweet_has_project_name(body, project_name)
 
 
@@ -284,6 +288,9 @@ def find_mainnet_pr_url(
     since: datetime,
     project_name: str,
 ) -> str:
+    """Newest launch tweet on this handle. Name-in-body is optional: the timeline
+    is already the official account, and many posts only say live on @BOTChain_ai.
+    """
     who = (handle or "").strip().lstrip("@")
     if not who:
         return ""
@@ -291,7 +298,12 @@ def find_mainnet_pr_url(
     for dt, text, extra in rows:
         if dt < since:
             continue
-        if not is_mainnet_pr_tweet(text, extra, project_name=project_name):
+        if not is_mainnet_pr_tweet(
+            text,
+            extra,
+            project_name=project_name,
+            require_project_name=False,
+        ):
             continue
         tweet_id = _tweet_id(extra if isinstance(extra, dict) else None)
         if not tweet_id:
