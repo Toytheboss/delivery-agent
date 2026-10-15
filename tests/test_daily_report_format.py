@@ -9,7 +9,9 @@ from bot.metrics import (
     _fmt_kind_line,
     _form_first_send_names,
     _live_without_form,
+    _summarize_delivery_funnel,
     format_daily_report_zh,
+    format_report_zh,
     split_telegram_text,
 )
 
@@ -182,3 +184,136 @@ def test_format_daily_report_counts_every_form_send() -> None:
     assert "表单新发：3（ProofPass、Parliament、Engrow）" in text
     assert "主网上线但没有表单记录：2（Orbit、Pikachu）" in text
     assert "另" not in text.split("表单新发")[1].split("\n", 1)[0]
+    assert "上线项目信息表单发出" in text
+    assert "初审项目：0" in text
+    assert "终审项目：0" in text
+
+
+def test_delivery_funnel_counts_form_first_and_final() -> None:
+    tz = timezone(timedelta(hours=8))
+    since = datetime(2026, 10, 14, 0, 0, tzinfo=tz)
+    records = [
+        {
+            "record_id": "rec-pass",
+            "fields": {
+                "项目名称 Project Name": "Oracle",
+                "KPI Final": "通过",
+                "KPI 1 - Twitter": "First check 2026-10-14 10:00\npassed",
+                "KPI 6 - On chain interaction": "First check 2026-10-14 10:00\npassed",
+                "KPI 7 - Ongoing operation": "First check 2026-10-14 10:00\npassed",
+            },
+        },
+        {
+            "record_id": "rec-held",
+            "fields": {
+                "项目名称 Project Name": "Escrow",
+                "KPI Final": "暂扣整改",
+                "KPI 1 - Twitter": "First check 2026-10-14 10:00\nfailed",
+                "KPI 6 - On chain interaction": "First check 2026-10-14 10:00\nfailed",
+            },
+        },
+        {
+            "record_id": "rec-leap",
+            "fields": {
+                "项目名称 Project Name": "Leap",
+                "KPI Final": "通过",
+                "KPI 1 - Twitter": (
+                    "First check 2026-10-14 10:00\nfailed\n"
+                    "Recheck 2026-10-14 11:30\npassed"
+                ),
+                "KPI 7 - Ongoing operation": "First check 2026-10-14 11:30\npassed",
+            },
+        },
+        {
+            "record_id": "rec-final-only",
+            "fields": {
+                "项目名称 Project Name": "Shinobi",
+                "KPI Final": "通过",
+                "KPI 1 - Twitter": "Recheck 2026-10-14 19:40\npassed",
+                "KPI 7 - Ongoing operation": "First check 2026-10-14 19:40\npassed",
+            },
+        },
+    ]
+    out = _summarize_delivery_funnel(
+        since=since,
+        form_sent_names=["Pinky"],
+        chase_projects={
+            "r1": {
+                "project_name": "Ribbon",
+                "done": True,
+                "completed_at": datetime(2026, 10, 14, 8, tzinfo=tz).timestamp(),
+            },
+            "r2": {
+                "project_name": "Old",
+                "done": True,
+                "completed_at": datetime(2026, 10, 13, 8, tzinfo=tz).timestamp(),
+            },
+            "r3": {
+                "project_name": "Cancel",
+                "done": True,
+                "cancelled": True,
+                "completed_at": datetime(2026, 10, 14, 9, tzinfo=tz).timestamp(),
+            },
+        },
+        records=records,
+        records_error=None,
+        schedule_first={
+            "rec-pass": "2026-10-14",
+            "rec-held": "2026-10-14",
+            "rec-leap": "2026-10-14",
+        },
+        schedule_second={"rec-leap": "2026-10-14", "rec-final-only": "2026-10-14"},
+        events=[
+            {
+                "ts": "2026-10-14T11:30:00+08:00",
+                "kind": "kpi_early_final",
+                "project_name": "Leap",
+                "record_id": "rec-leap",
+                "text": "补交触发终审：Valid KPI",
+            }
+        ],
+        name_field="项目名称 Project Name",
+    )
+    assert out["form_sent"] == ["Pinky"]
+    assert out["form_received"] == ["Ribbon"]
+    assert out["first_pass"] == ["Oracle"]
+    assert out["first_held"] == ["Escrow", "Leap"]
+    assert out["final_pass"] == ["Leap", "Shinobi"]
+    assert out["final_fail"] == []
+
+
+def test_weekly_report_includes_funnel_counts() -> None:
+    text = format_report_zh(
+        {
+            "today": "2026-10-15",
+            "week_start": "2026-10-08",
+            "week_end": "2026-10-15",
+            "counters": {},
+            "derived": {},
+            "wallet_lark": {"error": "skip"},
+            "outbound_messages": {},
+            "delivery_funnels": {
+                "7d": {
+                    "form_sent": ["A", "B"],
+                    "form_received": ["A"],
+                    "first_pass": ["Oracle"],
+                    "first_held": ["Escrow"],
+                    "final_pass": ["Leap"],
+                    "final_fail": ["InheritX"],
+                },
+                "24h": {
+                    "form_sent": ["B"],
+                    "form_received": [],
+                    "first_pass": [],
+                    "first_held": ["Escrow"],
+                    "final_pass": [],
+                    "final_fail": [],
+                },
+            },
+        }
+    )
+    assert "三、表单与考核" in text
+    assert "上线项目信息表单发出：过去7天 2，过去24小时 1" in text
+    assert "上线项目信息表单收回：过去7天 1，过去24小时 0" in text
+    assert "初审项目：过去7天 2（通过 1，失败 1），过去24小时 1（通过 0，失败 1）" in text
+    assert "终审项目：过去7天 2（通过 1，失败 1），过去24小时 0（通过 0，失败 0）" in text

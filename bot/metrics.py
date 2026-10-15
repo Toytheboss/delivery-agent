@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import threading
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -549,6 +550,9 @@ def snapshot(config: Any | None = None, *, include_lark: bool = True) -> dict[st
         "derived": derived,
         "wallet_lark": wallet,
         "outbound_messages": outbound,
+        "delivery_funnels": _safe_snapshot_funnels(
+            config, since_24h=since_24h, since_7d=since_7d
+        ),
     }
 
 
@@ -683,11 +687,34 @@ def _ms_to_day(value: Any) -> str | None:
         return None
 
 
+def _fetch_progress_records(config: Any) -> tuple[list[dict[str, Any]], str | None]:
+    """One progress-table read shared by the live counts and the review funnel."""
+    app_id = os.getenv("LARK_APP_ID", "").strip()
+    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
+    if not app_id or not app_secret:
+        return [], "missing LARK credentials"
+    try:
+        from bot.lark_bitable import get_tenant_access_token, list_records
+
+        token = get_tenant_access_token(app_id, app_secret)
+        records = list_records(
+            token,
+            str(getattr(config, "workflow_base_app_token", "")),
+            str(getattr(config, "workflow_progress_table_id", "")),
+        )
+        return [row for row in (records or []) if isinstance(row, dict)], None
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("metrics: progress table list failed: %s", exc)
+        return [], str(exc)
+
+
 def _progress_table_daily_counts(
     config: Any,
     today: str | None = None,
     *,
     since: datetime | None = None,
+    records: list[dict[str, Any]] | None = None,
+    records_error: str | None = None,
 ) -> dict[str, Any]:
     """Lark Progress Tracker: windowed mainnet live + current deploy stocks + logos.
 
@@ -711,14 +738,14 @@ def _progress_table_daily_counts(
         "window_since": since.isoformat(timespec="seconds"),
         "error": None,
     }
-    app_id = os.getenv("LARK_APP_ID", "").strip()
-    app_secret = os.getenv("LARK_APP_SECRET", "").strip()
-    if not app_id or not app_secret:
-        out["error"] = "missing LARK credentials"
+    if records is None:
+        records, records_error = _fetch_progress_records(config)
+    if records_error and not records:
+        out["error"] = records_error
         return out
+    records = records or []
 
     try:
-        from bot.lark_bitable import get_tenant_access_token, list_records
         from bot.workflow_form_dispatch import _field_text
 
         status_field = str(getattr(config, "workflow_status_field", "项目状态") or "项目状态")
@@ -732,12 +759,6 @@ def _progress_table_daily_counts(
         live_status = str(
             getattr(config, "workflow_trigger_status", "") or ""
         ).strip()
-        token = get_tenant_access_token(app_id, app_secret)
-        records = list_records(
-            token,
-            str(getattr(config, "workflow_base_app_token", "")),
-            str(getattr(config, "workflow_progress_table_id", "")),
-        )
         out["total_rows"] = len(records)
         live_names: list[str] = []
         live_record_ids: set[str] = set()
@@ -1159,6 +1180,328 @@ def _live_without_form(
     return _dedupe_names(sorted(missing, key=str.lower), limit=10_000)
 
 
+_KPI1_COPY = "KPI 1 - Twitter"
+_KPI6_COPY = "KPI 6 - On chain interaction"
+_KPI7_COPY = "KPI 7 - Ongoing operation"
+_KPI_FINAL = "KPI Final"
+_STAMP_RE = re.compile(r"(First check|Recheck) (\d{4}-\d{2}-\d{2} \d{2}:\d{2})")
+# Same audit writes KPI 7 within a few minutes of the first-check cells.
+# A later final (补交 or calendar) lands well after that.
+_SAME_AUDIT = timedelta(minutes=20)
+_SCHEDULE_CANDIDATES = (
+    ROOT / "data" / "kpi_schedule_state.json",
+    Path("/opt/botchain-qa-tg-bot/data/kpi_schedule_state.json"),
+)
+
+
+def _empty_delivery_funnel(error: str | None = None) -> dict[str, Any]:
+    return {
+        "form_sent": [],
+        "form_received": [],
+        "first_pass": [],
+        "first_held": [],
+        "final_pass": [],
+        "final_fail": [],
+        "error": error,
+    }
+
+
+def _form_received_names(
+    projects: dict[str, dict[str, Any]], *, since: datetime
+) -> list[str]:
+    """Projects whose live-info form was filled inside the window."""
+    rows: list[tuple[datetime, str]] = []
+    for rid, meta in projects.items():
+        if not isinstance(meta, dict) or meta.get("cancelled") or not meta.get("done"):
+            continue
+        try:
+            ts = float(meta.get("completed_at"))
+        except (TypeError, ValueError):
+            continue
+        done_at = datetime.fromtimestamp(ts, TZ)
+        if done_at < since:
+            continue
+        name = str(meta.get("project_name") or "").strip() or str(rid)
+        rows.append((done_at, name))
+    rows.sort(key=lambda item: (item[0], item[1].lower()))
+    return _dedupe_names([name for _, name in rows], limit=10_000)
+
+
+def _schedule_round_days() -> tuple[dict[str, str], dict[str, str]]:
+    """Record id → calendar day the first / final round was marked done."""
+    best_first: dict[str, str] = {}
+    best_second: dict[str, str] = {}
+    for path in _SCHEDULE_CANDIDATES:
+        raw = _safe_json(path)
+
+        def _days(bucket: Any) -> dict[str, str]:
+            if not isinstance(bucket, dict):
+                return {}
+            return {
+                str(key): str(value)
+                for key, value in bucket.items()
+                if str(value or "").strip()
+            }
+
+        first, second = _days(raw.get("first")), _days(raw.get("second"))
+        if len(first) + len(second) > len(best_first) + len(best_second):
+            best_first, best_second = first, second
+    return best_first, best_second
+
+
+def _copy_stamps(text: str) -> list[tuple[str, datetime]]:
+    found: list[tuple[str, datetime]] = []
+    for kind, raw in _STAMP_RE.findall(text or ""):
+        try:
+            stamp = datetime.strptime(raw, "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+        except ValueError:
+            continue
+        found.append((kind, stamp))
+    return found
+
+
+def _review_outcome(row: dict[str, Any]) -> str:
+    outcome = str(row.get("outcome") or "").strip()
+    if outcome in {"pass", "held", "fail"}:
+        return outcome
+    text = str(row.get("text") or "")
+    if "Valid KPI" in text or "初审通过" in text or "终审通过" in text:
+        return "pass"
+    if "KPI failed" in text or "终审不通过" in text:
+        return "fail"
+    if "暂扣" in text or "Held for rectification" in text:
+        return "held"
+    return ""
+
+
+def _review_round(row: dict[str, Any]) -> str:
+    rnd = str(row.get("review_round") or "").strip()
+    if rnd in {"first", "final"}:
+        return rnd
+    if str(row.get("kind") or "") == "kpi_early_final" or "终审" in str(row.get("text") or ""):
+        return "final"
+    if "初审" in str(row.get("text") or ""):
+        return "first"
+    return ""
+
+
+def _load_review_events(config: Any) -> list[dict[str, Any]]:
+    """Posted reviews and submit-triggered finals, newest file order kept."""
+    path = _workflow_events_path(config)
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    try:
+        with path.open("r", encoding="utf-8", errors="ignore") as handle:
+            for line in handle:
+                line = line.strip()
+                if not line.startswith("{"):
+                    continue
+                if "kpi_review_posted" not in line and "kpi_early_final" not in line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                kind = str(row.get("kind") or "")
+                if kind not in {"kpi_review_posted", "kpi_early_final"}:
+                    continue
+                rows.append(row)
+    except OSError as exc:
+        logger.warning("metrics: review events read failed: %s", exc)
+    return rows
+
+
+def _summarize_delivery_funnel(
+    *,
+    since: datetime,
+    form_sent_names: list[str] | None,
+    chase_projects: dict[str, dict[str, Any]] | None,
+    records: list[dict[str, Any]] | None,
+    records_error: str | None,
+    schedule_first: dict[str, str],
+    schedule_second: dict[str, str],
+    events: list[dict[str, Any]],
+    name_field: str,
+) -> dict[str, Any]:
+    """Eight delivery figures for one rolling window.
+
+    发出 is the first time the live-info form was posted. 收回 is the chase
+    row marked filled. 初审 is a calendar first check whose KPI 1 / KPI 6
+    cell was first written in the window. 终审 is a submit-triggered final
+    or a calendar second check. A project can be both.
+    """
+    from bot.workflow_form_dispatch import _field_text
+
+    out = _empty_delivery_funnel()
+    if isinstance(form_sent_names, list):
+        out["form_sent"] = list(form_sent_names)
+    elif chase_projects is not None:
+        out["form_sent"] = _form_first_send_names(chase_projects, since=since)
+    if chase_projects is not None:
+        out["form_received"] = _form_received_names(chase_projects, since=since)
+    if records_error and not records:
+        out["error"] = records_error
+        return out
+
+    seen: set[tuple[str, str]] = set()
+
+    def _add(record_id: str, rnd: str, name: str, outcome: str) -> None:
+        if rnd not in {"first", "final"} or outcome not in {"pass", "held", "fail"}:
+            return
+        keys = []
+        if str(record_id or "").strip():
+            keys.append((str(record_id).strip(), rnd))
+        if str(name or "").strip():
+            keys.append((str(name).strip().casefold(), rnd))
+        if not keys or any(key in seen for key in keys):
+            return
+        seen.update(keys)
+        label = (name or record_id).strip()
+        if rnd == "first" and outcome == "pass":
+            out["first_pass"].append(label)
+        elif rnd == "first":
+            out["first_held"].append(label)
+        elif outcome == "pass":
+            out["final_pass"].append(label)
+        else:
+            out["final_fail"].append(label)
+
+    for row in events:
+        stamp = _parse_iso_ts(row.get("ts"))
+        if not _in_time_window(stamp, since=since):
+            continue
+        rnd = _review_round(row)
+        outcome = _review_outcome(row)
+        _add(
+            str(row.get("record_id") or ""),
+            rnd,
+            str(row.get("project_name") or ""),
+            outcome,
+        )
+
+    for record in records or []:
+        rid = str(record.get("record_id") or "").strip()
+        fields = record.get("fields") or {}
+        if not isinstance(fields, dict):
+            continue
+        name = _field_text(fields, name_field) or rid
+        kpi1 = _copy_stamps(_field_text(fields, _KPI1_COPY))
+        kpi6 = _copy_stamps(_field_text(fields, _KPI6_COPY))
+        kpi7 = [stamp for _kind, stamp in _copy_stamps(_field_text(fields, _KPI7_COPY))]
+        first_times = [
+            stamp
+            for kind, stamp in kpi1 + kpi6
+            if kind == "First check" and stamp >= since
+        ]
+        if first_times and (rid, "first") not in seen:
+            first_at = min(first_times)
+            if schedule_first.get(rid) == first_at.strftime("%Y-%m-%d"):
+                passed = any(
+                    abs((stamp - first_at).total_seconds()) <= _SAME_AUDIT.total_seconds()
+                    for stamp in kpi7
+                )
+                _add(rid, "first", name, "pass" if passed else "held")
+        if (rid, "final") in seen:
+            continue
+        second_day = schedule_second.get(rid) or ""
+        if not second_day:
+            continue
+        final_times = [
+            stamp
+            for kind, stamp in kpi1 + kpi6
+            if kind == "Recheck" and stamp >= since and stamp.strftime("%Y-%m-%d") == second_day
+        ]
+        final_times.extend(
+            stamp
+            for stamp in kpi7
+            if stamp >= since and stamp.strftime("%Y-%m-%d") == second_day
+        )
+        if not final_times:
+            continue
+        coord = _field_text(fields, _KPI_FINAL)
+        if coord == "通过":
+            _add(rid, "final", name, "pass")
+        elif coord in {"不通过", "KPI未通过"}:
+            _add(rid, "final", name, "fail")
+    return out
+
+
+def build_delivery_funnel(
+    config: Any,
+    *,
+    since: datetime,
+    records: list[dict[str, Any]] | None = None,
+    records_error: str | None = None,
+    chase_projects: dict[str, dict[str, Any]] | None = None,
+    form_sent_names: list[str] | None = None,
+) -> dict[str, Any]:
+    """Live funnel for one window. Reuse a progress-table read when the caller has one."""
+    if records is None and not records_error:
+        records, records_error = _fetch_progress_records(config)
+    if chase_projects is None:
+        chase_projects = _read_chase_projects(config)
+    if form_sent_names is None and chase_projects is not None:
+        form_sent_names = _form_first_send_names(chase_projects, since=since)
+    first_days, second_days = _schedule_round_days()
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
+    )
+    return _summarize_delivery_funnel(
+        since=since,
+        form_sent_names=form_sent_names,
+        chase_projects=chase_projects,
+        records=records,
+        records_error=records_error,
+        schedule_first=first_days,
+        schedule_second=second_days,
+        events=_load_review_events(config),
+        name_field=name_field,
+    )
+
+
+def _safe_snapshot_funnels(
+    config: Any | None, *, since_24h: datetime, since_7d: datetime
+) -> dict[str, Any]:
+    if config is None:
+        return {}
+    try:
+        return _snapshot_delivery_funnels(
+            config, since_24h=since_24h, since_7d=since_7d
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("metrics: delivery funnel failed: %s", exc)
+        failed = _empty_delivery_funnel(str(exc))
+        return {"24h": failed, "7d": dict(failed)}
+
+
+def _snapshot_delivery_funnels(
+    config: Any, *, since_24h: datetime, since_7d: datetime
+) -> dict[str, Any]:
+    """24h and 7d funnels from one progress-table read."""
+    records, records_error = _fetch_progress_records(config)
+    chase = _read_chase_projects(config)
+    first_days, second_days = _schedule_round_days()
+    events = _load_review_events(config)
+    name_field = str(
+        getattr(config, "workflow_project_name_field", "") or "项目名称 Project Name"
+    )
+    shared = {
+        "chase_projects": chase,
+        "records": records,
+        "records_error": records_error,
+        "schedule_first": first_days,
+        "schedule_second": second_days,
+        "events": events,
+        "name_field": name_field,
+        "form_sent_names": None,
+    }
+    return {
+        "24h": _summarize_delivery_funnel(since=since_24h, **shared),
+        "7d": _summarize_delivery_funnel(since=since_7d, **shared),
+    }
+
+
 def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     """Assemble ops report for a rolling window (default past 24 hours)."""
     hours = max(int(hours), 1)
@@ -1221,7 +1564,13 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
     # Until messages_sent has history, fall back to auto sum so reports aren't empty.
     replied_window = sent_window if sent_window > 0 else auto_replies
 
-    progress = _progress_table_daily_counts(config, since=since)
+    progress_records, progress_error = _fetch_progress_records(config)
+    progress = _progress_table_daily_counts(
+        config,
+        since=since,
+        records=progress_records,
+        records_error=progress_error,
+    )
     wallet = _wallet_daily_counts(config, window_days=window_days)
     deploy_changes: dict[str, Any] = {
         "total": 0,
@@ -1252,6 +1601,14 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         form_first_send_names = _form_first_send_names(chase_projects, since=since)
         if not progress.get("error"):
             live_without_form_names = _live_without_form(progress, chase_projects)
+    delivery_funnel = build_delivery_funnel(
+        config,
+        since=since,
+        records=progress_records,
+        records_error=progress_error,
+        chase_projects=chase_projects,
+        form_sent_names=form_first_send_names,
+    )
 
     events_ok = bool(workflow.get("available")) and not workflow.get("error")
     new_by_kind = workflow.get("new_by_kind") or {}
@@ -1336,6 +1693,7 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "message_mix": messages,
         "form_first_send_names": form_first_send_names,
         "live_without_form_names": live_without_form_names,
+        "delivery_funnel": delivery_funnel,
     }
 
 
@@ -1457,6 +1815,33 @@ def split_telegram_text(text: str, *, limit: int = 3500) -> list[str]:
     if buf:
         chunks.append(buf)
     return chunks or [raw[:cap]]
+
+
+def _append_delivery_funnel(lines: list[str], funnel: dict[str, Any] | None) -> None:
+    """The eight figures operators asked to see on the Telegram daily report."""
+    data = funnel or _empty_delivery_funnel()
+    sent = list(data.get("form_sent") or [])
+    received = list(data.get("form_received") or [])
+    _fmt_kind_line(lines, label="上线项目信息表单发出", count=len(sent), names=sent)
+    _fmt_kind_line(lines, label="上线项目信息表单收回", count=len(received), names=received)
+    if data.get("error"):
+        lines.append(f"· 初审 / 终审：查询失败（{data['error']}）")
+        return
+    first_pass = list(data.get("first_pass") or [])
+    first_held = list(data.get("first_held") or [])
+    final_pass = list(data.get("final_pass") or [])
+    final_fail = list(data.get("final_fail") or [])
+    lines.append(f"· 初审项目：{len(first_pass) + len(first_held)}")
+    _fmt_kind_line(lines, label="初审通过", count=len(first_pass), names=first_pass)
+    _fmt_kind_line(lines, label="初审失败", count=len(first_held), names=first_held)
+    lines.append(f"· 终审项目：{len(final_pass) + len(final_fail)}")
+    _fmt_kind_line(lines, label="终审通过", count=len(final_pass), names=final_pass)
+    _fmt_kind_line(lines, label="终审失败", count=len(final_fail), names=final_fail)
+
+
+def _funnel_total(funnel: dict[str, Any] | None, *keys: str) -> int:
+    data = funnel or {}
+    return sum(len(data.get(key) or []) for key in keys)
 
 
 def format_daily_report_zh(daily: dict[str, Any]) -> str:
@@ -1658,6 +2043,7 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     )
 
     lines.extend(["", "五、KPI 审计"])
+    _append_delivery_funnel(lines, daily.get("delivery_funnel"))
     kpi_writes = wf.get("kpi_writes") or {}
     write_total = kcount("kpi_result_written")
     if write_total:
@@ -1743,6 +2129,8 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
             "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
             "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
             "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",
+            "· 上线项目信息表单发出与表单新发同一口径；收回按表单字段收齐计。",
+            "· 初审失败是暂扣整改，不是 KPI failed。终审失败是 KPI failed。同一项目可以先初审再终审。",
             "· 新群归档 / 问候序列按群去重、只算窗口内首次；Logo / Mark live 按项目去重；两个号合并计。",
             "· 入站处理、FAQ、沉默等消息类只统计审核号本号；交付面板总览与本日报同一份数据。",
             "· form_dispatch_skip / 轮询次数等噪声不进正文。",
@@ -1805,13 +2193,59 @@ def format_report_zh(snap: dict[str, Any]) -> str:
         ),
         f"4. 人工口令：mark-live 过去7天 {mark['week']}；/send_form 过去7天 {send_form['week']}",
         "",
-        "三、知识沉淀",
-        f"1. absorb 学习成功：累计 {absorb['total']}，过去7天 {absorb['week']}",
-        f"2. 本地 learned 文件：{d.get('learned_md_count', '—')}",
-        f"3. Agent KB 同步成功：{_fmt_triple(t('agent_kb_lark_sync_success'))}",
-        "",
-        "四、钱包地址收集（飞书存量）",
+        "三、表单与考核",
     ]
+    funnels = snap.get("delivery_funnels") or {}
+    week_funnel = funnels.get("7d") or {}
+    day_funnel = funnels.get("24h") or {}
+    if week_funnel.get("error") or day_funnel.get("error"):
+        lines.append(
+            "· 初审 / 终审查询失败："
+            + "；".join(
+                str(item)
+                for item in (week_funnel.get("error"), day_funnel.get("error"))
+                if item
+            )
+        )
+    lines.extend(
+        [
+            (
+                f"1. 上线项目信息表单发出：过去7天 {_funnel_total(week_funnel, 'form_sent')}，"
+                f"过去24小时 {_funnel_total(day_funnel, 'form_sent')}"
+            ),
+            (
+                f"2. 上线项目信息表单收回：过去7天 {_funnel_total(week_funnel, 'form_received')}，"
+                f"过去24小时 {_funnel_total(day_funnel, 'form_received')}"
+            ),
+            (
+                f"3. 初审项目：过去7天 {_funnel_total(week_funnel, 'first_pass', 'first_held')}"
+                f"（通过 {_funnel_total(week_funnel, 'first_pass')}，"
+                f"失败 {_funnel_total(week_funnel, 'first_held')}），"
+                f"过去24小时 {_funnel_total(day_funnel, 'first_pass', 'first_held')}"
+                f"（通过 {_funnel_total(day_funnel, 'first_pass')}，"
+                f"失败 {_funnel_total(day_funnel, 'first_held')}）"
+            ),
+            (
+                f"4. 终审项目：过去7天 {_funnel_total(week_funnel, 'final_pass', 'final_fail')}"
+                f"（通过 {_funnel_total(week_funnel, 'final_pass')}，"
+                f"失败 {_funnel_total(week_funnel, 'final_fail')}），"
+                f"过去24小时 {_funnel_total(day_funnel, 'final_pass', 'final_fail')}"
+                f"（通过 {_funnel_total(day_funnel, 'final_pass')}，"
+                f"失败 {_funnel_total(day_funnel, 'final_fail')}）"
+            ),
+            "",
+            "四、知识沉淀",
+        ]
+    )
+    lines.extend(
+        [
+            f"1. absorb 学习成功：累计 {absorb['total']}，过去7天 {absorb['week']}",
+            f"2. 本地 learned 文件：{d.get('learned_md_count', '—')}",
+            f"3. Agent KB 同步成功：{_fmt_triple(t('agent_kb_lark_sync_success'))}",
+            "",
+            "五、钱包地址收集（飞书存量）",
+        ]
+    )
     if w.get("error"):
         lines.append(f"· 查询失败：{w['error']}")
     else:
@@ -1831,7 +2265,7 @@ def format_report_zh(snap: dict[str, Any]) -> str:
     lines.extend(
         [
             "",
-            "五、系统侧（供内部说明）",
+            "六、系统侧（供内部说明）",
             f"· Live Webhook：收到 {wh_recv['total']} / 已处理 {t('webhook_live_processed')['total']}",
             f"· 轮询周期累计：{t('poll_cycles_run')['total']}（跳过次数偏高通常表示已处理项目被重复扫到，属正常）",
             "",
@@ -1841,6 +2275,8 @@ def format_report_zh(snap: dict[str, Any]) -> str:
             "· 「过去7天新建对接群」= 窗口内自动归入 Delivery Folder 成功次数。",
             "· FAQ 按「答疑会话」计，一次问题多条气泡仍算 1 次会话。",
             "· 发出消息 = 交付号全部出站（NewMessage outgoing）；自动合计 = FAQ/页脚/欢迎/表单/社交。",
+            "· 上线项目信息表单发出按首次发到项目群计，收回按表单字段收齐计。",
+            "· 初审失败是暂扣整改；终审失败是 KPI failed。同一项目可以先初审再终审。",
             "· 完整明细可发 /stats；本报告适合向上同步。",
         ]
     )

@@ -705,6 +705,43 @@ def audit_first_check(
     }
 
 
+def log_review_posted(
+    *,
+    project_name: str,
+    record_id: str,
+    final: bool,
+    result: str,
+) -> None:
+    """Record one posted first check or final check for the Telegram reports."""
+    if result == _VALID:
+        outcome = "pass"
+    elif result == _FAILED:
+        outcome = "fail"
+    else:
+        outcome = "held"
+    round_name = "final" if final else "first"
+    text = {
+        ("first", "pass"): "初审通过",
+        ("first", "held"): "初审暂扣整改",
+        ("final", "pass"): "终审通过",
+        ("final", "fail"): "终审不通过",
+    }.get((round_name, outcome), result)
+    try:
+        from bot.workflow_events import log_delivery
+
+        log_delivery(
+            "kpi_review_posted",
+            "kpi result push",
+            project_name=project_name,
+            record_id=record_id,
+            text=text,
+            review_round=round_name,
+            outcome=outcome,
+        )
+    except Exception:
+        logger.exception("kpi review log failed project=%r", project_name)
+
+
 def send_result_post(token: str, config: AppConfig, markdown: str) -> None:
     from bot.lark_im import send_markdown_post_to_chat
 
@@ -775,6 +812,12 @@ def push_pending(
                 project_name=name,
                 record_id=rid,
                 text="已向 Project verification push 发送首轮考核结果",
+            )
+            log_review_posted(
+                project_name=name,
+                record_id=rid,
+                final=False,
+                result=str(built.get("result") or ""),
             )
         except Exception:
             logger.exception("kpi result push log failed project=%r", name)
@@ -940,6 +983,12 @@ def run_early_final_after_submit(
             project_name=name,
             record_id=rid,
             text=f"补交触发终审：{out['result']}",
+        )
+        log_review_posted(
+            project_name=name,
+            record_id=rid,
+            final=True,
+            result=str(out.get("result") or ""),
         )
     except Exception:
         logger.exception("early final log failed project=%r", name)

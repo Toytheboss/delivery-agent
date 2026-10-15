@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 from bot.workflow_form_dispatch import _field_text
 from bot.workflow_kpi_result_push import (
     audit_first_check,
+    log_review_posted,
     posted_ids,
     send_result_post,
 )
@@ -256,6 +257,12 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
                 item["round"],
                 audited.get("valid"),
             )
+            log_review_posted(
+                project_name=item["project"],
+                record_id=rid,
+                final=is_second,
+                result=str(audited.get("result") or ""),
+            )
 
     due = select_due(
         records,
@@ -405,6 +412,12 @@ def run_september_final_once(config: AppConfig) -> dict[str, int]:
             "september final sent project=%s valid=%s",
             item["project"],
             audited.get("valid"),
+        )
+        log_review_posted(
+            project_name=item["project"],
+            record_id=rid,
+            final=True,
+            result=str(audited.get("result") or ""),
         )
     if stats["failed"] == 0:
         state = _load_state(path)
