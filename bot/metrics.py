@@ -1502,18 +1502,34 @@ def _snapshot_delivery_funnels(
     }
 
 
-def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
-    """Assemble ops report for a rolling window (default past 24 hours)."""
-    hours = max(int(hours), 1)
-    since = _window_start(hours=hours)
-    window_days = _dates_covering_hours(hours)
+def build_daily_report(
+    config: Any,
+    *,
+    hours: int = 24,
+    calendar_day: bool = False,
+) -> dict[str, Any]:
+    """Assemble ops report.
+
+    ``calendar_day=True`` (Telegram ``交付日报``): today 00:00 → now Asia/Shanghai.
+    Otherwise a rolling window of ``hours`` (dashboard period panels).
+    """
     week_days = _week_dates(7)
-    if hours <= 24:
-        window_label = "过去24小时"
-    elif hours % 24 == 0:
-        window_label = f"过去{hours // 24}天"
+    if calendar_day:
+        now = _now()
+        since = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        window_days = [since.strftime("%Y-%m-%d")]
+        window_label = "今日"
+        hours = max(int((now - since).total_seconds() // 3600) + 1, 1)
     else:
-        window_label = f"过去{hours}小时"
+        hours = max(int(hours), 1)
+        since = _window_start(hours=hours)
+        window_days = _dates_covering_hours(hours)
+        if hours <= 24:
+            window_label = "过去24小时"
+        elif hours % 24 == 0:
+            window_label = f"过去{hours // 24}天"
+        else:
+            window_label = f"过去{hours}小时"
 
     with _lock:
         data = _ensure_loaded()
@@ -1639,8 +1655,17 @@ def build_daily_report(config: Any, *, hours: int = 24) -> dict[str, Any]:
         "timezone": "Asia/Shanghai",
         "today": _today(),
         "period_key": (
-            "24h" if hours <= 24 else f"{hours // 24}d" if hours % 24 == 0 else f"{hours}h"
+            "today"
+            if calendar_day
+            else (
+                "24h"
+                if hours <= 24
+                else f"{hours // 24}d"
+                if hours % 24 == 0
+                else f"{hours}h"
+            )
         ),
+        "calendar_day": bool(calendar_day),
         "window_hours": hours,
         "window_label": window_label,
         "window_since": since.isoformat(timespec="seconds"),
@@ -2121,11 +2146,18 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         err_bits = [x for x in (wf.get("error"), mm.get("error")) if x]
         lines.append(f"· 日志聚合告警：{'；'.join(err_bits)}")
 
+    if daily.get("calendar_day"):
+        window_note = (
+            f"· 本报告统计「{window}」：Asia/Shanghai 当天 00:00 至生成时刻"
+            "（不是滚动 24 小时，避免早晚几分钟拉数初审对不上）。"
+        )
+    else:
+        window_note = f"· 本报告统计「{window}」滚动窗口内的新增（Asia/Shanghai）。"
     lines.extend(
         [
             "",
             "口径说明",
-            f"· 本报告统计「{window}」滚动窗口内的新增（Asia/Shanghai）。",
+            window_note,
             "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
             "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
             "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",

@@ -317,3 +317,23 @@ def test_weekly_report_includes_funnel_counts() -> None:
     assert "上线项目信息表单收回：过去7天 1，过去24小时 0" in text
     assert "初审项目：过去7天 2（通过 1，失败 1），过去24小时 1（通过 0，失败 1）" in text
     assert "终审项目：过去7天 2（通过 1，失败 1），过去24小时 0（通过 0，失败 0）" in text
+
+
+def test_format_daily_report_calendar_day_note() -> None:
+    text = format_daily_report_zh(
+        {
+            "calendar_day": True,
+            "window_label": "今日",
+            "window_since": "2026-10-15T00:00:00+08:00",
+            "window_until": "2026-10-15T12:00:00+08:00",
+            "bot_messages": {},
+            "progress": {},
+            "wallet": {},
+            "deploy_changes": {"baselined": True, "total": 0},
+            "workflow": {"by_kind": {}, "names_by_kind": {}},
+            "message_mix": {},
+        }
+    )
+    assert "统计窗口：今日" in text
+    assert "当天 00:00 至生成时刻" in text
+    assert "不是滚动 24 小时" in text

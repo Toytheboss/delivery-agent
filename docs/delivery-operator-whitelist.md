@@ -87,7 +87,7 @@ send form
 | 口令 | 内容 | 谁能发 |
 |------|------|--------|
 | `交付周报` / `交付报告` / `/report` | 管理层短版（触达 / 表单 Logo / 知识 / 钱包存量）；统计窗口为**过去7天** | `operators` 或 `report_operators` |
-| `交付日报` / `/daily_report` | 短版日报；统计窗口为**过去24小时** | `operators` 或 `report_operators` |
+| `交付日报` / `日报` / `/daily_report` | 短版日报；统计窗口为**今日 00:00 至此刻**（Asia/Shanghai，非滚动 24 小时） | `operators` 或 `report_operators` |
 | `交付统计` / `/stats` | 运维明细长版（含过去7天 / 过去24小时） | 仅 `operators` |
 
 周报 / 日报**不会定时自动推**，只有发口令才回。仅要日报/周报时，加 `workflow.report_operators`，不要加进 `operators`（避免开通 Mark live）。

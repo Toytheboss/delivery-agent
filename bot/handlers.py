@@ -63,6 +63,7 @@ _DAILY_REPORT_COMMANDS = frozenset(
         "/daily",
         "/daily_report",
         "交付日报",
+        "日报",
         "今日交付日报",
         "今日:交付日报:",
         "今日：交付日报：",
@@ -85,6 +86,7 @@ def _is_daily_report_command(text: str) -> bool:
         "今日：交付日报",
         "交付日报",
         "今日交付日报",
+        "日报",
     }
 
 if TYPE_CHECKING:
@@ -435,7 +437,10 @@ class MessageHandler:
                     except Exception:  # noqa: BLE001
                         logger.exception("Daily report: wallet first_seen sync failed")
                     daily = await loop.run_in_executor(
-                        None, lambda: build_daily_report(self.config)
+                        None,
+                        lambda: build_daily_report(
+                            self.config, calendar_day=True
+                        ),
                     )
                     chunks = split_telegram_text(format_daily_report_zh(daily))
                     for i, chunk in enumerate(chunks):
