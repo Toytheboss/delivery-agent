@@ -93,6 +93,16 @@ def test_x_api_enough_reads_one_small_page(monkeypatch):
         if path.startswith("/2/users/by/username/"):
             return _Resp({"data": {"id": "42"}})
         seen.append(dict(params or {}))
+        token = (params or {}).get("pagination_token")
+        if token:
+            return _Resp(
+                {
+                    "data": [
+                        {"created_at": "2026-08-01T00:00:00.000Z", "text": "old"},
+                    ],
+                    "meta": {},
+                }
+            )
         return _Resp(
             {
                 "data": [
@@ -108,7 +118,8 @@ def test_x_api_enough_reads_one_small_page(monkeypatch):
     rows = _x_api("Demo", since, enough=5)
     assert len(rows) == 5
     assert len(seen) == 1
-    assert seen[0]["max_results"] == 5
+    assert seen[0]["max_results"] == 100
+    assert "exclude" not in seen[0]
     assert _x_api("Demo", since) is not None
     assert seen[-1]["max_results"] == 100
 
@@ -256,6 +267,74 @@ def test_x_api_paginates_and_keeps_posts_in_window(monkeypatch):
     rows = _x_api("Demo", since)
     texts = [text for _dt, text, _extra in rows]
     assert texts == ["first", "second"]
+
+
+def test_x_api_pages_past_replies_before_counting(monkeypatch):
+    since = datetime(2026, 9, 15, tzinfo=timezone.utc)
+
+    class _Resp:
+        def __init__(self, payload: dict) -> None:
+            self.status_code = 200
+            self._payload = payload
+
+        def json(self) -> dict:
+            return self._payload
+
+    def fake_get(path: str, bearer: str, params: dict | None = None):
+        del bearer
+        if path.startswith("/2/users/by/username/"):
+            return _Resp({"data": {"id": "42"}})
+        if (params or {}).get("pagination_token") == "older":
+            return _Resp(
+                {
+                    "data": [
+                        {
+                            "id": "2104477845086961824",
+                            "created_at": "2026-09-28T07:46:00.000Z",
+                            "text": "launch",
+                        },
+                        {
+                            "id": "2104258753382277325",
+                            "created_at": "2026-09-27T17:15:00.000Z",
+                            "text": "older original",
+                        },
+                    ],
+                    "meta": {},
+                }
+            )
+        return _Resp(
+            {
+                "data": [
+                    {
+                        "id": "1",
+                        "created_at": "2026-09-30T10:44:00.000Z",
+                        "text": "reply",
+                        "in_reply_to_user_id": "9",
+                    },
+                    {
+                        "id": "2",
+                        "created_at": "2026-09-30T10:44:00.000Z",
+                        "text": "new a",
+                    },
+                    {
+                        "id": "3",
+                        "created_at": "2026-09-30T10:43:00.000Z",
+                        "text": "new b",
+                    },
+                ],
+                "meta": {"next_token": "older"},
+            }
+        )
+
+    monkeypatch.setenv("X_BEARER_TOKEN", "t")
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_get", fake_get)
+    rows = _x_api("Demo", since, enough=6)
+    assert [text for _dt, text, _extra in rows] == [
+        "new a",
+        "new b",
+        "launch",
+        "older original",
+    ]
 
 
 def test_x_api_stops_paging_after_window(monkeypatch):

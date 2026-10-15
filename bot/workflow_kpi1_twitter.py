@@ -41,6 +41,7 @@ _PASS = "通过"
 _FAIL = "不通过"
 _THRESHOLD = 5
 _READ_ENOUGH = 6
+_TIMELINE_PAGE_SIZE = 100
 _LINK_LIMIT = 5
 _MEETS_AUDIT = "Meets the audit requirement"
 _KPI2_LINK = "KPI 2 - PR Announcement"
@@ -59,7 +60,7 @@ _PR_TEXT_LIMIT = 800
 _PR_JUDGE_ATTEMPTS = 3
 _PR_JUDGE_RETRY_SLEEP_S = (2.0, 4.0)
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
-_MAX_TWEET_PAGES = 5
+_MAX_TWEET_PAGES = 8
 _BEARER_CACHE = ""
 _USER_ID_CACHE_PATH = (
     Path(__file__).resolve().parent.parent / "data" / "x_user_id_cache.json"
@@ -143,8 +144,30 @@ def is_retweet(text: str, extra: dict[str, Any] | None = None) -> bool:
     blob = extra or {}
     if blob.get("retweeted_status"):
         return True
+    refs = blob.get("referenced_tweets")
+    if isinstance(refs, list):
+        for ref in refs:
+            if isinstance(ref, dict) and str(ref.get("type") or "") == "retweeted":
+                return True
     rest = str(blob.get("full_text") or blob.get("text") or text or "")
     return rest.lstrip().startswith("RT @")
+
+
+def is_reply(extra: dict[str, Any] | None = None) -> bool:
+    """True for a reply. Quote posts stay original."""
+    blob = extra or {}
+    if str(blob.get("in_reply_to_user_id") or "").strip():
+        return True
+    refs = blob.get("referenced_tweets")
+    if isinstance(refs, list):
+        for ref in refs:
+            if isinstance(ref, dict) and str(ref.get("type") or "") == "replied_to":
+                return True
+    return False
+
+
+def is_original_post(text: str, extra: dict[str, Any] | None = None) -> bool:
+    return not is_retweet(text, extra) and not is_reply(extra)
 
 
 def _tweet_id(extra: dict[str, Any] | None) -> str:
@@ -173,7 +196,7 @@ def original_status_links(
         return []
     ranked: list[tuple[datetime, str]] = []
     for dt, text, extra in rows:
-        if dt < since or is_retweet(text, extra):
+        if dt < since or not is_original_post(text, extra):
             continue
         tweet_id = _tweet_id(extra if isinstance(extra, dict) else None)
         if not tweet_id:
@@ -270,7 +293,7 @@ def is_mainnet_pr_tweet(
     require_project_name: bool = True,
 ) -> bool:
     body = text or ""
-    if is_retweet(body, extra):
+    if not is_original_post(body, extra):
         return False
     if not (
         _LIVE_ON_CHAIN_RE.search(body) or _PARTNERSHIP_CHAIN_RE.search(body)
@@ -321,7 +344,7 @@ def original_pr_candidates(
     """Newest original tweets as (id, YYYY-MM-DD, text). Retweets are omitted."""
     ranked: list[tuple[datetime, str, dict[str, Any]]] = []
     for dt, text, extra in rows:
-        if dt < since or is_retweet(text, extra):
+        if dt < since or not is_original_post(text, extra):
             continue
         blob = extra if isinstance(extra, dict) else {}
         if not _tweet_id(blob):
@@ -883,17 +906,18 @@ def _x_timeline(
     enough: int | None = None,
 ) -> list[tuple[datetime, str, dict[str, Any]]] | None:
     start = _utc_stamp(since)
-    # X allows max_results 5..100 on this endpoint.
-    page_size = min(max(int(enough), 5), 100) if enough else 100
+    # Do not pass exclude= or a small max_results. X filters a short page and
+    # can omit next_token, so older originals inside the window never get read.
     params: dict[str, Any] = {
-        "max_results": page_size,
-        "exclude": "retweets,replies",
-        "tweet.fields": "created_at,text",
+        "max_results": _TIMELINE_PAGE_SIZE,
+        "tweet.fields": "created_at,text,in_reply_to_user_id,referenced_tweets",
         "start_time": start,
     }
     out: list[tuple[datetime, str, dict[str, Any]]] = []
     page = 0
     drop_start = False
+    oldest_on_page: datetime | None = None
+    truncated = True
     while page < _MAX_TWEET_PAGES:
         page += 1
         if drop_start:
@@ -916,7 +940,7 @@ def _x_timeline(
         except ValueError:
             return None if not out else out
         rows = payload.get("data") or []
-        oldest_on_page: datetime | None = None
+        oldest_on_page = None
         for item in rows:
             if not isinstance(item, dict):
                 continue
@@ -925,17 +949,29 @@ def _x_timeline(
                 continue
             if oldest_on_page is None or dt < oldest_on_page:
                 oldest_on_page = dt
-            if dt >= since:
-                out.append((dt, str(item.get("text") or ""), item))
-        if enough and len(out) >= enough:
+            text = str(item.get("text") or "")
+            if dt >= since and is_original_post(text, item):
+                out.append((dt, text, item))
+        if enough and len(out) >= int(enough):
+            truncated = False
             break
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
         next_token = str((meta or {}).get("next_token") or "").strip()
         if not next_token:
+            truncated = False
             break
         if oldest_on_page is not None and oldest_on_page < since:
+            truncated = False
             break
         params["pagination_token"] = next_token
+    if truncated:
+        logger.warning(
+            "kpi1: timeline truncated handle=%s pages=%s originals=%s",
+            handle,
+            page,
+            len(out),
+        )
+        return None
     return out
 
 
@@ -964,7 +1000,7 @@ def collect_originals(
     source, rows = fetch_timeline(handle, since=since)
     if rows is None:
         return None, "unread", []
-    n = sum(1 for dt, text, extra in rows if dt >= since and not is_retweet(text, extra))
+    n = sum(1 for dt, text, extra in rows if dt >= since and is_original_post(text, extra))
     return n, source, original_status_links(handle, rows, since=since)
 
 
@@ -1094,7 +1130,7 @@ def audit_kpi1_for_fields(
             count = sum(
                 1
                 for dt, text, extra in rows
-                if dt >= since and not is_retweet(text, extra)
+                if dt >= since and is_original_post(text, extra)
             )
             links = original_status_links(handle, rows, since=since)
             capped = bool(enough) and source == "x_api" and count >= int(enough or 0)
