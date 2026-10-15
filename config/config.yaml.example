@@ -8,10 +8,10 @@ scope:
     - "Projects #2"
     - "Projects #3"
   folder_name: "Projects #1"  # 兼容旧字段；实际以 folder_names 为准
-  # 新群标题含关键词时立刻加入尚有空位的 folder（每夹约最多 100）
-  auto_add_enabled: true
-  # folder 满了后自动新建 Delivery #4 / #5 ...
-  auto_create_folders: true
+  # 自动把新群塞进 Telegram Folder。业务已不依赖 Folder，生产建议 false（省扫群/flood）
+  auto_add_enabled: false
+  # folder 满了后自动新建 Delivery #4 / #5 ...（仅 auto_add 开启时有意义）
+  auto_create_folders: false
   folder_name_prefix: "Projects"
   auto_add_keywords:
     - "projects"

@@ -591,8 +591,8 @@ def load_config() -> AppConfig:
             )
             if str(x).strip()
         ],
-        folder_auto_add_enabled=bool(scope.get("auto_add_enabled", True)),
-        folder_auto_create_enabled=bool(scope.get("auto_create_folders", True)),
+        folder_auto_add_enabled=bool(scope.get("auto_add_enabled", False)),
+        folder_auto_create_enabled=bool(scope.get("auto_create_folders", False)),
         folder_name_prefix=str(scope.get("folder_name_prefix", "Delivery")).strip()
         or "Delivery",
         folder_auto_add_keywords=[
