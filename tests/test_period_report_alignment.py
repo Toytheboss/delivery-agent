@@ -82,12 +82,13 @@ def test_folder_line_uses_first_ever_names() -> None:
         {
             "event_counts": True,
             "counter_precision": "hourly",
-            "folder_new_groups_today": 1,
+            "event_counts": True,
+            "new_coop_groups_today": 1,
             "bot_messages": {},
             "workflow": {
-                "by_kind": {"folder_chat_added": 3},
-                "names_by_kind": {"folder_chat_added": ["Old Group", "Fresh"]},
-                "new_names_by_kind": {"folder_chat_added": ["Fresh"]},
+                "by_kind": {"welcome_sequence_sent": 3},
+                "names_by_kind": {"welcome_sequence_sent": ["Old Group", "Fresh"]},
+                "new_names_by_kind": {"welcome_sequence_sent": ["Fresh"]},
             },
             "progress": {},
             "wallet": {},
@@ -95,7 +96,7 @@ def test_folder_line_uses_first_ever_names() -> None:
             "message_mix": {},
         }
     )
-    assert "新群归档：1（Fresh）" in text
+    assert "新增合作群：1（Fresh）" in text
     assert "计数器按小时" in text
 
 

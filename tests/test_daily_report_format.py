@@ -56,7 +56,7 @@ def test_fmt_kind_line_does_not_invent_unnamed_extra() -> None:
 def test_fmt_kind_line_caps_name_list() -> None:
     lines: list[str] = []
     names = [f"Proj{i}" for i in range(30)]
-    _fmt_kind_line(lines, label="新群归档", count=30, names=names, name_limit=5)
+    _fmt_kind_line(lines, label="新增合作群", count=30, names=names, name_limit=5)
     assert lines and "等另 25 个" in lines[0]
     assert lines[0].count("Proj") == 5
 
@@ -75,7 +75,8 @@ def test_format_daily_report_has_eight_sections() -> None:
             "window_since": "2026-10-08T23:00:00+08:00",
             "window_until": "2026-10-09T23:00:00+08:00",
             "updated_at": "2026-10-09T23:00:00+08:00",
-            "folder_new_groups_today": 2,
+            "event_counts": True,
+            "new_coop_groups_today": 2,
             "logo_fill_today": 1,
             "messages_processed_24h": 10,
             "messages_sent_24h": 4,
@@ -111,7 +112,7 @@ def test_format_daily_report_has_eight_sections() -> None:
             },
             "workflow": {
                 "by_kind": {
-                    "folder_chat_added": 2,
+                    "welcome_sequence_sent": 6,
                     "mark_live": 1,
                     "logo_uploaded_lark": 1,
                     "verification_push_onboard": 1,
@@ -126,10 +127,13 @@ def test_format_daily_report_has_eight_sections() -> None:
                     "frontend_weekly_row": 3,
                 },
                 "names_by_kind": {
-                    "folder_chat_added": ["Nexa", "Mandate"],
+                    "welcome_sequence_sent": ["Nexa", "Mandate"],
                     "mark_live": ["Nexa"],
                     "verify_alert": ["Nexa", "Botter"],
                     "kpi_early_final": ["Spinner"],
+                },
+                "new_names_by_kind": {
+                    "welcome_sequence_sent": ["Nexa", "Mandate"],
                 },
                 "kpi_writes": {
                     "KPI3": {"pass": 2, "fail": 0, "other": 0},
@@ -159,7 +163,9 @@ def test_format_daily_report_has_eight_sections() -> None:
         "八、Agent / 稳定性",
     ):
         assert header in text
-    assert "新群归档：2" in text
+    assert "新增合作群：2" in text
+    assert "Nexa" in text and "Mandate" in text
+    assert "新群归档" not in text
     assert "补交终审" in text
     assert "Verify 告警：2" in text
     assert "字段写入：3" in text

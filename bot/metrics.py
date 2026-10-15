@@ -596,13 +596,12 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
         f"· 已问候群（存量）：{d.get('welcome_greeted_count', '—')}",
         f"· 待问候 pending：{d.get('welcome_pending_count', '—')}",
         "",
-        "【对接群 / Folder / 学习】",
+        "【对接群 / 学习】",
         (
-            f"· 过去7天新建对接群：{int((c.get('folder_auto_add_success') or {}).get('week') or 0)}"
-            f"（过去24小时 {int((c.get('folder_auto_add_success') or {}).get('today') or 0)}；"
-            f"口径=Folder 自动归集成功）"
+            f"· 过去7天新增合作群：{int((c.get('welcome_sequences_started') or {}).get('week') or 0)}"
+            f"（过去24小时 {int((c.get('welcome_sequences_started') or {}).get('today') or 0)}；"
+            f"口径=首次欢迎语）"
         ),
-        f"· Folder 自动加入：{pair('folder_auto_add_success')}",
         f"· Absorb 成功：{pair('absorb_learn_success')}",
         f"· Agent KB 同步：{pair('agent_kb_lark_sync_success')}",
         f"· learned 文件数：{d.get('learned_md_count', '—')}",
@@ -1687,6 +1686,8 @@ def build_daily_report(
             ),
         },
         "folder_new_groups_today": folder_window,
+        # 新增合作群 = 窗口内首次发欢迎语的群（号新进群），不再用 Folder 归档
+        "new_coop_groups_today": welcome_seq_window,
         "logo_fill_today": logo_window,
         "logo_fill_total_metric": int(logo_ok.get("total") or 0),
         "messages_processed_24h": processed_window,
@@ -1905,18 +1906,23 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         "一、群触达",
     ]
     if daily.get("event_counts"):
-        folder_names = list((wf.get("new_names_by_kind") or {}).get("folder_chat_added") or [])
+        coop_names = list(
+            (wf.get("new_names_by_kind") or {}).get("welcome_sequence_sent") or []
+        )
     else:
-        folder_names = knames("folder_chat_added")
+        coop_names = knames("welcome_sequence_sent")
+    coop_count = int(
+        daily.get("new_coop_groups_today")
+        if daily.get("new_coop_groups_today") is not None
+        else (bm.get("welcome_sequences") or 0)
+    )
     _fmt_kind_line(
         lines,
-        label="新群归档",
-        count=int(daily.get("folder_new_groups_today") or 0),
-        names=folder_names,
+        label="新增合作群",
+        count=coop_count,
+        names=coop_names,
     )
-    lines.append(
-        f"· 问候序列：{bm.get('welcome_sequences', 0)}；欢迎语发出：{bm.get('welcome', 0)}"
-    )
+    lines.append(f"· 欢迎语发出：{bm.get('welcome', 0)}")
     faq_n = int(mm.get("faq_replied") or 0) or int(bm.get("faq_bubbles") or 0)
     social_n = int(mm.get("social_replied") or 0) or int(bm.get("social") or 0)
     silent_n = int(mm.get("silent") or 0)
@@ -2163,7 +2169,7 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
             "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",
             "· 上线项目信息表单发出与表单新发同一口径；收回按表单字段收齐计。",
             "· 初审失败是暂扣整改，不是 KPI failed。终审失败是 KPI failed。同一项目可以先初审再终审。",
-            "· 新群归档 / 问候序列按群去重、只算窗口内首次；Logo / Mark live 按项目去重；两个号合并计。",
+            "· 新增合作群 = 窗口内该群首次发出欢迎语（号新进合作群）；按群去重。Logo / Mark live 按项目去重；两个号合并计。",
             "· 入站处理、FAQ、沉默等消息类只统计审核号本号；交付面板总览与本日报同一份数据。",
             "· form_dispatch_skip / 轮询次数等噪声不进正文。",
         ]
@@ -2192,7 +2198,6 @@ def format_report_zh(snap: dict[str, Any]) -> str:
     absorb = t("absorb_learn_success")
     mark = t("mark_live_triggers")
     send_form = t("send_form_triggers")
-    folder = t("folder_auto_add_success")
 
     lines = [
         "Delivery Agent 数据报告",
@@ -2204,15 +2209,12 @@ def format_report_zh(snap: dict[str, Any]) -> str:
         "",
         "一、项目方触达",
         (
-            f"1. 过去7天新建对接群：{folder['week']} "
-            f"（过去24小时 {folder['today']}；累计归集 {folder['total']}）"
+            f"1. 过去7天新增合作群：{welcome_seq['week']} "
+            f"（过去24小时 {welcome_seq['today']}；"
+            f"存量已问候群 {d.get('welcome_greeted_count', '—')}）"
         ),
         f"2. FAQ 自动答疑：累计 {faq['total']} 次会话，过去7天 {faq['week']}，过去24小时 {faq['today']}",
-        (
-            f"3. 欢迎语：过去7天启动 {welcome_seq['week']} 次；"
-            f"存量已问候群 {d.get('welcome_greeted_count', '—')} 个"
-        ),
-        f"4. Agent 对外发出消息：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}"
+        f"3. Agent 对外发出消息：累计 {o.get('total', 0)}，过去7天 {o.get('week', 0)}，过去24小时 {o.get('today', 0)}"
         f"（自动合计 {o.get('auto_total', 0)} / {o.get('auto_week', 0)} / {o.get('auto_today', 0)}）",
         "",
         "二、上线交付（表单 / Logo）",
@@ -2304,7 +2306,7 @@ def format_report_zh(snap: dict[str, Any]) -> str:
             "口径说明",
             "· 「累计」= 埋点上线后进程计数；「存量」= 状态文件或飞书表当前真相。",
             "· 「过去7天」= 滚动 7×24 小时覆盖到的日历日合计；「过去24小时」同理（埋点为日桶近似）。",
-            "· 「过去7天新建对接群」= 窗口内自动归入 Delivery Folder 成功次数。",
+            "· 「过去7天新增合作群」= 窗口内首次对合作群发出欢迎语的次数（按群去重）；不再统计 Folder 归档。",
             "· FAQ 按「答疑会话」计，一次问题多条气泡仍算 1 次会话。",
             "· 发出消息 = 交付号全部出站（NewMessage outgoing）；自动合计 = FAQ/页脚/欢迎/表单/社交。",
             "· 上线项目信息表单发出按首次发到项目群计，收回按表单字段收齐计。",
