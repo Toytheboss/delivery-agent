@@ -265,7 +265,7 @@ def test_reply_copy():
     assert "live link" not in site_ok.lower()
 
 
-def test_early_final_skip_notice_only_for_not_held():
+def test_early_final_skip_notice_covers_skip_and_failure():
     from bot.workflow_project_info_submit import early_final_skip_notice
 
     notice = early_final_skip_notice("not_held:empty")
@@ -273,8 +273,12 @@ def test_early_final_skip_notice_only_for_not_held():
     assert "Held for rectification" in notice
     assert "一审尚未完成" in notice
     assert early_final_skip_notice("not_held:通过")
-    assert early_final_skip_notice("progress_missing") == ""
-    assert early_final_skip_notice("") == ""
+    missing = early_final_skip_notice("progress_missing")
+    assert "进度表找不到" in missing
+    failed = early_final_skip_notice("audit_or_send_failed")
+    assert "自动终审未完成" in failed
+    assert "automatic final review" in failed.lower()
+    assert early_final_skip_notice("")
 
 
 def test_quoted_result_detects_kpi_failed():

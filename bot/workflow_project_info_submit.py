@@ -48,6 +48,15 @@ _EARLY_FINAL_ONLY_HELD_NOTICE = (
     "the first check result is Held for rectification. Submitting before the "
     "first check will not start a final review — please wait for the first-check result."
 )
+_EARLY_FINAL_FAILED_NOTICE = (
+    "信息已写入，但自动终审未完成，请联系审核号重试。\n"
+    "Info was saved, but the automatic final review did not finish. "
+    "Ask the review account to retry."
+)
+_EARLY_FINAL_PROGRESS_MISSING_NOTICE = (
+    "信息已写入，但进度表找不到对应项目，无法自动终审。\n"
+    "Info was saved, but no matching progress row was found for an automatic final review."
+)
 _RESULT_KPI_FAILED_RE = re.compile(
     r"(?im)^\s*Result:\s*KPI failed\b"
 )
@@ -456,10 +465,22 @@ def progress_coord_is_final_failed(
 
 
 def early_final_skip_notice(reason: str) -> str:
-    """Bilingual notice when submit cannot trigger final (not held)."""
-    if str(reason or "").startswith("not_held"):
+    """Bilingual notice when submit wrote data but final did not run."""
+    key = str(reason or "").strip()
+    if key.startswith("not_held"):
         return _EARLY_FINAL_ONLY_HELD_NOTICE
-    return ""
+    if key == "progress_missing":
+        return _EARLY_FINAL_PROGRESS_MISSING_NOTICE
+    if key in {
+        "audit_or_send_failed",
+        "list_failed",
+        "missing_lark_credentials",
+        "non_roy_host",
+        "no_project",
+        "",
+    }:
+        return _EARLY_FINAL_FAILED_NOTICE
+    return _EARLY_FINAL_FAILED_NOTICE
 
 
 def format_submit_reply(
@@ -682,24 +703,21 @@ def maybe_handle_project_info_submit(
                     f"{reply}\nFinal review posted: {early.get('result') or 'done'}."
                 )
             else:
-                notice = early_final_skip_notice(str(early.get("reason") or ""))
+                reason = str(early.get("reason") or "")
+                notice = early_final_skip_notice(reason)
                 if notice:
                     reply = f"{reply}\n{notice}"
-                    logger.info(
-                        "project info submit early final skipped project=%r reason=%s",
-                        project,
-                        early.get("reason"),
-                    )
-                elif early.get("reason"):
-                    logger.info(
-                        "project info submit early final skipped project=%r reason=%s",
-                        project,
-                        early.get("reason"),
-                    )
+                logger.info(
+                    "project info submit early final skipped project=%r reason=%s",
+                    project,
+                    reason or "unknown",
+                )
         except Exception:
             logger.exception(
                 "project info submit early final crashed project=%r", project
             )
+            reply = f"{reply}\n{_EARLY_FINAL_FAILED_NOTICE}"
+            early = {"ran": False, "reason": "crashed"}
     _reply(token, message_id, reply)
     try:
         from bot.workflow_events import log_delivery
