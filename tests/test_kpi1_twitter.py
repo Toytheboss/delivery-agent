@@ -12,6 +12,7 @@ from bot.workflow_kpi1_twitter import (
     count_originals,
     evaluate_kpi1,
     find_mainnet_pr_url,
+    is_main_post,
     is_mainnet_pr_tweet,
     original_status_links,
     tweet_has_project_name,
@@ -335,6 +336,51 @@ def test_x_api_pages_past_replies_before_counting(monkeypatch):
         "launch",
         "older original",
     ]
+
+
+def test_x_api_quote_tweets_do_not_count(monkeypatch):
+    since = datetime(2026, 9, 15, tzinfo=timezone.utc)
+
+    class _Resp:
+        def __init__(self, payload: dict) -> None:
+            self.status_code = 200
+            self._payload = payload
+
+        def json(self) -> dict:
+            return self._payload
+
+    def fake_get(path: str, bearer: str, params: dict | None = None):
+        del bearer
+        if path.startswith("/2/users/by/username/"):
+            return _Resp({"data": {"id": "42"}})
+        if (params or {}).get("pagination_token"):
+            return _Resp(
+                {
+                    "data": [
+                        {"id": "9", "created_at": "2026-09-20T00:00:00.000Z", "text": "main"},
+                    ],
+                    "meta": {},
+                }
+            )
+        return _Resp(
+            {
+                "data": [
+                    {
+                        "id": "1",
+                        "created_at": "2026-09-30T00:00:00.000Z",
+                        "text": "quote",
+                        "referenced_tweets": [{"type": "quoted", "id": "8"}],
+                    }
+                ],
+                "meta": {"next_token": "older"},
+            }
+        )
+
+    monkeypatch.setenv("X_BEARER_TOKEN", "t")
+    monkeypatch.setattr("bot.workflow_kpi1_twitter._x_get", fake_get)
+    rows = _x_api("Demo", since, enough=1)
+    mains = [text for _dt, text, extra in rows if is_main_post(text, extra)]
+    assert mains == ["main"]
 
 
 def test_x_api_stops_paging_after_window(monkeypatch):

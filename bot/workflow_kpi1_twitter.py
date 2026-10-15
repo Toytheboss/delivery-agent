@@ -154,7 +154,6 @@ def is_retweet(text: str, extra: dict[str, Any] | None = None) -> bool:
 
 
 def is_reply(extra: dict[str, Any] | None = None) -> bool:
-    """True for a reply. Quote posts stay original."""
     blob = extra or {}
     if str(blob.get("in_reply_to_user_id") or "").strip():
         return True
@@ -166,8 +165,26 @@ def is_reply(extra: dict[str, Any] | None = None) -> bool:
     return False
 
 
+def is_quote(extra: dict[str, Any] | None = None) -> bool:
+    blob = extra or {}
+    if blob.get("is_quote_status") or blob.get("quoted_status"):
+        return True
+    refs = blob.get("referenced_tweets")
+    if isinstance(refs, list):
+        for ref in refs:
+            if isinstance(ref, dict) and str(ref.get("type") or "") == "quoted":
+                return True
+    return False
+
+
 def is_original_post(text: str, extra: dict[str, Any] | None = None) -> bool:
+    """Not a retweet or reply. Quote tweets still pass here so a PR can be a quote."""
     return not is_retweet(text, extra) and not is_reply(extra)
+
+
+def is_main_post(text: str, extra: dict[str, Any] | None = None) -> bool:
+    """KPI 1 count: own posts only. Replies, retweets, and quote tweets do not count."""
+    return is_original_post(text, extra) and not is_quote(extra)
 
 
 def _tweet_id(extra: dict[str, Any] | None) -> str:
@@ -196,7 +213,7 @@ def original_status_links(
         return []
     ranked: list[tuple[datetime, str]] = []
     for dt, text, extra in rows:
-        if dt < since or not is_original_post(text, extra):
+        if dt < since or not is_main_post(text, extra):
             continue
         tweet_id = _tweet_id(extra if isinstance(extra, dict) else None)
         if not tweet_id:
@@ -952,7 +969,10 @@ def _x_timeline(
             text = str(item.get("text") or "")
             if dt >= since and is_original_post(text, item):
                 out.append((dt, text, item))
-        if enough and len(out) >= int(enough):
+        main_count = sum(
+            1 for _dt, text, extra in out if is_main_post(text, extra)
+        )
+        if enough and main_count >= int(enough):
             truncated = False
             break
         meta = payload.get("meta") if isinstance(payload.get("meta"), dict) else {}
@@ -1000,7 +1020,7 @@ def collect_originals(
     source, rows = fetch_timeline(handle, since=since)
     if rows is None:
         return None, "unread", []
-    n = sum(1 for dt, text, extra in rows if dt >= since and is_original_post(text, extra))
+    n = sum(1 for dt, text, extra in rows if dt >= since and is_main_post(text, extra))
     return n, source, original_status_links(handle, rows, since=since)
 
 
@@ -1130,7 +1150,7 @@ def audit_kpi1_for_fields(
             count = sum(
                 1
                 for dt, text, extra in rows
-                if dt >= since and is_original_post(text, extra)
+                if dt >= since and is_main_post(text, extra)
             )
             links = original_status_links(handle, rows, since=since)
             capped = bool(enough) and source == "x_api" and count >= int(enough or 0)
