@@ -411,7 +411,12 @@ def judge_mainnet_pr_url(
         return "", ""
     prompt = mainnet_pr_prompt(project_name, who, candidates)
     try:
-        client = _get_openai_client_class()(api_key=creds.api_key, base_url=creds.base_url)
+        client = _get_openai_client_class()(
+            api_key=creds.api_key,
+            base_url=creds.base_url,
+            timeout=30.0,
+            max_retries=0,
+        )
         resp = client.chat.completions.create(
             model=creds.model,
             messages=[{"role": "user", "content": prompt}],
