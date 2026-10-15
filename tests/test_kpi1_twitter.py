@@ -500,11 +500,12 @@ def test_judge_skips_without_credentials(monkeypatch):
         ],
         since=datetime(2026, 9, 1, tzinfo=timezone.utc),
     )
-    assert url == ""
-    assert reason == ""
+    assert url == "https://x.com/samplebook/status/20"
+    assert "fallback" in reason
 
 
 def test_judge_api_failure_returns_empty(monkeypatch):
+    from bot import workflow_kpi1_twitter as mod
     from bot.workflow_kpi1_twitter import judge_mainnet_pr_url
 
     class Creds:
@@ -513,11 +514,20 @@ def test_judge_api_failure_returns_empty(monkeypatch):
         model = "test"
 
     monkeypatch.setattr("bot.rag.resolve_llm_credentials", lambda config: Creds())
+    monkeypatch.setattr(mod, "_PR_JUDGE_ATTEMPTS", 2)
+    monkeypatch.setattr(mod.time, "sleep", lambda *_a, **_k: None)
 
-    def boom():
-        raise RuntimeError("down")
+    class BoomClient:
+        def __init__(self, *args, **kwargs):
+            pass
 
-    monkeypatch.setattr("bot.rag._get_openai_client_class", boom)
+        class chat:
+            class completions:
+                @staticmethod
+                def create(*_a, **_k):
+                    raise RuntimeError("down")
+
+    monkeypatch.setattr("bot.rag._get_openai_client_class", lambda: BoomClient)
 
     class Cfg:
         pass
@@ -537,6 +547,51 @@ def test_judge_api_failure_returns_empty(monkeypatch):
     )
     assert url == ""
     assert reason == ""
+
+
+def test_judge_api_failure_falls_back_to_keyword(monkeypatch):
+    from bot import workflow_kpi1_twitter as mod
+    from bot.workflow_kpi1_twitter import judge_mainnet_pr_url
+
+    class Creds:
+        api_key = "k"
+        base_url = "https://example.invalid"
+        model = "test"
+
+    monkeypatch.setattr("bot.rag.resolve_llm_credentials", lambda config: Creds())
+    monkeypatch.setattr(mod, "_PR_JUDGE_ATTEMPTS", 2)
+    monkeypatch.setattr(mod.time, "sleep", lambda *_a, **_k: None)
+
+    class BoomClient:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        class chat:
+            class completions:
+                @staticmethod
+                def create(*_a, **_k):
+                    raise RuntimeError("busy")
+
+    monkeypatch.setattr("bot.rag._get_openai_client_class", lambda: BoomClient)
+
+    class Cfg:
+        pass
+
+    url, reason = judge_mainnet_pr_url(
+        Cfg(),
+        project_name="SampleBook",
+        handle="samplebook",
+        rows=[
+            (
+                datetime(2026, 9, 20, tzinfo=timezone.utc),
+                "Samplebook is live on Botchain mainnet",
+                {"id": "20"},
+            )
+        ],
+        since=datetime(2026, 9, 1, tzinfo=timezone.utc),
+    )
+    assert url == "https://x.com/samplebook/status/20"
+    assert "fallback" in reason
 
 
 def test_maybe_write_kpi2_skips_filled_cell(monkeypatch):

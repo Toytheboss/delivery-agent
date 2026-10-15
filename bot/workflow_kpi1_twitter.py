@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import re
+import time
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
@@ -54,6 +55,8 @@ _PARTNERSHIP_CHAIN_RE = re.compile(
 )
 _PR_CANDIDATE_LIMIT = 40
 _PR_TEXT_LIMIT = 800
+_PR_JUDGE_ATTEMPTS = 3
+_PR_JUDGE_RETRY_SLEEP_S = (2.0, 4.0)
 _X_API_HOSTS = ("https://api.x.com", "https://api.twitter.com")
 _MAX_TWEET_PAGES = 5
 _BEARER_CACHE = ""
@@ -386,6 +389,22 @@ def parse_mainnet_pr_choice(raw: str, allowed_ids: set[str]) -> tuple[str, str]:
     return "", reason
 
 
+def _heuristic_mainnet_pr_url(
+    *,
+    project_name: str,
+    handle: str,
+    rows: list[tuple[datetime, str, dict[str, Any]]],
+    since: datetime,
+) -> tuple[str, str]:
+    """Keyword match when the model is down or declines a clear launch tweet."""
+    url = find_mainnet_pr_url(
+        handle, rows, since=since, project_name=project_name
+    )
+    if not url:
+        return "", ""
+    return url, "keyword match fallback"
+
+
 def judge_mainnet_pr_url(
     config: AppConfig,
     *,
@@ -394,50 +413,93 @@ def judge_mainnet_pr_url(
     rows: list[tuple[datetime, str, dict[str, Any]]],
     since: datetime,
 ) -> tuple[str, str]:
-    """Ask the model which original tweet is the mainnet launch. ('', '') on failure."""
+    """Ask the model which original tweet is the mainnet launch.
+
+    Retries transient API errors. If the model is unavailable or returns no id,
+    falls back to the keyword matcher so a clear launch tweet is not missed.
+    """
     who = (handle or "").strip().lstrip("@")
     candidates = original_pr_candidates(rows, since=since)
     if not who or not candidates:
         return "", ""
+    model_url = ""
+    model_reason = ""
     try:
         from bot.rag import _get_openai_client_class, resolve_llm_credentials
 
         creds = resolve_llm_credentials(config)
     except Exception:
         logger.exception("kpi1: PR judge setup failed project=%r", project_name)
-        return "", ""
+        creds = None
     if creds is None:
         logger.info("kpi1: PR judge skipped, no model credentials project=%r", project_name)
-        return "", ""
-    prompt = mainnet_pr_prompt(project_name, who, candidates)
-    try:
+    else:
+        prompt = mainnet_pr_prompt(project_name, who, candidates)
         client = _get_openai_client_class()(
             api_key=creds.api_key,
             base_url=creds.base_url,
             timeout=30.0,
             max_retries=0,
         )
-        resp = client.chat.completions.create(
-            model=creds.model,
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0,
-            max_tokens=200,
-        )
-        raw = (resp.choices[0].message.content or "").strip()
-    except Exception:
-        logger.exception("kpi1: PR judge failed project=%r", project_name)
-        return "", ""
-    allowed = {tweet_id for tweet_id, _stamp, _body in candidates}
-    tweet_id, reason = parse_mainnet_pr_choice(raw, allowed)
-    logger.info(
-        "kpi1: PR judge project=%r id=%s reason=%s",
-        project_name,
-        tweet_id or "-",
-        (reason or "-")[:200],
+        last_error: Exception | None = None
+        for attempt in range(1, _PR_JUDGE_ATTEMPTS + 1):
+            try:
+                resp = client.chat.completions.create(
+                    model=creds.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0,
+                    max_tokens=200,
+                )
+                raw = (resp.choices[0].message.content or "").strip()
+                allowed = {tweet_id for tweet_id, _stamp, _body in candidates}
+                tweet_id, model_reason = parse_mainnet_pr_choice(raw, allowed)
+                logger.info(
+                    "kpi1: PR judge project=%r id=%s reason=%s attempt=%s",
+                    project_name,
+                    tweet_id or "-",
+                    (model_reason or "-")[:200],
+                    attempt,
+                )
+                if tweet_id:
+                    model_url = f"https://x.com/{who}/status/{tweet_id}"
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_error = exc
+                logger.warning(
+                    "kpi1: PR judge attempt %s/%s failed project=%r: %s",
+                    attempt,
+                    _PR_JUDGE_ATTEMPTS,
+                    project_name,
+                    exc,
+                )
+                if attempt < _PR_JUDGE_ATTEMPTS:
+                    delay = _PR_JUDGE_RETRY_SLEEP_S[
+                        min(attempt - 1, len(_PR_JUDGE_RETRY_SLEEP_S) - 1)
+                    ]
+                    time.sleep(delay)
+        else:
+            if last_error is not None:
+                logger.error(
+                    "kpi1: PR judge failed project=%r",
+                    project_name,
+                    exc_info=last_error,
+                )
+    if model_url:
+        return model_url, model_reason
+    fallback_url, fallback_reason = _heuristic_mainnet_pr_url(
+        project_name=project_name,
+        handle=who,
+        rows=rows,
+        since=since,
     )
-    if not tweet_id:
-        return "", reason
-    return f"https://x.com/{who}/status/{tweet_id}", reason
+    if fallback_url:
+        logger.info(
+            "kpi1: PR judge fallback project=%r url=%s",
+            project_name,
+            fallback_url,
+        )
+        return fallback_url, fallback_reason or model_reason
+    return "", model_reason
 
 
 def maybe_write_kpi2_from_tweets(
