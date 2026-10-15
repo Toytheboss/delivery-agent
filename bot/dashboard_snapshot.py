@@ -3161,7 +3161,9 @@ def _project_state_events(
     chase_meta = chase_meta if isinstance(chase_meta, dict) else {}
     onboard_entry = onboard_entry if isinstance(onboard_entry, dict) else {}
     judge_ts = ""
-    parsed_judge = _event_datetime(fields.get("KPI 判定时间"))
+    parsed_judge = _event_datetime(
+        fields.get("written time") or fields.get("KPI 判定时间")
+    )
     if parsed_judge is not None:
         judge_ts = parsed_judge.isoformat(timespec="seconds")
     fallback_ts = str(updated or "").strip()

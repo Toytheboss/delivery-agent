@@ -424,3 +424,29 @@ def test_audit_skips_passed_items_and_writes_held_coord(monkeypatch):
     assert "Held for rectification" in built["markdown"]
     assert "`7` original posts." in built["markdown"]
     assert "KPI 7" not in built["markdown"]
+
+
+def test_write_held_coord_keeps_final_when_time_field_missing(monkeypatch):
+    from bot.workflow_kpi_result_push import write_held_coord
+
+    writes: list[dict] = []
+
+    def fake_update(_token, _app, _table, _rid, fields):
+        writes.append(dict(fields))
+        if "written time" in fields and "KPI Final" in fields:
+            raise RuntimeError("FieldNameNotFound")
+        if list(fields.keys()) == ["written time"]:
+            raise RuntimeError("FieldNameNotFound")
+
+    monkeypatch.setattr("bot.lark_bitable.update_record", fake_update)
+    monkeypatch.setattr(
+        "bot.workflow_kpi_pass_chain.judge_time_ms", lambda: 1234567890
+    )
+
+    class Cfg:
+        workflow_base_app_token = "app"
+        workflow_progress_table_id = "tbl"
+
+    write_held_coord("tok", Cfg(), "rec1")
+    assert writes[0] == {"KPI Final": "暂扣整改", "written time": 1234567890}
+    assert writes[1] == {"KPI Final": "暂扣整改"}

@@ -441,22 +441,61 @@ def onchain_line_from_copy(copy: str) -> str:
     return onchain_post_line(contract="kept", wallets=wallets, txs=txs)[1]
 
 
-def write_final_fail_coord(token: str, config: AppConfig, record_id: str) -> None:
-    """Second check. Still-failing items become 不通过. There is no further hold."""
+def _write_coord_with_time(
+    token: str,
+    config: AppConfig,
+    record_id: str,
+    coord: str,
+) -> None:
+    """Write KPI Final first. Judge-time failure must not block the result post."""
     from bot.lark_bitable import update_record
     from bot.workflow_kpi_pass_chain import judge_time_ms
 
     stamp = judge_time_ms()
+    try:
+        update_record(
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
+            record_id,
+            {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
+        )
+        return
+    except Exception:
+        logger.exception(
+            "kpi coord+time write failed record=%s coord=%s; retrying coord only",
+            record_id,
+            coord,
+        )
+    update_record(
+        token,
+        config.workflow_base_app_token,
+        config.workflow_progress_table_id,
+        record_id,
+        {_COORD_FIELD: coord},
+    )
+    try:
+        update_record(
+            token,
+            config.workflow_base_app_token,
+            config.workflow_progress_table_id,
+            record_id,
+            {_JUDGE_FIELD: stamp},
+        )
+    except Exception:
+        logger.exception(
+            "kpi judge time write failed record=%s field=%s",
+            record_id,
+            _JUDGE_FIELD,
+        )
+
+
+def write_final_fail_coord(token: str, config: AppConfig, record_id: str) -> None:
+    """Second check. Still-failing items become 不通过. There is no further hold."""
     last_error: Exception | None = None
     for coord in (_FAIL_COORD, "KPI未通过"):
         try:
-            update_record(
-                token,
-                config.workflow_base_app_token,
-                config.workflow_progress_table_id,
-                record_id,
-                {_COORD_FIELD: coord, _JUDGE_FIELD: stamp},
-            )
+            _write_coord_with_time(token, config, record_id, coord)
             return
         except Exception as exc:  # noqa: BLE001
             last_error = exc
@@ -466,16 +505,7 @@ def write_final_fail_coord(token: str, config: AppConfig, record_id: str) -> Non
 
 def write_held_coord(token: str, config: AppConfig, record_id: str) -> None:
     """First-check hold. The coordination cell is 暂扣整改, never 不通过."""
-    from bot.lark_bitable import update_record
-    from bot.workflow_kpi_pass_chain import judge_time_ms
-
-    update_record(
-        token,
-        config.workflow_base_app_token,
-        config.workflow_progress_table_id,
-        record_id,
-        {_COORD_FIELD: _HELD_COORD, _JUDGE_FIELD: judge_time_ms()},
-    )
+    _write_coord_with_time(token, config, record_id, _HELD_COORD)
 
 
 def _pr_url(fields: dict[str, Any], written: str) -> str:
