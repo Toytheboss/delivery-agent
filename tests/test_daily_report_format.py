@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from types import SimpleNamespace
+
 from bot.metrics import (
     _classify_kpi_write,
     _fmt_kind_line,
     _form_first_send_names,
     _live_without_form,
+    _progress_table_daily_counts,
     _summarize_delivery_funnel,
     format_daily_report_zh,
     format_report_zh,
@@ -96,8 +99,13 @@ def test_format_daily_report_has_eight_sections() -> None:
                 "absorb_learn": 0,
             },
             "progress": {
+                "mainnet_live": 12,
                 "today_mainnet_live": 1,
                 "today_mainnet_live_names": ["Alpha"],
+                "mainnet_deploying": 8,
+                "kpi_coord_pass": 5,
+                "today_kpi_coord_pass": 1,
+                "today_kpi_coord_pass_names": ["Alpha"],
             },
             "wallet": {
                 "today_new_projects": 2,
@@ -170,6 +178,11 @@ def test_format_daily_report_has_eight_sections() -> None:
     assert "Verify 告警：2" in text
     assert "字段写入：3" in text
     assert "表单新发：1" in text
+    assert "主网上线：累计 12（今日新增 1：Alpha）" in text
+    assert "主网部署中：当前 8（今日新进 2：M1、M2）" in text
+    assert "KPI 统筹通过：累计 5（今日新增 1：Alpha）" in text
+    assert "进度表主网上线（按主网上线时间）" not in text
+    assert "新进主网部署中" not in text
 
 
 def test_format_daily_report_counts_every_form_send() -> None:
@@ -323,6 +336,83 @@ def test_weekly_report_includes_funnel_counts() -> None:
     assert "上线项目信息表单收回：过去7天 1，过去24小时 0" in text
     assert "初审项目：过去7天 2（通过 1，失败 1），过去24小时 1（通过 0，失败 1）" in text
     assert "终审项目：过去7天 2（通过 1，失败 1），过去24小时 0（通过 0，失败 0）" in text
+
+
+def test_progress_table_stock_and_today_counts() -> None:
+    tz = timezone(timedelta(hours=8))
+    since = datetime(2026, 10, 16, tzinfo=tz)
+    today_ms = int(datetime(2026, 10, 16, 12, 0, tzinfo=tz).timestamp() * 1000)
+    yesterday_ms = int(datetime(2026, 10, 15, 12, 0, tzinfo=tz).timestamp() * 1000)
+    cfg = SimpleNamespace(
+        workflow_status_field="项目状态",
+        workflow_project_name_field="项目名称 Project Name",
+        workflow_logo_field="项目logo（文件）",
+        workflow_trigger_status="BOT主网上线 Live on BOT Chain Mainnet",
+    )
+    out = _progress_table_daily_counts(
+        cfg,
+        since=since,
+        records=[
+            {
+                "record_id": "live-old",
+                "fields": {
+                    "项目名称 Project Name": "LiveOld",
+                    "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                    "主网上线时间": yesterday_ms,
+                },
+            },
+            {
+                "record_id": "live-new",
+                "fields": {
+                    "项目名称 Project Name": "LiveNew",
+                    "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                    "主网上线时间": today_ms,
+                },
+            },
+            {
+                "record_id": "deploying",
+                "fields": {
+                    "项目名称 Project Name": "Deploying",
+                    "项目状态": "主网部署中 Deploying on BOT Chain Mainnet",
+                },
+            },
+            {
+                "record_id": "kpi-old",
+                "fields": {
+                    "项目名称 Project Name": "KpiOld",
+                    "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                    "主网上线时间": yesterday_ms,
+                    "KPI Final": "通过",
+                    "written time": yesterday_ms,
+                },
+            },
+            {
+                "record_id": "kpi-new",
+                "fields": {
+                    "项目名称 Project Name": "KpiNew",
+                    "项目状态": "BOT主网上线 Live on BOT Chain Mainnet",
+                    "主网上线时间": yesterday_ms,
+                    "KPI Final": ["有效 KPI"],
+                    "written time": today_ms,
+                },
+            },
+            {
+                "record_id": "held",
+                "fields": {
+                    "项目名称 Project Name": "Held",
+                    "KPI Final": "暂扣整改",
+                    "written time": today_ms,
+                },
+            },
+        ],
+    )
+    assert out["mainnet_live"] == 4
+    assert out["today_mainnet_live"] == 1
+    assert out["today_mainnet_live_names"] == ["LiveNew"]
+    assert out["mainnet_deploying"] == 1
+    assert out["kpi_coord_pass"] == 2
+    assert out["today_kpi_coord_pass"] == 1
+    assert out["today_kpi_coord_pass_names"] == ["KpiNew"]
 
 
 def test_format_daily_report_calendar_day_note() -> None:

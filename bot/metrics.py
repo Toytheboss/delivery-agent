@@ -136,6 +136,41 @@ def _ms_to_datetime(value: Any) -> datetime | None:
         return None
 
 
+def _judge_datetime(value: Any) -> datetime | None:
+    """Lark written-time: ms, seconds, ISO text, or wrapped option."""
+    if value in (None, ""):
+        return None
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            return value.replace(tzinfo=TZ)
+        return value.astimezone(TZ)
+    if isinstance(value, list) and value:
+        return _judge_datetime(value[0])
+    if isinstance(value, dict):
+        return _judge_datetime(
+            value.get("value") or value.get("text") or value.get("name")
+        )
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        n = float(value)
+        if n > 1_000_000_000_000:
+            n /= 1000.0
+        elif n < 1_000_000_000:
+            return None
+        try:
+            return datetime.fromtimestamp(n, TZ)
+        except (OverflowError, OSError, ValueError):
+            return None
+    text = str(value).strip()
+    parsed = _parse_iso_ts(text)
+    if parsed is None and " " in text[:19]:
+        parsed = _parse_iso_ts(text.replace(" ", "T", 1))
+    if parsed is not None:
+        return parsed
+    return _ms_to_datetime(text)
+
+
 def _in_time_window(dt: datetime | None, *, since: datetime) -> bool:
     return dt is not None and dt >= since
 
@@ -661,6 +696,10 @@ def format_stats_zh(snap: dict[str, Any]) -> str:
 # Progress Tracker：用中文前缀匹配飞书选项（完整文案在私有 config，不入库）
 _FIELD_MAINNET_LIVE_TIME = "主网上线时间"
 _FIELD_TRACK_ENTRY_TIME = "录入时间"
+_FIELD_KPI_FINAL = "KPI Final"
+_FIELD_KPI_WRITTEN = "written time"
+_FIELD_KPI_WRITTEN_FALLBACK = "KPI 判定时间"
+_KPI_COORD_PASS = frozenset({"通过", "有效 KPI"})
 
 
 def _status_kind(status: str) -> str | None:
@@ -715,14 +754,17 @@ def _progress_table_daily_counts(
     records: list[dict[str, Any]] | None = None,
     records_error: str | None = None,
 ) -> dict[str, Any]:
-    """Lark Progress Tracker: windowed mainnet live + current deploy stocks + logos.
+    """Lark Progress Tracker: live/deploy/KPI stocks + windowed new rows.
 
-    ``since`` defaults to past 24 hours. Live rows are included only when the
-    status is live and 「主网上线时间」 falls in the window.
+    ``since`` defaults to past 24 hours. Today's live rows need current live
+    status and 「主网上线时间」 inside the window. KPI today's-new uses
+    ``written time`` while coordination is already 通过 / 有效 KPI.
     """
     del today  # kept for call-site compat; window uses ``since``
     since = since or _window_start(hours=24)
     out: dict[str, Any] = {
+        "mainnet_live": 0,
+        "mainnet_live_names": [],
         "today_mainnet_live": 0,
         "today_mainnet_live_names": [],
         "today_mainnet_live_record_ids": [],
@@ -731,6 +773,10 @@ def _progress_table_daily_counts(
         "mainnet_deploying_names": [],
         "testnet_deploying": 0,
         "testnet_deploying_names": [],
+        "kpi_coord_pass": 0,
+        "kpi_coord_pass_names": [],
+        "today_kpi_coord_pass": 0,
+        "today_kpi_coord_pass_names": [],
         "projects_with_logo": 0,
         "lark_track_new_projects": 0,
         "total_rows": 0,
@@ -758,16 +804,25 @@ def _progress_table_daily_counts(
         live_status = str(
             getattr(config, "workflow_trigger_status", "") or ""
         ).strip()
+        from bot.workflow_kpi_write import field_result
+
         out["total_rows"] = len(records)
+        live_stock_ids: set[str] = set()
+        live_stock_names: list[str] = []
         live_names: list[str] = []
         live_record_ids: set[str] = set()
         live_records: list[dict[str, str]] = []
         main_deploy_names: list[str] = []
         test_deploy_names: list[str] = []
+        kpi_stock_ids: set[str] = set()
+        kpi_stock_names: list[str] = []
+        kpi_today_ids: set[str] = set()
+        kpi_today_names: list[str] = []
         for record in records:
             fields = record.get("fields") or {}
             raw_name = _field_text(fields, name_field)
             name = raw_name or "(未命名)"
+            rid = str(record.get("record_id") or "").strip()
             status = _field_text(fields, status_field)
             kind = _status_kind(status)
             if kind == "main_deploy":
@@ -781,19 +836,34 @@ def _progress_table_daily_counts(
             entry_at = _ms_to_datetime(fields.get(_FIELD_TRACK_ENTRY_TIME))
             if raw_name and _in_time_window(entry_at, since=since):
                 out["lark_track_new_projects"] += 1
-            # Only the dedicated live timestamp establishes a new live project.
-            # 更新日期 changes on later edits and must never inflate this metric.
             is_live = (live_status and status == live_status) or kind == "live"
-            if not is_live:
-                continue
-            live_at = _ms_to_datetime(fields.get(_FIELD_MAINNET_LIVE_TIME))
-            if _in_time_window(live_at, since=since):
-                rid = str(record.get("record_id") or "").strip()
+            if is_live:
                 if rid:
-                    live_record_ids.add(rid)
-                    live_records.append({"record_id": rid, "name": name})
-                out["today_mainnet_live"] += 1
-                live_names.append(name)
+                    live_stock_ids.add(rid)
+                live_stock_names.append(name)
+                live_at = _ms_to_datetime(fields.get(_FIELD_MAINNET_LIVE_TIME))
+                if _in_time_window(live_at, since=since):
+                    if rid:
+                        live_record_ids.add(rid)
+                        live_records.append({"record_id": rid, "name": name})
+                    live_names.append(name)
+            coord = field_result(fields, _FIELD_KPI_FINAL)
+            if coord in _KPI_COORD_PASS:
+                if rid:
+                    kpi_stock_ids.add(rid)
+                kpi_stock_names.append(name)
+                judged = _judge_datetime(
+                    fields.get(_FIELD_KPI_WRITTEN)
+                    or fields.get(_FIELD_KPI_WRITTEN_FALLBACK)
+                )
+                if _in_time_window(judged, since=since):
+                    if rid:
+                        kpi_today_ids.add(rid)
+                    kpi_today_names.append(name)
+        out["mainnet_live"] = (
+            len(live_stock_ids) if live_stock_ids else len(set(live_stock_names))
+        )
+        out["mainnet_live_names"] = sorted(set(live_stock_names), key=str.lower)
         out["today_mainnet_live_record_ids"] = sorted(live_record_ids)
         out["today_mainnet_live_records"] = sorted(
             live_records, key=lambda item: (item["name"].lower(), item["record_id"])
@@ -806,6 +876,16 @@ def _progress_table_daily_counts(
         )
         out["mainnet_deploying_names"] = sorted(main_deploy_names, key=str.lower)
         out["testnet_deploying_names"] = sorted(test_deploy_names, key=str.lower)
+        out["kpi_coord_pass"] = (
+            len(kpi_stock_ids) if kpi_stock_ids else len(set(kpi_stock_names))
+        )
+        out["kpi_coord_pass_names"] = sorted(set(kpi_stock_names), key=str.lower)
+        out["today_kpi_coord_pass"] = (
+            len(kpi_today_ids) if kpi_today_ids else len(set(kpi_today_names))
+        )
+        out["today_kpi_coord_pass_names"] = sorted(
+            set(kpi_today_names), key=str.lower
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("metrics: progress table daily query failed: %s", exc)
         out["error"] = str(exc)
@@ -1785,6 +1865,31 @@ def _append_name_list(lines: list[str], names: list[Any]) -> None:
         lines.append(f"   {i}. {name}")
 
 
+def _fmt_stock_delta_line(
+    lines: list[str],
+    *,
+    label: str,
+    stock: int,
+    stock_word: str,
+    today: int,
+    today_word: str = "今日新增",
+    today_names: list[Any] | None = None,
+    name_limit: int = 12,
+) -> None:
+    """Cumulative/current stock with today's new names in the same line."""
+    extra = ""
+    names = [str(n).strip() for n in (today_names or []) if str(n).strip()]
+    if int(today) > 0 and names:
+        unique = _dedupe_names(names, limit=10_000)
+        shown = unique[: max(int(name_limit), 1)]
+        more = max(len(unique) - len(shown), 0)
+        tail = f" 等另 {more} 个" if more else ""
+        extra = f"：{'、'.join(shown)}{tail}"
+    lines.append(
+        f"· {label}：{stock_word} {int(stock)}（{today_word} {int(today)}{extra}）"
+    )
+
+
 def _fmt_kind_line(
     lines: list[str],
     *,
@@ -1943,30 +2048,46 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         lines.append(f"· 沉默主因：{top}")
 
     lines.extend(["", "二、部署管道"])
+    entered_test = list(dc.get("entered_testnet_deploy") or [])
+    entered_main = list(dc.get("entered_mainnet_deploy") or [])
+    left_live = list(dc.get("left_mainnet_live") or [])
+    if p.get("error"):
+        lines.append(f"· 进度表业务数据：查询失败（{p['error']}）")
+    else:
+        _fmt_stock_delta_line(
+            lines,
+            label="主网上线",
+            stock=int(p.get("mainnet_live") or 0),
+            stock_word="累计",
+            today=int(p.get("today_mainnet_live") or 0),
+            today_names=list(p.get("today_mainnet_live_names") or []),
+        )
+        _fmt_stock_delta_line(
+            lines,
+            label="主网部署中",
+            stock=int(p.get("mainnet_deploying") or 0),
+            stock_word="当前",
+            today=len(entered_main),
+            today_word="今日新进",
+            today_names=entered_main,
+        )
+        _fmt_stock_delta_line(
+            lines,
+            label="KPI 统筹通过",
+            stock=int(p.get("kpi_coord_pass") or 0),
+            stock_word="累计",
+            today=int(p.get("today_kpi_coord_pass") or 0),
+            today_names=list(p.get("today_kpi_coord_pass_names") or []),
+        )
     if dc.get("error"):
         lines.append(f"· 部署监测读取失败：{dc['error']}")
     elif not dc.get("baselined") and int(dc.get("total") or 0) == 0:
         lines.append("· 部署监测基线中，之后开始记新增")
     else:
         lines.append(f"· 状态变迁：{int(dc.get('total') or 0)} 次")
-        entered_test = list(dc.get("entered_testnet_deploy") or [])
-        entered_main = list(dc.get("entered_mainnet_deploy") or [])
-        left_live = list(dc.get("left_mainnet_live") or [])
         _fmt_kind_line(
             lines, label="新进测试网部署", count=len(entered_test), names=entered_test
         )
-        _fmt_kind_line(
-            lines, label="新进主网部署中", count=len(entered_main), names=entered_main
-        )
-        if p.get("error"):
-            lines.append(f"· 进度表主网上线：查询失败（{p['error']}）")
-        else:
-            _fmt_kind_line(
-                lines,
-                label="进度表主网上线（按主网上线时间）",
-                count=int(p.get("today_mainnet_live") or 0),
-                names=list(p.get("today_mainnet_live_names") or []),
-            )
         _fmt_kind_line(
             lines, label="上线回退", count=len(left_live), names=left_live
         )
