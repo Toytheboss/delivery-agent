@@ -25,7 +25,7 @@ from bot.workflow_form_dispatch import (
     send_form_messages,
     match_project_to_chat,
 )
-from bot.workflow_logo_fill import fill_logo_for_fields
+from bot.workflow_logo_fill import fill_logo_for_fields, logo_fill_allowed
 
 if TYPE_CHECKING:
     from telethon import TelegramClient
@@ -315,7 +315,7 @@ async def process_live_project(
         pass
 
     # --- Logo ---
-    if config.workflow_logo_fill_enabled:
+    if logo_fill_allowed(config):
         try:
             fields = dict(fields)
             fields[config.workflow_status_field] = config.workflow_trigger_status
@@ -396,6 +396,7 @@ async def startup_live_catchup(
     root = Path(__file__).resolve().parent.parent
     form_sent = _load_state(root / config.workflow_state_file)
     logo_done, _ = load_logo_state(root / config.workflow_logo_state_file)
+    fill_logo = logo_fill_allowed(config)
 
     n = 0
     for record in records:
@@ -406,7 +407,7 @@ async def startup_live_catchup(
         if _field_text(fields, config.workflow_status_field) != config.workflow_trigger_status:
             continue
         need_form = bool(config.workflow_google_form_url) and rid not in form_sent
-        need_logo = config.workflow_logo_fill_enabled and rid not in logo_done
+        need_logo = fill_logo and rid not in logo_done
         if not need_form and not need_logo:
             continue
         await process_live_project(

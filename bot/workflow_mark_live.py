@@ -489,7 +489,9 @@ async def _apply_mark_live(
     if note:
         lines.append(note)
 
-    if config.workflow_mark_live_also_send_form or config.workflow_logo_fill_enabled:
+    from bot.workflow_logo_fill import logo_fill_allowed
+
+    if config.workflow_mark_live_also_send_form or logo_fill_allowed(config):
         scope = FolderScope(client, config)
         await scope.refresh()
         outcome = await process_live_project(

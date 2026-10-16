@@ -38,7 +38,7 @@ from bot.handlers import MessageHandler
 from bot.knowledge import KnowledgeBase
 from bot.lark_sync import sync_lark_wiki
 from bot.workflow_form_dispatch import form_dispatch_loop, run_form_dispatch_once
-from bot.workflow_logo_fill import logo_fill_loop, run_logo_fill_once
+from bot.workflow_logo_fill import logo_fill_allowed, logo_fill_loop, run_logo_fill_once
 from bot.workflow_lark_webhook import start_live_webhook_server
 from bot.workflow_tech_support import tech_support_poll_loop
 from bot.workflow_deploy_status_watch import deploy_status_watch_loop
@@ -357,7 +357,7 @@ async def main() -> None:
                 if config.workflow_google_form_url:
                     await run_form_dispatch_once(client, config, scope)
                     asyncio.create_task(form_dispatch_loop(client, config, scope))
-                if config.workflow_logo_fill_enabled:
+                if logo_fill_allowed(config):
                     await run_logo_fill_once(config)
                     asyncio.create_task(logo_fill_loop(config))
 
@@ -380,7 +380,7 @@ async def main() -> None:
         logger.info(
             "Workflow mark-live also_send_form=%s logo_fill=%s",
             config.workflow_mark_live_also_send_form,
-            config.workflow_logo_fill_enabled,
+            logo_fill_allowed(config),
         )
         if config.workflow_google_form_url:
 

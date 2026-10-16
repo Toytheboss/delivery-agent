@@ -170,7 +170,9 @@ workflow:
     Thanks for your support ❤️
   form_message_gap_seconds: 10
   state_file: "data/form_dispatch_state.json"
-  # On Lark live (poll) OR TG mark-live: fetch site logo into 项目logo（文件） (no retry on fail)
+  # Fetch site logo into 项目logo（文件） (no retry on fail).
+  # 审核号 only: the 交付号 install at /opt/delivery-agent never uploads,
+  # even when this flag is true (avoids duplicate attachments).
   logo_fill_enabled: true
   logo_field: "项目logo（文件）"
   # Form wallet table Project logo (URL text) → Progress Tracker URL column (fill empty only)

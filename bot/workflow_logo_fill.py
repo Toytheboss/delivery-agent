@@ -20,6 +20,25 @@ logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
 
 
+def logo_fill_on_this_host() -> bool:
+    """Site-logo fetch and attachment write run on 审核号 only.
+
+    The delivery-agent install at ``/opt/delivery-agent`` never uploads logos.
+    Two hosts writing the same attachment cell appends a duplicate file.
+    """
+    root = str(ROOT).replace("\\", "/").lower().rstrip("/")
+    return root != "/opt/delivery-agent" and not root.startswith(
+        "/opt/delivery-agent/"
+    )
+
+
+def logo_fill_allowed(config: Any) -> bool:
+    """True when this process may fetch a site logo into the progress table."""
+    if not getattr(config, "workflow_logo_fill_enabled", True):
+        return False
+    return logo_fill_on_this_host()
+
+
 def _load_state(path: Path) -> tuple[set[str], dict[str, str]]:
     if not path.exists():
         return set(), {}
@@ -70,7 +89,7 @@ async def fill_logo_for_fields(
     results: dict[str, str] | None = None,
 ) -> str:
     """One-shot logo fill for a live record. Marks state even on failure."""
-    if not getattr(config, "workflow_logo_fill_enabled", True):
+    if not logo_fill_allowed(config):
         return "disabled"
 
     path = state_path or (ROOT / config.workflow_logo_state_file)
@@ -148,7 +167,7 @@ async def run_logo_fill_once(config: AppConfig) -> int:
     """Scan live rows missing logo; process each at most once. Returns ok count."""
     if not config.workflow_enabled:
         return 0
-    if not getattr(config, "workflow_logo_fill_enabled", True):
+    if not logo_fill_allowed(config):
         return 0
 
     app_id = os.getenv("LARK_APP_ID", "").strip()

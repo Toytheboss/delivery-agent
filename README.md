@@ -105,7 +105,7 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
 | **Manual send form** | Ops command in the current group as fallback. |
 | **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
-| **Logo fill** | Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). |
+| **Logo fill** | Audit account only. Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). Delivery account never uploads, so the same cell does not get two files. |
 | **Form / logo poll** | Optional expensive poller (off by default; prefer webhook + watch + mark-live). |
 | **Form chase** | After the form is sent: daily reminder listing **still-missing** required fields, until the missing list is empty or the reminder cap is hit. An empty missing list stops chase even if a legacy `min_filled` threshold would have said otherwise. |
 | **Wallet notify (TG)** | When required wallet fields are complete, notify configured chats (optional; often off). |
@@ -314,7 +314,8 @@ Lark IM path (examples): **audit weekly prepare/send → IM app posts to configu
 | Telegram userbot presence in partner groups | yes | yes |
 | Partner FAQ / welcome / folder filing | optional | primary |
 | RAG + LLM compose for group Q&A | optional | primary |
-| Live → Google Form → logo fill | may assist | primary |
+| Live → Google Form | may assist | primary |
+| Site logo → progress attachment | **only** | gated off |
 | Form chase / wallet digest notify | often primary for digest | configurable |
 | KPI cell checks & writes | **only** | gated off |
 | KPI auto schedule (+7 / +21) | **only** | off |
