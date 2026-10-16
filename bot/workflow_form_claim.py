@@ -24,16 +24,19 @@ def other_account(account: str) -> str:
     return "roy" if str(account or "").strip().lower() == "josh" else "josh"
 
 
-def live_form_speaker(issuer: str, *, peer_in_group: bool) -> str:
+def live_form_speaker(issuer: str, *, peer_in_group: bool | None) -> str:
     """Who posts the congrats and form bubbles.
 
     The issuer is already in the group (they received Mark live). When the
-    other bot is there too, that other bot speaks. Otherwise the issuer does.
+    other bot is there too, that other bot speaks. If membership is unknown
+    (lookup failed or the peer username env is missing), assign the other
+    bot: a 45s reclaim returns the slot to the issuer if they never post.
+    Only a confirmed absence keeps the issuer as speaker.
     """
     issuer = "josh" if str(issuer or "").strip().lower() == "josh" else "roy"
-    if peer_in_group:
-        return "roy" if issuer == "josh" else "josh"
-    return issuer
+    if peer_in_group is False:
+        return issuer
+    return other_account(issuer)
 
 
 def claim_path_for(config: Any) -> Path:

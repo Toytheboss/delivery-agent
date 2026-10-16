@@ -350,7 +350,8 @@ async def _prepare_mark_live_form_speaker(
     )
     from bot.workflow_live_onboard import (
         account_key,
-        peer_account_in_chat,
+        load_peer_folder_titles,
+        lookup_peer_in_chat,
         remember_group_membership,
     )
 
@@ -365,15 +366,28 @@ async def _prepare_mark_live_form_speaker(
         requested_by=issuer,
     )
     peer = other_account(issuer)
+    peer_in: bool | None = None
     try:
-        peer_in = await peer_account_in_chat(client, chat_id, peer)
+        peer_in = await lookup_peer_in_chat(client, chat_id, peer)
     except Exception:
         logger.exception(
             "mark-live form speaker lookup failed project=%r chat=%s",
             project_name,
             chat_id,
         )
-        peer_in = False
+        peer_in = None
+    if peer_in is None:
+        _titles, cache_roy, cache_josh = load_peer_folder_titles()
+        cached = chat_id in (cache_josh if peer == "josh" else cache_roy)
+        if cached:
+            peer_in = True
+        else:
+            logger.warning(
+                "mark-live form peer lookup unknown project=%r chat=%s peer=%s",
+                project_name,
+                chat_id,
+                peer,
+            )
     speaker = live_form_speaker(issuer, peer_in_group=peer_in)
     assign_form_sender(
         path,
@@ -384,15 +398,16 @@ async def _prepare_mark_live_form_speaker(
         chat_title=chat_title,
         requested_by=issuer,
     )
-    flags = {issuer: True, peer: peer_in}
+    roy_in: bool | None = True if issuer == "roy" else peer_in
+    josh_in: bool | None = True if issuer == "josh" else peer_in
     remember_group_membership(
         config,
         rid=record_id,
         project_name=project_name,
         chat_id=chat_id,
         chat_title=chat_title,
-        roy_in=bool(flags.get("roy")),
-        josh_in=bool(flags.get("josh")),
+        roy_in=roy_in,
+        josh_in=josh_in,
     )
     logger.info(
         "mark-live form speaker=%s issuer=%s peer_in=%s project=%r chat=%s",

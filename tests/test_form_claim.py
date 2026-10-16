@@ -1,4 +1,7 @@
+import asyncio
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from bot.workflow_form_claim import (
     assign_form_sender,
@@ -39,6 +42,11 @@ def test_speaker_is_the_other_bot_when_both_are_in_the_group():
 def test_speaker_is_the_issuer_when_alone():
     assert live_form_speaker("roy", peer_in_group=False) == "roy"
     assert live_form_speaker("josh", peer_in_group=False) == "josh"
+
+
+def test_speaker_is_the_other_bot_when_membership_is_unknown():
+    assert live_form_speaker("roy", peer_in_group=None) == "josh"
+    assert live_form_speaker("josh", peer_in_group=None) == "roy"
 
 
 def test_reserve_blocks_both_senders_until_assigned(tmp_path: Path):
@@ -99,3 +107,66 @@ def test_expired_handoff_returns_to_the_issuer(tmp_path: Path):
     assert jobs[0]["owner"] == "roy"
     assert begin_form_send(path, "rec3", "josh", now=147) == "wait"
     assert begin_form_send(path, "rec3", "roy", now=147) == "send"
+
+
+def _mark_live_cfg(tmp_path: Path) -> SimpleNamespace:
+    return SimpleNamespace(
+        workflow_mark_live_also_send_form=True,
+        workflow_google_form_url="https://form.example",
+        workflow_form_claim_state_file=str(tmp_path / "claim.json"),
+        workflow_live_onboard_state_file=str(tmp_path / "onboard.json"),
+        workflow_live_onboard_account="roy",
+        group_replies_enabled=True,
+    )
+
+
+def test_unknown_peer_lookup_assigns_the_other_account(tmp_path, monkeypatch):
+    from bot.workflow_mark_live import _prepare_mark_live_form_speaker
+
+    async def unknown(*_args, **_kwargs):
+        return None
+
+    monkeypatch.setattr("bot.workflow_live_onboard.lookup_peer_in_chat", unknown)
+    monkeypatch.setattr(
+        "bot.workflow_live_onboard.load_peer_folder_titles",
+        lambda: ({}, set(), set()),
+    )
+    speaker = asyncio.run(
+        _prepare_mark_live_form_speaker(
+            client=None,
+            config=_mark_live_cfg(tmp_path),
+            record_id="rec-unknown",
+            project_name="Bot-DCA",
+            chat_id=-5485534659,
+            chat_title="Bot-DCA <> Botchain",
+        )
+    )
+    assert speaker == "josh"
+    claim = json.loads((tmp_path / "claim.json").read_text(encoding="utf-8"))
+    assert claim["records"]["rec-unknown"]["owner"] == "josh"
+    onboard = json.loads((tmp_path / "onboard.json").read_text(encoding="utf-8"))
+    entry = onboard["projects"]["rec-unknown"]
+    assert entry["roy_in"] is True
+    assert "josh_in" not in entry
+
+
+def test_confirmed_absent_peer_keeps_issuer_as_speaker(tmp_path, monkeypatch):
+    from bot.workflow_mark_live import _prepare_mark_live_form_speaker
+
+    async def absent(*_args, **_kwargs):
+        return False
+
+    monkeypatch.setattr("bot.workflow_live_onboard.lookup_peer_in_chat", absent)
+    speaker = asyncio.run(
+        _prepare_mark_live_form_speaker(
+            client=None,
+            config=_mark_live_cfg(tmp_path),
+            record_id="rec-alone",
+            project_name="Solo",
+            chat_id=-1,
+            chat_title="Solo <> Botchain",
+        )
+    )
+    assert speaker == "roy"
+    claim = json.loads((tmp_path / "claim.json").read_text(encoding="utf-8"))
+    assert claim["records"]["rec-alone"]["owner"] == "roy"

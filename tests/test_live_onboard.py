@@ -15,6 +15,7 @@ from bot.workflow_live_onboard import (
     load_peer_folder_titles,
     merge_membership,
     parse_bd_person,
+    remember_group_membership,
     resolve_form_sent,
     sends_lark_notify,
     should_wait_for_form_handoff,
@@ -318,6 +319,33 @@ def test_peer_folder_cache_matches_delivery_account_group(tmp_path, monkeypatch)
     assert chat_id in josh_ids
     assert chat_id not in roy_ids
     assert reason
+
+
+def test_remember_membership_does_not_overwrite_unknown_peer(tmp_path):
+    cfg = SimpleNamespace(
+        workflow_live_onboard_state_file=str(tmp_path / "onboard.json")
+    )
+    remember_group_membership(
+        cfg,
+        rid="rec1",
+        project_name="Bot-DCA",
+        chat_id=-5485534659,
+        chat_title="Bot-DCA <> Botchain",
+        roy_in=True,
+        josh_in=True,
+    )
+    remember_group_membership(
+        cfg,
+        rid="rec1",
+        project_name="Bot-DCA",
+        chat_id=-5485534659,
+        chat_title="Bot-DCA <> Botchain",
+        roy_in=True,
+        josh_in=None,
+    )
+    data = json.loads((tmp_path / "onboard.json").read_text(encoding="utf-8"))
+    assert data["projects"]["rec1"]["roy_in"] is True
+    assert data["projects"]["rec1"]["josh_in"] is True
 
 
 def test_cache_membership_kept_after_peer_live_false():

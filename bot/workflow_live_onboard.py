@@ -466,10 +466,13 @@ def remember_group_membership(
     project_name: str,
     chat_id: int,
     chat_title: str,
-    roy_in: bool,
-    josh_in: bool,
+    roy_in: bool | None,
+    josh_in: bool | None,
 ) -> None:
-    """Record who was in the group at Mark live, before the Lark ping is composed."""
+    """Record who was in the group at Mark live, before the Lark ping is composed.
+
+    None means the lookup did not answer; leave the stored flag alone.
+    """
     path = _state_path(config)
     with _locked_state(path) as data:
         entry = _project_entry(data, rid)
@@ -477,19 +480,29 @@ def remember_group_membership(
         entry["chat_id"] = int(chat_id)
         if chat_title:
             entry["chat_title"] = chat_title
-        entry["roy_in"] = bool(roy_in)
-        entry["josh_in"] = bool(josh_in)
+        if roy_in is not None:
+            entry["roy_in"] = bool(roy_in)
+        if josh_in is not None:
+            entry["josh_in"] = bool(josh_in)
 
 
 async def lookup_peer_in_chat(
     client: TelegramClient, chat_id: int, peer: str
 ) -> bool | None:
     """True/False when Telegram answered; None when the lookup itself failed."""
-    username = {
-        "roy": os.getenv("AUDIT_TG_USERNAME", ""),
-        "josh": os.getenv("DELIVERY_TG_USERNAME", ""),
-    }.get(str(peer or "").strip().lower(), "")
+    username = str(
+        {
+            "roy": os.getenv("AUDIT_TG_USERNAME", ""),
+            "josh": os.getenv("DELIVERY_TG_USERNAME", ""),
+        }.get(str(peer or "").strip().lower(), "")
+        or ""
+    ).strip().lstrip("@")
     if not username:
+        logger.warning(
+            "live-onboard: peer username env missing peer=%s chat=%s",
+            peer,
+            chat_id,
+        )
         return None
     try:
         user = await client.get_entity(username)
@@ -541,10 +554,11 @@ async def lookup_peer_in_chat(
     return None
 
 
-async def peer_account_in_chat(client: TelegramClient, chat_id: int, peer: str) -> bool:
-    """True when the other bot account is a member of this group."""
-    found = await lookup_peer_in_chat(client, chat_id, peer)
-    return bool(found)
+async def peer_account_in_chat(
+    client: TelegramClient, chat_id: int, peer: str
+) -> bool | None:
+    """True/False when Telegram answered; None when the lookup itself failed."""
+    return await lookup_peer_in_chat(client, chat_id, peer)
 
 
 def merge_membership(
