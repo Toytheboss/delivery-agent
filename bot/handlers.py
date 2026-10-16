@@ -367,6 +367,7 @@ class MessageHandler:
                             chat_title=title,
                             quoted_msg_id=quoted_id,
                             picked_text=text,
+                            scope=self.scope,
                         )
                         if resolved is not None:
                             inc("mark_live_resolve")
@@ -627,7 +628,7 @@ class MessageHandler:
                 title = getattr(chat, "title", None) or ""
                 inc("mark_live_triggers")
                 outcome = await mark_live_from_group(
-                    self.client, self.config, chat_id, title
+                    self.client, self.config, chat_id, title, scope=self.scope
                 )
                 reply_msg = await message.reply(outcome.text)
                 if outcome.candidates:

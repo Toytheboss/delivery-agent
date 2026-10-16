@@ -415,6 +415,7 @@ async def _apply_mark_live(
     fields: dict[str, Any],
     chat_id: int,
     chat_title: str,
+    scope: FolderScope | None = None,
 ) -> str:
     speaker = await _prepare_mark_live_form_speaker(
         client,
@@ -492,12 +493,12 @@ async def _apply_mark_live(
     from bot.workflow_logo_fill import logo_fill_allowed
 
     if config.workflow_mark_live_also_send_form or logo_fill_allowed(config):
-        scope = FolderScope(client, config)
-        await scope.refresh()
+        # Never GetDialogs here: the operator is already in this group.
+        live_scope = scope if scope is not None else FolderScope(client, config)
         outcome = await process_live_project(
             client,
             config,
-            scope,
+            live_scope,
             record_id=record_id,
             project_name=project_name,
             require_live_status=True,
@@ -573,6 +574,7 @@ async def mark_live_from_group(
     config: AppConfig,
     chat_id: int,
     chat_title: str,
+    scope: FolderScope | None = None,
 ) -> MarkLiveOutcome:
     """Match current TG group to a Lark project and set status to live."""
     app_id = os.getenv("LARK_APP_ID", "").strip()
@@ -629,6 +631,7 @@ async def mark_live_from_group(
         fields=fields,
         chat_id=chat_id,
         chat_title=chat_title,
+        scope=scope,
     )
     return MarkLiveOutcome(text)
 
@@ -641,6 +644,7 @@ async def resolve_mark_live_reply(
     chat_title: str,
     quoted_msg_id: int,
     picked_text: str,
+    scope: FolderScope | None = None,
 ) -> MarkLiveOutcome | None:
     """If quote targets an ambiguous mark-live prompt, continue with picked name.
 
@@ -744,6 +748,7 @@ async def resolve_mark_live_reply(
         fields=fields,
         chat_id=chat_id,
         chat_title=title,
+        scope=scope,
     )
     return MarkLiveOutcome(text)
 

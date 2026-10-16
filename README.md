@@ -103,8 +103,8 @@ End-to-end path when a project goes **Mainnet Live**:
 | **Deploy status watch** | Tracks enter/leave mainnet-live / mainnet-deploying / testnet-deploying for daily report. |
 | **Startup live catch-up** | Optional one-shot process of live rows missing form/logo. |
 | **Form dispatch** | Fuzzy-match project name to folder group title (or Lark TG chat id field); send templated message + form URL. |
-| **Manual send form** | Ops command in the current group as fallback. |
-| **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. |
+| **Manual send form** | Ops command in the current group as fallback (no full dialog scan). |
+| **Mark live** | Ops keyword sets Lark status to live and can also run form + logo. Does not scan all joined dialogs; it uses the current group. |
 | **Logo fill** | Audit account only. Fetches site logo from live/project URL into Lark attachment field (one attempt; no retry on hard fail). Delivery account never uploads, so the same cell does not get two files. |
 | **Form / logo poll** | Optional expensive poller (off by default; prefer webhook + watch + mark-live). |
 | **Form chase** | After the form is sent: daily reminder listing **still-missing** required fields, until the missing list is empty or the reminder cap is hit. An empty missing list stops chase even if a legacy `min_filled` threshold would have said otherwise. |

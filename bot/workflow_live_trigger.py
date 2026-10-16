@@ -171,18 +171,9 @@ async def process_live_project(
         if rid in sent:
             result["form"] = "already_sent"
         else:
-            if not scope.chat_ids:
-                await scope.refresh()
-            titles = await build_folder_title_map(client, scope.chat_ids)
-            # Mark-live from a group outside folder: still target that chat.
-            if preferred_chat_id is not None:
-                titles[preferred_chat_id] = (
-                    (preferred_chat_title or "").strip()
-                    or titles.get(preferred_chat_id)
-                    or name
-                )
             chat_id: int | None = None
             match_reason = ""
+            titles: dict[int, str] = {}
             if config.workflow_tg_chat_id_field:
                 chat_id = _parse_chat_id(
                     _field_text(fields, config.workflow_tg_chat_id_field)
@@ -190,14 +181,22 @@ async def process_live_project(
                 if chat_id is not None:
                     match_reason = "lark TG群ID field"
             if chat_id is None and preferred_chat_id is not None:
-                matched, reason = match_project_to_chat(
-                    name, {preferred_chat_id: titles[preferred_chat_id]}
+                chat_id = preferred_chat_id
+                match_reason = "preferred chat"
+                titles[preferred_chat_id] = (
+                    (preferred_chat_title or "").strip() or name
                 )
-                if matched == preferred_chat_id:
-                    chat_id = preferred_chat_id
-                    match_reason = f"preferred chat ({reason})"
             if chat_id is None:
+                if not scope.chat_ids:
+                    await scope.refresh()
+                titles = await build_folder_title_map(client, scope.chat_ids)
                 chat_id, match_reason = match_project_to_chat(name, titles)
+            elif preferred_chat_id is not None and chat_id == preferred_chat_id:
+                titles[chat_id] = (
+                    (preferred_chat_title or "").strip()
+                    or titles.get(chat_id)
+                    or name
+                )
             if chat_id is None:
                 result["form"] = f"no_group:{match_reason}"
                 logger.warning(

@@ -410,10 +410,10 @@ async def resolve_project_chat(
             (preferred_chat_title or "").strip() or name
         )
         if chat_id is None:
-            matched, why = match_project_to_chat(name, titles)
-            if matched == preferred_chat_id:
-                chat_id = preferred_chat_id
-                reason = f"preferred chat ({why})"
+            # Hot path (mark live / current-group form): this chat is already known.
+            # Do not GetDialogs just to confirm the title.
+            chat_id = preferred_chat_id
+            reason = "preferred chat"
 
     if chat_id is None:
         titles.update(load_peer_folder_titles()[0])
