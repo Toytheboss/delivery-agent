@@ -77,6 +77,18 @@ _BLOCKED_URL_SUBSTR = (
     "botchain.notion.site/botchain-ecosystem-support-program",
     "docs.google.com/document/d/1ijhL3V5EZi6T8DIz4v9BCj13C2SpcgfYcyiI7f9l7fI",
 )
+# Ecosystem apply forms. Only paste when the partner is actually asking to apply.
+_APPLY_FORM_IDS = (
+    "1FAIpQLSfbzPvwMlXbKWZUm2N1Dyg8hXXGwU4LKUFFpJX04LP8lbMPQA",
+    "1FAIpQLScivEtSQMNfSvXdW2uOds7wPtDD0YCU1iiMT70zACGXF9aUzQ",
+)
+_APPLY_INTENT_RE = re.compile(
+    r"申请表|怎么申请|如何申请|报名|提交项目|加入生态|进生态|"
+    r"扶持怎么申|申请扶持|申请 plan|apply for plan|"
+    r"\bapply\b|\bapplication form\b|submit (a |the )?project|"
+    r"how (do i|to) (apply|submit)|join the ecosystem",
+    re.I,
+)
 
 
 def _normalize_url(url: str) -> str:
@@ -87,6 +99,23 @@ def _normalize_url(url: str) -> str:
 def _is_blocked_url(url: str) -> bool:
     lowered = (url or "").lower()
     return any(part in lowered for part in _BLOCKED_URL_SUBSTR)
+
+
+def _is_apply_form_url(url: str) -> bool:
+    lowered = (url or "").lower()
+    return any(part.lower() in lowered for part in _APPLY_FORM_IDS)
+
+
+def _question_wants_apply_form(question: str) -> bool:
+    return bool(_APPLY_INTENT_RE.search(question or ""))
+
+
+def _allow_url(url: str, *, question: str = "") -> bool:
+    if _is_blocked_url(url):
+        return False
+    if _is_apply_form_url(url) and not _question_wants_apply_form(question):
+        return False
+    return True
 
 
 def _extract_urls(text: str) -> list[str]:
@@ -102,14 +131,14 @@ def _extract_urls(text: str) -> list[str]:
     return out
 
 
-def _scrub_blocked_urls(text: str) -> str:
-    """Remove blocked URLs from model output (and tidy leftover blank lines)."""
+def _scrub_blocked_urls(text: str, *, question: str = "") -> str:
+    """Remove blocked / off-topic apply-form URLs from model output."""
     if not text:
         return text
 
     def _repl(match: re.Match[str]) -> str:
         url = _normalize_url(match.group(0))
-        return "" if _is_blocked_url(url) else match.group(0)
+        return "" if not _allow_url(url, question=question) else match.group(0)
 
     cleaned = _URL_RE.sub(_repl, text)
     cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
@@ -134,10 +163,14 @@ def _source_urls_from_chunk(chunk_text: str) -> list[str]:
     return _extract_urls(chunk_text)
 
 
-def _format_context(hits: list[SearchHit]) -> str:
+def _format_context(hits: list[SearchHit], question: str = "") -> str:
     parts: list[str] = []
     for i, hit in enumerate(hits, 1):
-        links = _source_urls_from_chunk(hit.chunk.text)
+        links = [
+            url
+            for url in _source_urls_from_chunk(hit.chunk.text)
+            if _allow_url(url, question=question)
+        ]
         link_block = ""
         if links:
             link_block = "\nRelated links (include in reply if relevant):\n" + "\n".join(
@@ -150,7 +183,9 @@ def _format_context(hits: list[SearchHit]) -> str:
     return "\n\n---\n\n".join(parts)
 
 
-def _urls_for_reply(hits: list[SearchHit], max_links: int = 3) -> list[str]:
+def _urls_for_reply(
+    hits: list[SearchHit], max_links: int = 3, *, question: str = ""
+) -> list[str]:
     """Collect reply-worthy URLs: labeled sources first, then other URLs in hits."""
     preferred: list[str] = []
     others: list[str] = []
@@ -163,6 +198,8 @@ def _urls_for_reply(hits: list[SearchHit], max_links: int = 3) -> list[str]:
             if not m:
                 continue
             for url in _extract_urls(m.group(1)):
+                if not _allow_url(url, question=question):
+                    continue
                 source_urls.add(url)
                 if url not in seen:
                     seen.add(url)
@@ -170,12 +207,16 @@ def _urls_for_reply(hits: list[SearchHit], max_links: int = 3) -> list[str]:
         for url in _extract_urls(text):
             if url in source_urls or url in seen:
                 continue
+            if not _allow_url(url, question=question):
+                continue
             seen.add(url)
             others.append(url)
     return (preferred + others)[:max_links]
 
 
-def _append_missing_links(answer: str, hits: list[SearchHit], max_links: int = 3) -> str:
+def _append_missing_links(
+    answer: str, hits: list[SearchHit], max_links: int = 3, *, question: str = ""
+) -> str:
     """If the reply omitted URLs present in top hits, append a short link block."""
     text = (answer or "").strip()
     if not text or not hits:
@@ -184,7 +225,7 @@ def _append_missing_links(answer: str, hits: list[SearchHit], max_links: int = 3
     if _extract_urls(text):
         return text
 
-    missing = _urls_for_reply(hits, max_links=max_links)
+    missing = _urls_for_reply(hits, max_links=max_links, question=question)
     if not missing:
         return text
     return text.rstrip() + "\n" + "\n".join(missing)
@@ -688,8 +729,8 @@ def _fallback_compose(
     if not body and used is not None:
         body = used.chunk.text.strip()
     body = _clean_fallback_answer(body)
-    body = _append_missing_links(body, safe_hits)
-    body = _scrub_blocked_urls(body)
+    body = _append_missing_links(body, safe_hits, question=question)
+    body = _scrub_blocked_urls(body, question=question)
     if len(body) > 500:
         body = body[:500].rstrip() + "…"
 
@@ -844,9 +885,12 @@ def _call_llm(
             "- Prefer silence over a plausible-but-wrong reply. "
             "Don't pivot just because keywords overlap. Don't invent chain facts.\n"
             "Links / sources:\n"
-            "- When context has relevant docs, help-center, GitHub, form, RPC, "
+            "- When context has relevant docs, help-center, GitHub, RPC, "
             "explorer, or other URLs — include them in the reply (don't answer "
             "with prose only).\n"
+            "- Google application forms: include ONLY if the partner is asking "
+            "how to apply, submit a project, or join the support program. "
+            "Do not paste them for ecosystem size, project intros, RPC, or wallet questions.\n"
             "- Prefer putting links on their own line, or clearly after the short "
             "answer. Copy URLs exactly; never invent links not in context.\n"
             "Style / rules:\n"
@@ -903,8 +947,10 @@ def _call_llm(
             "- 宁可沉默，也不要用擦边资料凑一篇看似相关的回复；"
             "别因为关键词碰巧重合就换题答；链上事实别编\n"
             "链接/来源：\n"
-            "- 资料里若有相关文档、帮助中心、GitHub、表单、RPC、浏览器等链接，"
-            "回复里必须带上（不要只写文字不给链接）\n"
+            "- 资料里若有相关文档、帮助中心、GitHub、RPC、浏览器等链接，"
+            "回复里带上（不要只写文字不给链接）\n"
+            "- 申请/提交类 Google 表单：仅当对方在问怎么申请、提交项目或扶持报名时才贴。"
+            "问生态规模、某项目介绍、RPC、钱包时不要贴申请表\n"
             "- 链接优先单独一行，或紧接在短结论后面；原样复制，禁止编造资料没有的链接\n"
             "风格/规则：\n"
             "- 禁止反问澄清。不要说「要哪家」「需要哪家的详细报道」"
@@ -1000,7 +1046,7 @@ async def generate_reply(
         return _silent_decision("below min relevance", best_score, language=lang)
 
     # 仅检查用户问题是否属于敏感询价/承诺；资料上下文常含「不对价格承诺」等说明，不应拦截
-    context = _format_context(hits)
+    context = _format_context(hits, question=question)
     logger.info("Reply language=%s for question=%r", lang, question[:80])
 
     if creds is None:
@@ -1046,8 +1092,8 @@ async def generate_reply(
         )
         return _silent_decision("answer not grounded", best_score, language=lang)
 
-    answer = _append_missing_links(answer, hits)
-    answer = _scrub_blocked_urls(answer)
+    answer = _append_missing_links(answer, hits, question=question)
+    answer = _scrub_blocked_urls(answer, question=question)
     if not answer:
         return _silent_decision(
             "blocked-url scrub emptied answer", best_score, language=lang

@@ -16,16 +16,12 @@ Source:
 官网上有生态页，可以直接看项目和合作情况：https://www.botchain.ai/zh/project-party
 页面上当前写的规模大概是：生态应用与合作伙伴 631，主网已上线 127，主网部署中 138。数字会变，以官网实时显示为准。
 分类覆盖 AI、DeFi、DePIN、GameFi、Infra、PayFi、RWA、Social、Tools、Wallet 等；状态有已上线、测试网、即将上线等。
-想进生态的话可以走页面上的提交/申请表：
-- https://docs.google.com/forms/d/e/1FAIpQLScivEtSQMNfSvXdW2uOds7wPtDD0YCU1iiMT70zACGXF9aUzQ/viewform
-- https://docs.google.com/forms/d/e/1FAIpQLSfbzPvwMlXbKWZUm2N1Dyg8hXXGwU4LKUFFpJX04LP8lbMPQA/viewform
+想提交项目看生态页上的入口即可。
 【参考回答-英文】
 Ecosystem directory is here: https://www.botchain.ai/en/project-party
 The page currently shows roughly 631 ecosystem apps & partners, 127 live on mainnet, and 138 deploying on mainnet. Numbers move — use the live page as source of truth.
 Categories include AI, DeFi, DePIN, GameFi, Infra, PayFi, RWA, Social, Tools, Wallet. Statuses include Live, Testnet, Coming soon, and similar.
-To apply / submit a project:
-- https://docs.google.com/forms/d/e/1FAIpQLScivEtSQMNfSvXdW2uOds7wPtDD0YCU1iiMT70zACGXF9aUzQ/viewform
-- https://docs.google.com/forms/d/e/1FAIpQLSfbzPvwMlXbKWZUm2N1Dyg8hXXGwU4LKUFFpJX04LP8lbMPQA/viewform
+To submit a project, use the entry points on the ecosystem page.
 【来源】https://www.botchain.ai/zh/project-party | https://www.botchain.ai/en/project-party
 
 ---
