@@ -144,7 +144,11 @@ def select_due(
     already_posted: set[str],
     at: datetime | None = None,
 ) -> list[dict[str, str]]:
-    """Projects whose next automatic round is due today or earlier."""
+    """Projects whose next automatic round is due today or earlier.
+
+    Calendar second checks only run while KPI Final is still 暂扣整改.
+    通过 / 有效 KPI / 不通过 are already closed and are skipped.
+    """
     first_done = state.get("first") or {}
     second_done = state.get("second") or {}
     out: list[dict[str, str]] = []
@@ -169,6 +173,8 @@ def select_due(
             at=at,
         )
         if not round_name:
+            continue
+        if round_name == "second" and field_result(fields, _COORD_FIELD) != _HELD_COORD:
             continue
         out.append(
             {

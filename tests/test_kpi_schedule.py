@@ -139,6 +139,40 @@ def test_september_held_batch_skips_other_rows():
     assert due[0]["round"] == "second"
 
 
+def test_calendar_second_only_runs_while_held():
+    records = [
+        _row("held", "Held", "2026-10-01"),
+        _row("passed", "Passed", "2026-10-01"),
+        _row("valid", "ValidName", "2026-10-01"),
+        _row("failed", "Failed", "2026-10-01"),
+        _row("blank", "Blank", "2026-10-01"),
+    ]
+    records[0]["fields"]["KPI Final"] = ["暂扣整改"]
+    records[1]["fields"]["KPI Final"] = ["通过"]
+    records[2]["fields"]["KPI Final"] = ["有效 KPI"]
+    records[3]["fields"]["KPI Final"] = ["不通过"]
+    due = select_due(
+        records,
+        today=date(2026, 10, 18),
+        state={
+            "first": {
+                "held": "2026-10-08",
+                "passed": "2026-10-08",
+                "valid": "2026-10-08",
+                "failed": "2026-10-08",
+                "blank": "2026-10-08",
+            },
+            "second": {},
+        },
+        status_field="项目状态",
+        name_field="项目名称 Project Name",
+        already_posted=set(),
+        at=AFTER,
+    )
+    assert [item["project"] for item in due] == ["Held"]
+    assert due[0]["round"] == "second"
+
+
 def test_mark_rounds_done_skips_calendar_second(tmp_path):
     path = tmp_path / "kpi_schedule_state.json"
     mark_rounds_done("rec-held", rounds=("first", "second"), day=date(2026, 10, 10), path=path)
