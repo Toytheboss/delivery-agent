@@ -221,6 +221,31 @@ def test_first_check_date_prefers_sept30_cell_stamp_over_live_plus_7():
     assert resolve_first_check_date("2026-09-04", first_check_date="") == "2026-09-11"
 
 
+def test_first_check_ignores_live_day_website_stamp():
+    from bot.workflow_kpi_result_push import resolve_first_check_date
+
+    fields = {
+        "KPI 3 - Website": (
+            "First check 2026-10-15 14:27\n"
+            "- Result: failed\n"
+            "Recheck 2026-10-18 10:02\n"
+            "- Result: failed"
+        ),
+        "KPI 1 - Twitter": (
+            "First check 2026-10-18 10:01\n"
+            "- Result: passed"
+        ),
+    }
+    assert (
+        resolve_first_check_date(
+            "2026-10-15",
+            first_check_date="2026-10-18",
+            fields=fields,
+        )
+        == "2026-10-18"
+    )
+
+
 def test_website_post_line_is_one_line_not_checklist():
     from bot.workflow_kpi_result_push import website_post_line
 

@@ -256,15 +256,25 @@ _CHECK_DAY_RE = re.compile(
 )
 
 
-def first_check_date_from_fields(fields: dict[str, Any] | None) -> str:
-    """Earliest First check / Recheck stamp in KPI copy cells (e.g. 2026-09-30 batch)."""
+def first_check_date_from_fields(
+    fields: dict[str, Any] | None, live_date: str = ""
+) -> str:
+    """Earliest First check / Recheck stamp in KPI copy cells (e.g. 2026-09-30 batch).
+
+    KPI 3 is first written on the live day and labeled ``First check``; that is
+    not the calendar first audit, so the live date itself is ignored.
+    """
+    live = (live_date or "").strip()
     days: list[str] = []
     for value in (fields or {}).values():
         text = str(value or "")
         if not text:
             continue
         for match in _CHECK_DAY_RE.finditer(text):
-            days.append(match.group(1))
+            day = match.group(1)
+            if live and day == live:
+                continue
+            days.append(day)
     return min(days) if days else ""
 
 
@@ -279,7 +289,7 @@ def resolve_first_check_date(
     schedule / caller date → live+7 only as last resort.
     """
     candidates: list[str] = []
-    from_fields = first_check_date_from_fields(fields)
+    from_fields = first_check_date_from_fields(fields, live_date=live_date)
     if from_fields:
         candidates.append(from_fields)
     explicit = (first_check_date or "").strip()
