@@ -20,34 +20,35 @@ from bot.workflow_pr_weekly import (
 def test_week_window_on_wednesday():
     now = datetime(2026, 9, 23, 13, 50, tzinfo=TZ)
     start, end = week_window(now)
-    assert start == datetime(2026, 9, 20, tzinfo=TZ)
-    assert end == datetime(2026, 9, 27, tzinfo=TZ)
-    assert period_label(start, end) == "2026-09-20 ~ 2026-09-27"
-    assert period_short(start, end) == "9/20–9/27"
+    assert start == datetime(2026, 9, 21, tzinfo=TZ)
+    assert end == datetime(2026, 9, 28, tzinfo=TZ)
+    sunday = datetime(2026, 9, 27, tzinfo=TZ)
+    assert period_label(start, sunday) == "2026-09-21 ~ 2026-09-27"
+    assert period_short(start, sunday) == "9/21–9/27"
 
 
 def test_week_window_at_sunday_midnight():
     now = datetime(2026, 9, 27, 0, 0, tzinfo=TZ)
     start, end = week_window(now)
-    assert start == datetime(2026, 9, 20, tzinfo=TZ)
-    assert end == datetime(2026, 9, 27, tzinfo=TZ)
+    assert start == datetime(2026, 9, 21, tzinfo=TZ)
+    assert end == datetime(2026, 9, 28, tzinfo=TZ)
 
 
 def test_monday_ping_collects_sunday_daytime_same_period():
     now = datetime(2026, 9, 28, 0, 0, tzinfo=TZ)
     start, collect_end, label_end = report_window(now, ping=True)
-    assert start == datetime(2026, 9, 20, tzinfo=TZ)
+    assert start == datetime(2026, 9, 21, tzinfo=TZ)
     assert collect_end == now
     assert label_end == datetime(2026, 9, 27, tzinfo=TZ)
-    assert period_label(start, label_end) == "2026-09-20 ~ 2026-09-27"
+    assert period_label(start, label_end) == "2026-09-21 ~ 2026-09-27"
 
 
 def test_wednesday_report_window_is_in_progress_week():
     now = datetime(2026, 9, 23, 0, 0, tzinfo=TZ)
     start, collect_end, label_end = report_window(now, ping=False)
-    assert start == datetime(2026, 9, 20, tzinfo=TZ)
-    assert collect_end == datetime(2026, 9, 27, tzinfo=TZ)
-    assert label_end == collect_end
+    assert start == datetime(2026, 9, 21, tzinfo=TZ)
+    assert collect_end == datetime(2026, 9, 28, tzinfo=TZ)
+    assert label_end == datetime(2026, 9, 27, tzinfo=TZ)
 
 
 def test_ping_window_is_monday_midnight():

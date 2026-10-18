@@ -51,20 +51,16 @@ FIELD_PR = "主网上线PR链接"
 FIELD_PERIOD = "统计周期"
 
 
-def week_window(now: datetime | None = None) -> tuple[datetime, datetime]:
-    """Sunday 00:00 → Sunday 00:00. At Sunday hour 0, use the week that just ended."""
+def week_monday(now: datetime | None = None) -> datetime:
     now = (now or datetime.now(TZ)).astimezone(TZ)
-    days_since_sunday = (now.weekday() + 1) % 7
-    this_sunday = datetime(now.year, now.month, now.day, tzinfo=TZ) - timedelta(
-        days=days_since_sunday
-    )
-    if now.weekday() == 6 and now.hour == 0:
-        start = this_sunday - timedelta(days=7)
-        end = this_sunday
-    else:
-        start = this_sunday
-        end = this_sunday + timedelta(days=7)
-    return start, end
+    monday = now.date() - timedelta(days=now.weekday())
+    return datetime(monday.year, monday.month, monday.day, tzinfo=TZ)
+
+
+def week_window(now: datetime | None = None) -> tuple[datetime, datetime]:
+    """Monday 00:00 → next Monday 00:00, same as the frontend weekly."""
+    start = week_monday(now)
+    return start, start + timedelta(days=7)
 
 
 def _ping_weekday(config: Any) -> int:
@@ -102,20 +98,17 @@ def report_window(
 ) -> tuple[datetime, datetime, datetime]:
     """Return (collect_start, collect_end, label_end).
 
-    Daily runs use the in-progress Sun–Sun week. The Monday 00:00 ping uses
-    the week that closed at the latest Sunday 00:00, and extends collect_end
-    to *now* so Sunday daytime links are included.
+    Daily runs use the in-progress Mon–Sun week. The Monday 00:00 ping uses
+    yesterday so Sunday is included, and extends collect_end to *now* so
+    Sunday daytime links are included. label_end is Sunday 00:00 for the
+    period string ``Monday ~ Sunday``.
     """
     now = now.astimezone(TZ)
     if ping:
-        days_since_sunday = (now.weekday() + 1) % 7
-        last_sunday = datetime(now.year, now.month, now.day, tzinfo=TZ) - timedelta(
-            days=days_since_sunday
-        )
-        start = last_sunday - timedelta(days=7)
-        return start, now, last_sunday
+        start = week_monday(now - timedelta(days=1))
+        return start, now, start + timedelta(days=6)
     start, end = week_window(now)
-    return start, end, end
+    return start, end, start + timedelta(days=6)
 
 
 def period_label(start: datetime, end: datetime) -> str:
@@ -500,7 +493,7 @@ def run_pr_weekly_once(
         events,
         start=start,
         end=collect_end,
-        live_end=label_end,
+        live_end=start + timedelta(days=7),
         name_field=str(
             getattr(config, "workflow_project_name_field", "")
             or "项目名称 Project Name"
