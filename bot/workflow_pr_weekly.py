@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from bot.lark_bitable import (
+    batch_delete_records,
     create_record,
     get_tenant_access_token,
     list_records,
@@ -30,6 +31,7 @@ from bot.weekly_schedule import (
     upcoming_send_at,
 )
 from bot.workflow_form_dispatch import _field_text, _normalize_name
+from bot.workflow_kpi_write import parse_live_start
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
@@ -295,61 +297,53 @@ def collect_week_prs(
     name_field: str,
     live_link_field: str,
     pr_field: str,
+    live_end: datetime | None = None,
 ) -> list[dict[str, str]]:
-    """Latest KPI 2 write in [start, end) per progress record."""
-    by_id: dict[str, dict[str, Any]] = {}
+    """Projects that went mainnet-live in [start, live_end) and have a PR URL.
+
+    Capture events in [start, end) only refresh the tweet URL; they do not
+    pull in projects that went live in another week.
+    """
+    live_until = live_end or end
+    event_by_id: dict[str, dict[str, Any]] = {}
     for event in events:
         when = _parse_ts(event.get("ts"))
         if when is None or when < start or when >= end:
             continue
         rid = str(event.get("record_id") or "").strip()
-        name = str(event.get("project") or "").strip()
         url = str(event.get("url") or "").strip()
-        if not rid or not name or not url:
+        if not rid or not url:
             continue
-        prev = by_id.get(rid)
+        prev = event_by_id.get(rid)
         if prev is None or when >= prev["captured_at"]:
-            by_id[rid] = {
-                "record_id": rid,
-                "name": name,
+            event_by_id[rid] = {
                 "url": url,
                 "site": str(event.get("site") or "").strip(),
                 "captured_at": when,
-                "source": "event",
             }
+    rows: list[dict[str, str]] = []
     for record in progress_records:
         rid = str(record.get("record_id") or "").strip()
         fields = record.get("fields") or {}
         if not rid or not isinstance(fields, dict):
             continue
-        url = _cell_url(fields, pr_field)
+        live = parse_live_start(fields)
+        if live is None or live < start or live >= live_until:
+            continue
         name = _field_text(fields, name_field)
+        event = event_by_id.get(rid) or {}
+        url = str(event.get("url") or "").strip() or _cell_url(fields, pr_field)
         if not url or not name:
             continue
-        if rid in by_id:
-            if not by_id[rid].get("site"):
-                by_id[rid]["site"] = _cell_url(fields, live_link_field)
-            continue
-        when = _ms_to_dt(record.get("last_modified_time"))
-        if when is None or when < start or when >= end:
-            continue
-        by_id[rid] = {
-            "record_id": rid,
-            "name": name,
-            "url": url,
-            "site": _cell_url(fields, live_link_field),
-            "captured_at": when,
-            "source": "record",
-        }
-    rows = [
-        {
-            "record_id": str(item["record_id"]),
-            "name": str(item["name"]),
-            "url": str(item["url"]),
-            "site": str(item.get("site") or ""),
-        }
-        for item in by_id.values()
-    ]
+        rows.append(
+            {
+                "record_id": rid,
+                "name": name,
+                "url": url,
+                "site": str(event.get("site") or "").strip()
+                or _cell_url(fields, live_link_field),
+            }
+        )
     rows.sort(key=lambda item: item["name"].lower())
     return rows
 
@@ -416,6 +410,16 @@ def upsert_week_rows(
                 )
             except Exception:
                 pass
+    wanted = {_normalize_name(item["name"]) for item in projects}
+    stale = [
+        str(dest.get("record_id") or "")
+        for key, dest in existing.items()
+        if key not in wanted
+    ]
+    stale = [rid for rid in stale if rid]
+    if stale:
+        batch_delete_records(token, app, dest_table, stale)
+        logger.info("pr weekly: pruned %d extra rows period=%s", len(stale), period)
     return kept
 
 
@@ -496,6 +500,7 @@ def run_pr_weekly_once(
         events,
         start=start,
         end=collect_end,
+        live_end=label_end,
         name_field=str(
             getattr(config, "workflow_project_name_field", "")
             or "项目名称 Project Name"

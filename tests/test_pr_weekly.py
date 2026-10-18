@@ -93,6 +93,7 @@ def test_collect_prefers_event_over_record_mtime():
             "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "主网上线时间": in_ms,
                 "已上线链接🔗": {"link": "https://prompt.example/"},
                 "KPI 2 - PR Announcement": "https://x.com/a/status/1",
             },
@@ -102,6 +103,7 @@ def test_collect_prefers_event_over_record_mtime():
             "last_modified_time": out_ms,
             "fields": {
                 "项目名称 Project Name": "Old",
+                "主网上线时间": out_ms,
                 "已上线链接🔗": "https://old.example/",
                 "KPI 2 - PR Announcement": "https://x.com/old/status/1",
             },
@@ -111,6 +113,7 @@ def test_collect_prefers_event_over_record_mtime():
             "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "NoPR",
+                "主网上线时间": in_ms,
                 "已上线链接🔗": "https://nopr.example/",
             },
         },
@@ -147,6 +150,7 @@ def test_collect_falls_back_to_record_mtime():
             "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "TaskForge",
+                "主网上线时间": in_ms,
                 "已上线链接🔗": "https://task.example/",
                 "KPI 2 - PR Announcement": "https://x.com/t/status/2",
             },
@@ -169,6 +173,52 @@ def test_collect_falls_back_to_record_mtime():
             "site": "https://task.example/",
         }
     ]
+
+
+def test_collect_keeps_only_live_this_week():
+    start = datetime(2026, 9, 20, tzinfo=TZ)
+    end = datetime(2026, 9, 27, tzinfo=TZ)
+    in_ms = int(datetime(2026, 9, 22, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    out_ms = int(datetime(2026, 9, 10, 12, 0, tzinfo=TZ).timestamp() * 1000)
+    records = [
+        {
+            "record_id": "rec-live",
+            "fields": {
+                "项目名称 Project Name": "ThisWeek",
+                "主网上线时间": in_ms,
+                "已上线链接🔗": "https://this.example/",
+                "KPI 2 - PR Announcement": "https://x.com/this/status/1",
+            },
+        },
+        {
+            "record_id": "rec-old",
+            "fields": {
+                "项目名称 Project Name": "LastMonth",
+                "主网上线时间": out_ms,
+                "已上线链接🔗": "https://old.example/",
+                "KPI 2 - PR Announcement": "https://x.com/old/status/1",
+            },
+        },
+    ]
+    events = [
+        {
+            "ts": "2026-09-22T10:00:00+08:00",
+            "record_id": "rec-old",
+            "project": "LastMonth",
+            "url": "https://x.com/old/status/99",
+            "site": "https://old.example/",
+        }
+    ]
+    rows = collect_week_prs(
+        records,
+        events,
+        start=start,
+        end=end,
+        name_field="项目名称 Project Name",
+        live_link_field="已上线链接🔗",
+        pr_field="KPI 2 - PR Announcement",
+    )
+    assert [r["name"] for r in rows] == ["ThisWeek"]
 
 
 def test_disabled_skips():
@@ -207,6 +257,7 @@ def test_run_once_daily_updates_without_ping(tmp_path):
             "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "主网上线时间": in_ms,
                 "已上线链接🔗": "https://prompt.example/",
                 "KPI 2 - PR Announcement": "https://x.com/a/status/1",
             },
@@ -267,6 +318,7 @@ def test_prepare_then_send_does_not_rescan(tmp_path):
             "last_modified_time": in_ms,
             "fields": {
                 "项目名称 Project Name": "PromptMint",
+                "主网上线时间": in_ms,
                 "已上线链接🔗": "https://prompt.example/",
                 "KPI 2 - PR Announcement": "https://x.com/a/status/1",
             },

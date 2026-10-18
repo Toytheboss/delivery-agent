@@ -14,6 +14,7 @@ from typing import Any
 import requests
 
 from bot.lark_bitable import (
+    batch_delete_records,
     create_record,
     get_tenant_access_token,
     list_records,
@@ -477,6 +478,16 @@ def upsert_week_rows(
                 )
             except Exception:
                 pass
+    wanted = {_normalize_name(item["name"]) for item in projects}
+    stale = [
+        str(dest.get("record_id") or "")
+        for key, dest in existing.items()
+        if key not in wanted
+    ]
+    stale = [rid for rid in stale if rid]
+    if stale:
+        batch_delete_records(token, app, dest_table, stale)
+        logger.info("blake weekly: pruned %d extra rows period=%s", len(stale), period)
     return kept
 
 
