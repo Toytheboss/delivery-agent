@@ -14,7 +14,9 @@ from telethon.tl.custom.message import Message
 from bot.config_loader import is_pilot_chat
 from bot.learn import contains_learn_trigger, handle_learn, in_learn_scope
 from bot.metrics import (
+    build_business_snapshot,
     build_daily_report,
+    format_business_data_zh,
     format_daily_report_zh,
     format_report_zh,
     format_stats_zh,
@@ -58,6 +60,7 @@ from bot.workflow_tech_support import escalate_tech_support, is_tech_support_com
 
 _STATS_COMMANDS = frozenset({"/stats", "交付统计"})
 _REPORT_COMMANDS = frozenset({"/report", "交付周报", "交付报告"})
+_BUSINESS_DATA_COMMANDS = frozenset({"业务数据", "/业务数据"})
 _DAILY_REPORT_COMMANDS = frozenset(
     {
         "/daily",
@@ -300,6 +303,7 @@ class MessageHandler:
         is_stats_cmd = text in _STATS_COMMANDS
         is_report_cmd = text in _REPORT_COMMANDS
         is_daily_cmd = _is_daily_report_command(text)
+        is_business_cmd = text in _BUSINESS_DATA_COMMANDS
         delivery_account = bool(message.out) or (
             self.my_id is not None and sender_id == self.my_id
         )
@@ -324,6 +328,7 @@ class MessageHandler:
             and not is_stats_cmd
             and not is_report_cmd
             and not is_daily_cmd
+            and not is_business_cmd
         ):
             quoted_id = int(reply_to_msg_id)
             if peek_mark_live_site_pending(chat_id, quoted_id) is not None:
@@ -418,10 +423,10 @@ class MessageHandler:
                     sender_id,
                 )
 
-        # Operator stats / exec report / daily report
-        # Stats stay on full operators; daily/weekly also allow report_operators.
+        # Operator stats / exec report / daily report / all-time business snapshot.
+        # Stats stay on full operators; daily/weekly/业务数据 also allow report_operators.
         if (is_stats_cmd and can_ops) or (
-            (is_report_cmd or is_daily_cmd) and can_report
+            (is_report_cmd or is_daily_cmd or is_business_cmd) and can_report
         ):
             msg_id = message.id
             if msg_id in self._processing:
@@ -429,7 +434,12 @@ class MessageHandler:
             self._processing.add(msg_id)
             try:
                 loop = asyncio.get_running_loop()
-                if is_daily_cmd:
+                if is_business_cmd:
+                    snap = await loop.run_in_executor(
+                        None, lambda: build_business_snapshot(self.config)
+                    )
+                    await message.reply(format_business_data_zh(snap))
+                elif is_daily_cmd:
                     # Refresh wallet first_seen so "今日新收集" includes latest rows.
                     try:
                         from bot.workflow_lark_wallet_group import sync_wallet_first_seen

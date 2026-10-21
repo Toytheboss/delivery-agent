@@ -1271,6 +1271,11 @@ _SCHEDULE_CANDIDATES = (
     ROOT / "data" / "kpi_schedule_state.json",
     Path("/opt/botchain-qa-tg-bot/data/kpi_schedule_state.json"),
 )
+_REVIEW_EVENT_CANDIDATES = (
+    Path("/opt/botchain-qa-tg-bot/data/workflow_events.jsonl"),
+    Path("/opt/delivery-agent/data/workflow_events.jsonl"),
+)
+_BUSINESS_EPOCH = datetime(2020, 1, 1, tzinfo=TZ)
 
 
 def _empty_delivery_funnel(error: str | None = None) -> dict[str, Any]:
@@ -1364,30 +1369,43 @@ def _review_round(row: dict[str, Any]) -> str:
     return ""
 
 
+def _review_event_paths(config: Any) -> list[Path]:
+    """Own log first, then the peer host so 交付号 can still count KPI reviews."""
+    paths: list[Path] = []
+    seen: set[str] = set()
+    for path in (_workflow_events_path(config), *_REVIEW_EVENT_CANDIDATES):
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        paths.append(path)
+    return paths
+
+
 def _load_review_events(config: Any) -> list[dict[str, Any]]:
     """Posted reviews and submit-triggered finals, newest file order kept."""
-    path = _workflow_events_path(config)
-    if not path.exists():
-        return []
     rows: list[dict[str, Any]] = []
-    try:
-        with path.open("r", encoding="utf-8", errors="ignore") as handle:
-            for line in handle:
-                line = line.strip()
-                if not line.startswith("{"):
-                    continue
-                if "kpi_review_posted" not in line and "kpi_early_final" not in line:
-                    continue
-                try:
-                    row = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                kind = str(row.get("kind") or "")
-                if kind not in {"kpi_review_posted", "kpi_early_final"}:
-                    continue
-                rows.append(row)
-    except OSError as exc:
-        logger.warning("metrics: review events read failed: %s", exc)
+    for path in _review_event_paths(config):
+        if not path.exists():
+            continue
+        try:
+            with path.open("r", encoding="utf-8", errors="ignore") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line.startswith("{"):
+                        continue
+                    if "kpi_review_posted" not in line and "kpi_early_final" not in line:
+                        continue
+                    try:
+                        row = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    kind = str(row.get("kind") or "")
+                    if kind not in {"kpi_review_posted", "kpi_early_final"}:
+                        continue
+                    rows.append(row)
+        except OSError as exc:
+            logger.warning("metrics: review events read failed path=%s: %s", path, exc)
     return rows
 
 
@@ -1579,6 +1597,63 @@ def _snapshot_delivery_funnels(
         "24h": _summarize_delivery_funnel(since=since_24h, **shared),
         "7d": _summarize_delivery_funnel(since=since_7d, **shared),
     }
+
+
+def build_business_snapshot(config: Any) -> dict[str, Any]:
+    """All-time delivery stock for the ``业务数据`` command."""
+    records, records_error = _fetch_progress_records(config)
+    progress = _progress_table_daily_counts(
+        config,
+        since=_BUSINESS_EPOCH,
+        records=records,
+        records_error=records_error,
+    )
+    funnel = build_delivery_funnel(
+        config,
+        since=_BUSINESS_EPOCH,
+        records=records,
+        records_error=records_error,
+    )
+    first_pass = list(funnel.get("first_pass") or [])
+    first_held = list(funnel.get("first_held") or [])
+    final_pass = list(funnel.get("final_pass") or [])
+    final_fail = list(funnel.get("final_fail") or [])
+    return {
+        "mainnet_live": int(progress.get("mainnet_live") or 0),
+        "kpi_pass": int(progress.get("kpi_coord_pass") or 0),
+        "form_sent": len(funnel.get("form_sent") or []),
+        "form_received": len(funnel.get("form_received") or []),
+        "first_pass": len(first_pass),
+        "first_held": len(first_held),
+        "final_pass": len(final_pass),
+        "final_fail": len(final_fail),
+        "error": progress.get("error") or funnel.get("error"),
+    }
+
+
+def format_business_data_zh(snap: dict[str, Any] | None) -> str:
+    """Six-line all-time business snapshot. No project name lists."""
+    data = snap or {}
+    if data.get("error"):
+        return f"业务数据查询失败（{data['error']}）"
+    first_n = int(data.get("first_pass") or 0) + int(data.get("first_held") or 0)
+    final_n = int(data.get("final_pass") or 0) + int(data.get("final_fail") or 0)
+    return "\n".join(
+        [
+            f"1. 主网上线项目累计：{int(data.get('mainnet_live') or 0)}",
+            f"2. 审核通过项目累计：{int(data.get('kpi_pass') or 0)}",
+            f"3. 上线项目信息表单发出：{int(data.get('form_sent') or 0)}",
+            f"4. 上线项目信息表单收回：{int(data.get('form_received') or 0)}",
+            (
+                f"5. 初审项目：{first_n}，通过 {int(data.get('first_pass') or 0)}，"
+                f"失败 {int(data.get('first_held') or 0)}"
+            ),
+            (
+                f"6. 终审项目：{final_n}，通过 {int(data.get('final_pass') or 0)}，"
+                f"失败 {int(data.get('final_fail') or 0)}"
+            ),
+        ]
+    )
 
 
 def build_daily_report(

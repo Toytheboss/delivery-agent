@@ -13,6 +13,7 @@ from bot.metrics import (
     _live_without_form,
     _progress_table_daily_counts,
     _summarize_delivery_funnel,
+    format_business_data_zh,
     format_daily_report_zh,
     format_report_zh,
     split_telegram_text,
@@ -433,3 +434,32 @@ def test_format_daily_report_calendar_day_note() -> None:
     assert "统计窗口：今日" in text
     assert "当天 00:00 至生成时刻" in text
     assert "不是滚动 24 小时" in text
+
+
+def test_format_business_data_zh_all_time_lines() -> None:
+    text = format_business_data_zh(
+        {
+            "mainnet_live": 120,
+            "kpi_pass": 80,
+            "form_sent": 100,
+            "form_received": 90,
+            "first_pass": 20,
+            "first_held": 30,
+            "final_pass": 35,
+            "final_fail": 5,
+        }
+    )
+    assert text.splitlines() == [
+        "1. 主网上线项目累计：120",
+        "2. 审核通过项目累计：80",
+        "3. 上线项目信息表单发出：100",
+        "4. 上线项目信息表单收回：90",
+        "5. 初审项目：50，通过 20，失败 30",
+        "6. 终审项目：40，通过 35，失败 5",
+    ]
+
+
+def test_format_business_data_zh_error() -> None:
+    assert format_business_data_zh({"error": "lark down"}).startswith(
+        "业务数据查询失败"
+    )
