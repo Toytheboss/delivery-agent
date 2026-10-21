@@ -10,6 +10,7 @@ from bot.metrics import (
     _classify_kpi_write,
     _fmt_kind_line,
     _form_first_send_names,
+    _kpi_era_review_counts,
     _live_without_form,
     _progress_table_daily_counts,
     _summarize_delivery_funnel,
@@ -463,3 +464,96 @@ def test_format_business_data_zh_error() -> None:
     assert format_business_data_zh({"error": "lark down"}).startswith(
         "业务数据查询失败"
     )
+
+
+def test_kpi_era_reviews_start_sep30_and_due_first() -> None:
+    today = datetime(2026, 10, 21).date()
+    tz = timezone(timedelta(hours=8))
+
+    def live(day: str) -> str:
+        return datetime.fromisoformat(day).replace(tzinfo=tz).isoformat()
+
+    records = [
+        {
+            "record_id": "old",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-09-29"),
+                "KPI Final": "通过",
+            },
+        },
+        {
+            "record_id": "too-new",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-19"),
+                "KPI Final": "",
+            },
+        },
+        {
+            "record_id": "first-pass",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-01"),
+                "KPI Final": "通过",
+                "KPI 1 - Twitter": "First check 2026-10-04 10:00\npassed",
+            },
+        },
+        {
+            "record_id": "held",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-01"),
+                "KPI Final": "暂扣整改",
+                "KPI 1 - Twitter": "First check 2026-10-04 10:00\nfailed",
+            },
+        },
+        {
+            "record_id": "final-pass",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-01"),
+                "KPI Final": "通过",
+                "KPI 1 - Twitter": (
+                    "First check 2026-10-04 10:00\nfailed\n"
+                    "Recheck 2026-10-18 10:00\npassed"
+                ),
+            },
+        },
+        {
+            "record_id": "final-fail",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-01"),
+                "KPI Final": "不通过",
+                "KPI 1 - Twitter": (
+                    "First check 2026-10-04 10:00\nfailed\n"
+                    "Recheck 2026-10-18 10:00\nfailed"
+                ),
+            },
+        },
+        {
+            "record_id": "event-pass",
+            "fields": {
+                "项目状态": "主网上线",
+                "主网上线时间": live("2026-10-01"),
+                "KPI Final": "暂扣整改",
+            },
+        },
+    ]
+    events = [
+        {
+            "kind": "kpi_review_posted",
+            "record_id": "event-pass",
+            "review_round": "first",
+            "outcome": "pass",
+            "text": "初审通过",
+        }
+    ]
+    out = _kpi_era_review_counts(
+        records, events, today=today, first_days=3
+    )
+    assert out["first_pass"] == 2  # first-pass + event-pass
+    assert out["first_held"] == 3  # held + final-pass + final-fail
+    assert out["final_pass"] == 1
+    assert out["final_fail"] == 1

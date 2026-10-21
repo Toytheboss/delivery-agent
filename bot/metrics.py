@@ -14,7 +14,7 @@ import logging
 import os
 import re
 import threading
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -1276,6 +1276,12 @@ _REVIEW_EVENT_CANDIDATES = (
     Path("/opt/delivery-agent/data/workflow_events.jsonl"),
 )
 _BUSINESS_EPOCH = datetime(2020, 1, 1, tzinfo=TZ)
+# Same start as workflow_kpi_schedule.SCHEDULE_START: auto first/final only
+# for mainnet-live on/after this day.
+_KPI_CALENDAR_START = date(2026, 9, 30)
+_COORD_PASS = frozenset({"通过", "有效 KPI"})
+_COORD_FAIL = frozenset({"不通过", "KPI未通过"})
+_COORD_HELD = "暂扣整改"
 
 
 def _empty_delivery_funnel(error: str | None = None) -> dict[str, Any]:
@@ -1599,6 +1605,121 @@ def _snapshot_delivery_funnels(
     }
 
 
+def _event_outcomes_by_round(
+    events: list[dict[str, Any]] | None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """First seen first-round / final-round outcome per record id."""
+    first: dict[str, str] = {}
+    final: dict[str, str] = {}
+    for row in events or []:
+        rid = str(row.get("record_id") or "").strip()
+        if not rid:
+            continue
+        outcome = _review_outcome(row)
+        rnd = _review_round(row)
+        if rnd == "first" and outcome in {"pass", "held", "fail"} and rid not in first:
+            first[rid] = "held" if outcome != "pass" else "pass"
+        elif rnd == "final" and outcome in {"pass", "fail"} and rid not in final:
+            final[rid] = outcome
+    return first, final
+
+
+def _kpi_era_review_counts(
+    records: list[dict[str, Any]] | None,
+    events: list[dict[str, Any]] | None,
+    *,
+    status_field: str = "项目状态",
+    today: date | None = None,
+    first_days: int | None = None,
+) -> dict[str, int]:
+    """First/final counts for mainnet-live on/after 2026-09-30.
+
+    初审: reached first-check day (live + current first offset).
+    终审: a completed final (posted, or KPI Final closed after a Recheck).
+    """
+    from bot.workflow_form_dispatch import _field_text
+    from bot.workflow_kpi_write import (
+        field_result,
+        is_mainnet_live,
+        now_shanghai,
+        parse_live_start,
+        review_offsets,
+    )
+
+    day = today or now_shanghai().date()
+    offset = first_days
+    if offset is None:
+        offset, _second = review_offsets()
+    first_events, final_events = _event_outcomes_by_round(events)
+    out = {
+        "first_pass": 0,
+        "first_held": 0,
+        "final_pass": 0,
+        "final_fail": 0,
+    }
+    seen_first: set[str] = set()
+    seen_final: set[str] = set()
+    for record in records or []:
+        fields = record.get("fields") or {}
+        if not isinstance(fields, dict):
+            continue
+        if not is_mainnet_live(fields, status_field):
+            continue
+        live = parse_live_start(fields)
+        if live is None or live.date() < _KPI_CALENDAR_START:
+            continue
+        rid = str(record.get("record_id") or "").strip()
+        if not rid:
+            continue
+        coord = field_result(fields, _KPI_FINAL)
+        kpi1 = _copy_stamps(_field_text(fields, _KPI1_COPY))
+        kpi6 = _copy_stamps(_field_text(fields, _KPI6_COPY))
+        kpi7 = [stamp for _kind, stamp in _copy_stamps(_field_text(fields, _KPI7_COPY))]
+        first_times = [stamp for kind, stamp in kpi1 + kpi6 if kind == "First check"]
+        rechecks = [stamp for kind, stamp in kpi1 + kpi6 if kind == "Recheck"]
+
+        if rid not in seen_first and day >= live.date() + timedelta(days=offset):
+            seen_first.add(rid)
+            ev = first_events.get(rid)
+            if ev == "pass":
+                out["first_pass"] += 1
+            elif ev == "held":
+                out["first_held"] += 1
+            elif coord in _COORD_PASS and not rechecks:
+                out["first_pass"] += 1
+            elif coord in _COORD_PASS or coord == _COORD_HELD or coord in _COORD_FAIL:
+                out["first_held"] += 1
+            elif first_times:
+                first_at = min(first_times)
+                passed = any(
+                    abs((stamp - first_at).total_seconds()) <= _SAME_AUDIT.total_seconds()
+                    for stamp in kpi7
+                )
+                if passed:
+                    out["first_pass"] += 1
+                else:
+                    out["first_held"] += 1
+            else:
+                out["first_held"] += 1
+
+        if rid in seen_final:
+            continue
+        evf = final_events.get(rid)
+        if evf == "pass":
+            seen_final.add(rid)
+            out["final_pass"] += 1
+        elif evf == "fail":
+            seen_final.add(rid)
+            out["final_fail"] += 1
+        elif coord in _COORD_PASS and rechecks:
+            seen_final.add(rid)
+            out["final_pass"] += 1
+        elif coord in _COORD_FAIL:
+            seen_final.add(rid)
+            out["final_fail"] += 1
+    return out
+
+
 def build_business_snapshot(config: Any) -> dict[str, Any]:
     """All-time delivery stock for the ``业务数据`` command."""
     records, records_error = _fetch_progress_records(config)
@@ -1614,19 +1735,22 @@ def build_business_snapshot(config: Any) -> dict[str, Any]:
         records=records,
         records_error=records_error,
     )
-    first_pass = list(funnel.get("first_pass") or [])
-    first_held = list(funnel.get("first_held") or [])
-    final_pass = list(funnel.get("final_pass") or [])
-    final_fail = list(funnel.get("final_fail") or [])
+    reviews = _kpi_era_review_counts(
+        records,
+        _load_review_events(config),
+        status_field=str(
+            getattr(config, "workflow_status_field", "项目状态") or "项目状态"
+        ),
+    )
     return {
         "mainnet_live": int(progress.get("mainnet_live") or 0),
         "kpi_pass": int(progress.get("kpi_coord_pass") or 0),
         "form_sent": len(funnel.get("form_sent") or []),
         "form_received": len(funnel.get("form_received") or []),
-        "first_pass": len(first_pass),
-        "first_held": len(first_held),
-        "final_pass": len(final_pass),
-        "final_fail": len(final_fail),
+        "first_pass": int(reviews.get("first_pass") or 0),
+        "first_held": int(reviews.get("first_held") or 0),
+        "final_pass": int(reviews.get("final_pass") or 0),
+        "final_fail": int(reviews.get("final_fail") or 0),
         "error": progress.get("error") or funnel.get("error"),
     }
 
