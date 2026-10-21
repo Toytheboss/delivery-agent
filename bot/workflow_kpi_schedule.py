@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -40,6 +41,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 SCHEDULE_START = date(2026, 9, 30)
 RUN_HOUR = 10
+_POST_GAP_SECONDS = 120
 _COORD_FIELD = "KPI Final"
 _HELD_COORD = "暂扣整改"
 _STATE_FILE = ROOT / "data" / "kpi_schedule_state.json"
@@ -222,8 +224,14 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
     )
     posted = posted_ids()
 
+    def _pause_before_next() -> None:
+        logger.info(
+            "kpi schedule waiting %ss before next post", _POST_GAP_SECONDS
+        )
+        time.sleep(_POST_GAP_SECONDS)
+
     def _send_batch(rows: list[dict[str, Any]], batch: list[dict[str, str]]) -> None:
-        for item in batch:
+        for index, item in enumerate(batch):
             rid = item["record_id"]
             fields = next(
                 (
@@ -253,22 +261,24 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
                     item["project"],
                     item["round"],
                 )
-                continue
-            state.setdefault(item["round"], {})[rid] = day.isoformat()
-            _save_state(path, state)
-            stats["sent"] += 1
-            logger.info(
-                "kpi schedule sent project=%s round=%s valid=%s",
-                item["project"],
-                item["round"],
-                audited.get("valid"),
-            )
-            log_review_posted(
-                project_name=item["project"],
-                record_id=rid,
-                final=is_second,
-                result=str(audited.get("result") or ""),
-            )
+            else:
+                state.setdefault(item["round"], {})[rid] = day.isoformat()
+                _save_state(path, state)
+                stats["sent"] += 1
+                logger.info(
+                    "kpi schedule sent project=%s round=%s valid=%s",
+                    item["project"],
+                    item["round"],
+                    audited.get("valid"),
+                )
+                log_review_posted(
+                    project_name=item["project"],
+                    record_id=rid,
+                    final=is_second,
+                    result=str(audited.get("result") or ""),
+                )
+            if index + 1 < len(batch):
+                _pause_before_next()
 
     due = select_due(
         records,
@@ -302,6 +312,8 @@ def run_due_once(config: AppConfig, *, today: date | None = None) -> dict[str, i
             if item["round"] == "second"
         ]
         stats["due"] += len(second)
+        if due and second:
+            _pause_before_next()
         _send_batch(records, second)
     state["last_run_date"] = day.isoformat()
     _save_state(path, state)
