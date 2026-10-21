@@ -397,8 +397,9 @@ def mentions_me(message: Message, my_id: int, my_username: str | None) -> bool:
 
 
 
-# Delivery-team alerts: verify asks + mainnet go-live notices.
-# Never FAQ / never retrieval — queue human_review + Lark 交付部.
+# Lark Verify 提醒: only this phrase. FAQ silence still uses the broader ask
+# patterns below so "please verify" does not get an auto-reply.
+_VERIFY_ALERT_RE = re.compile(r"(?is)\bproceed\s+mainnet\s+verification\b")
 _VERIFY_ASK_RE = re.compile(
     r"(?is)\b("
     r"(?:please|kindly|pls|plz)\s+(?:help\s+(?:me\s+)?(?:to\s+)?)?verify|"
@@ -453,79 +454,53 @@ _VERIFY_NEGATE_RE = re.compile(
 )
 
 
+def _normalize_alert_text(text: str) -> str:
+    stripped = (text or "").strip()
+    if not stripped:
+        return ""
+    without = _MENTION_TOKEN_RE.sub(" ", stripped)
+    return re.sub(r"\s+", " ", without).strip()
+
+
 def delivery_alert_kind(text: str) -> str | None:
     """Return alert kind for Lark/看板, or None if not an alert.
 
-    - ``verify``: ask delivery to verify / mainnet verification status
-    - mainnet go-live announcements are intentionally NOT alerted (form posts etc.)
+    Verify 提醒 only fires on ``proceed mainnet verification``.
+    Mainnet go-live announcements are intentionally not alerted.
     """
-    stripped = (text or "").strip()
-    if not stripped:
-        return None
-    without = _MENTION_TOKEN_RE.sub(" ", stripped)
-    without = re.sub(r"\s+", " ", without).strip()
-    if not without:
-        return None
-
-    # Mainnet live posts (onboarding form / "Congrats … live on Mainnet") → no Lark alert.
-    # Keep _MAINNET_LIVE_RE for tests / future; only Verify 提醒 is wanted.
-
-    # Clear verify asks inside project intros — same budget as mainnet_live.
-    if len(without) > 1200:
-        return None
-    if _VERIFY_TECH_EXCLUDE_RE.search(without):
-        return None
-    if _VERIFY_SELF_RE.search(without):
-        return None
-    if _VERIFY_NEGATE_RE.search(without):
-        return None
-    if _VERIFY_ASK_RE.search(without):
+    without = _normalize_alert_text(text)
+    if without and _VERIFY_ALERT_RE.search(without):
         return "verify"
-    # Bare short "verify" / "verified" / "mainnet verify" after stripping mentions
+    return None
+
+
+def delivery_alert_kind_for_internal(text: str) -> str | None:
+    """Same trigger as delivery_alert_kind. Internal BD has no extra phrases."""
+    return delivery_alert_kind(text)
+
+
+def is_human_verify_request(text: str) -> bool:
+    """True when FAQ must stay silent: the Lark phrase, or a broader verify ask."""
+    if delivery_alert_kind(text) is not None:
+        return True
+    without = _normalize_alert_text(text)
+    if not without or len(without) > 1200:
+        return False
+    if _VERIFY_TECH_EXCLUDE_RE.search(without):
+        return False
+    if _VERIFY_SELF_RE.search(without):
+        return False
+    if _VERIFY_NEGATE_RE.search(without):
+        return False
+    if _VERIFY_ASK_RE.search(without):
+        return True
     if len(without) <= 80 and re.search(
         r"(?is)^(?:hey|hi|hello)?[\s,]*"
         r"(?:mainnet\s+)?verif(?:y|ied|ication)(?:\s+mainnet)?[\s!.。！?？~…🙏👍]*$",
         without,
     ):
-        return "verify"
-    return None
-
-
-
-
-def delivery_alert_kind_for_internal(text: str) -> str | None:
-    """Like delivery_alert_kind, plus looser verify pings from internal BD.
-
-    Internal ignore-list senders often write "after verifying" / "need verify"
-    instead of "please verify". Still never FAQ — Lark forward only.
-    """
-    kind = delivery_alert_kind(text)
-    if kind:
-        return kind
-    stripped = (text or "").strip()
-    if not stripped or len(stripped) > 1200:
-        return None
-    without = _MENTION_TOKEN_RE.sub(" ", stripped)
-    without = re.sub(r"\s+", " ", without).strip()
-    if not without:
-        return None
-    if _VERIFY_TECH_EXCLUDE_RE.search(without):
-        return None
-    if _VERIFY_SELF_RE.search(without):
-        return None
-    if _VERIFY_NEGATE_RE.search(without):
-        return None
-    if re.search(
-        r"(?is)\bverif(?:y|ied|ying|ication)\b|(?:核实|验证|核查)",
-        without,
-    ):
-        return "verify"
-    return None
-
-
-def is_human_verify_request(text: str) -> bool:
-    """True for delivery verify / mainnet-live alerts (no FAQ retrieval)."""
-    return delivery_alert_kind(text) is not None
+        return True
+    return False
 
 
 def is_ack_or_chitchat(text: str) -> bool:

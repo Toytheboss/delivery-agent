@@ -11,6 +11,14 @@
 
 ---
 
+## 2026-10-21 · Verify 提醒只认 proceed mainnet verification
+
+### 优化
+- 交付群文案改为 `主网上线 Verify 提醒：项目 - @人 · 群名 (时间)`
+- 触发词只留 `proceed mainnet verification`；`please verify` 等不再推提醒，仍不自动 FAQ
+
+---
+
 ## 2026-10-21 · 业务数据初审/终审改为 9 月 30 日起上线项目
 
 ### 优化

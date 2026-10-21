@@ -199,7 +199,7 @@ class MessageHandler:
         reason = (
             "mainnet live"
             if alert_kind == "mainnet_live"
-            else "please verify"
+            else "proceed mainnet verification"
         )
         log_message_event(
             kind="human_review",
@@ -769,7 +769,7 @@ class MessageHandler:
             reason = (
                 "mainnet live"
                 if _alert_kind == "mainnet_live"
-                else "please verify"
+                else "proceed mainnet verification"
             )
             log_message_event(
                 kind="human_review",

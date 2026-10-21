@@ -95,7 +95,7 @@ def build_verify_alert_text(
     _ = (text or "").strip()
     if kind == "mainnet_live":
         return f"主网上线：{project} - {sender} · {group} ({stamp})"
-    return f"Verify：{project} - {sender} · {group} ({stamp})"
+    return f"主网上线 Verify 提醒：{project} - {sender} · {group} ({stamp})"
 
 
 def maybe_send_verify_alert(
