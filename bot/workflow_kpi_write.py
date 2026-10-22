@@ -109,13 +109,17 @@ def select_text(value: Any) -> str:
 
 
 def field_result(fields: dict[str, Any], name: str) -> str:
-    return select_text(fields.get(name)) or _field_text(fields, name)
+    from bot.workflow_form_dispatch import field_raw
+
+    return select_text(field_raw(fields, name)) or _field_text(fields, name)
 
 
 def parse_live_start(
     fields: dict[str, Any], field: str = _LIVE_TIME_FIELD
 ) -> datetime | None:
-    raw = _field_text(fields, field) or select_text(fields.get(field))
+    from bot.workflow_form_dispatch import field_raw
+
+    raw = _field_text(fields, field) or select_text(field_raw(fields, field))
     if not raw:
         return None
     text = str(raw).strip()

@@ -131,7 +131,7 @@ workflow:
   deploy_status_watch_state_file: "data/deploy_status_watch_state.json"
   base_app_token: "basetoken"
   progress_table_id: "tblxxxxxxxx"
-  status_field: "项目状态"
+  status_field: "项目状态 Project Status"
   trigger_status: "Mainnet Live"
   tg_chat_id_field: ""
   project_name_field: "项目名称 Project Name"
@@ -182,8 +182,8 @@ workflow:
   wallet_name_field: "Project name"
   # 0 = reuse daily digest hour schedule
   logo_link_sync_minutes: 0
-  live_link_field: "已上线链接🔗"
-  project_link_field: "项目链接"
+  live_link_field: "已上线链接🔗 Project Website URL"
+  project_link_field: "项目链接 Project Link"
   logo_state_file: "data/logo_fill_state.json"
   # Off by default: form data only syncs to Lark wallet table via Apps Script (no TG broadcast).
   wallet_notify_enabled: false

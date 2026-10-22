@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from bot.lark_bitable import get_tenant_access_token, get_record, list_records, update_record
-from bot.workflow_form_dispatch import _field_text
+from bot.workflow_form_dispatch import _field_text, field_key, field_raw
 
 if TYPE_CHECKING:
     from bot.config_loader import AppConfig
@@ -24,8 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 _HTTP_URL_RE = re.compile(r"https?://[^\s<>\"']+", re.IGNORECASE)
 
-DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗"
-DEFAULT_PROJECT_LINK_FIELD = "项目链接"
+DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗 Project Website URL"
+DEFAULT_PROJECT_LINK_FIELD = "项目链接 Project Link"
 DEFAULT_SEEN_STATE = "data/progress_record_watch_state.json"
 
 
@@ -59,7 +59,7 @@ def _url_field_payload(url: str) -> dict[str, str]:
 
 
 def live_link_empty(fields: dict[str, Any], live_field: str) -> bool:
-    return not extract_http_site_url(fields.get(live_field))
+    return not extract_http_site_url(field_raw(fields, live_field))
 
 
 def _field_names(config: AppConfig) -> tuple[str, str, str, str, str]:
@@ -104,7 +104,7 @@ def sync_live_link_row(
         return "skipped"
     if not live_link_empty(fields, live_field):
         return "skipped_filled"
-    url = extract_http_site_url(fields.get(project_field))
+    url = extract_http_site_url(field_raw(fields, project_field))
     if not url:
         return "skipped_no_url"
     project = _field_text(fields, name_field) or rid
@@ -124,14 +124,15 @@ def sync_live_link_row(
                 logger.warning("live-link sync: missing LARK credentials")
                 return "error"
             token = get_tenant_access_token(app_id, app_secret)
+        write_field = field_key(fields, live_field)
         update_record(
             token,
             app_token,
             progress_table,
             rid,
-            {live_field: _url_field_payload(url)},
+            {write_field: _url_field_payload(url)},
         )
-        fields[live_field] = _url_field_payload(url)
+        fields[write_field] = _url_field_payload(url)
         logger.info(
             "live-link sync updated project=%r record=%s url=%s",
             project,

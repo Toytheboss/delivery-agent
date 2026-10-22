@@ -21,3 +21,22 @@ def test_pick_site_url_falls_back_to_project_link():
 
 def test_pick_site_url_empty_when_both_missing():
     assert pick_site_url({}, "已上线链接🔗", "项目链接") is None
+
+
+def test_pick_site_url_reads_bilingual_rename():
+    fields = {
+        "已上线链接🔗 Project Website URL": {
+            "link": "https://live.example/",
+            "text": "https://live.example/",
+        },
+        "项目链接 Project Link": "https://project.example/",
+    }
+    assert pick_site_url(fields, "已上线链接🔗", "项目链接") == "https://live.example/"
+    assert (
+        pick_site_url(
+            fields,
+            "已上线链接🔗 Project Website URL",
+            "项目链接 Project Link",
+        )
+        == "https://live.example/"
+    )

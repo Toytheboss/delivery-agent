@@ -18,6 +18,7 @@ from bot.workflow_form_dispatch import (
     _field_text,
     _normalize_name,
     _parse_chat_id,
+    field_key,
     is_manual_form_command,
     match_project_to_chat,
 )
@@ -238,10 +239,13 @@ def live_site_missing(config: AppConfig, fields: dict[str, Any]) -> bool:
     """True when progress「已上线链接」has no http(s) URL."""
     from bot.workflow_live_link_sync import extract_http_site_url
 
+    from bot.workflow_form_dispatch import field_raw
+
     live_field = str(
-        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+        getattr(config, "workflow_live_link_field", "")
+        or "已上线链接🔗 Project Website URL"
     ).strip()
-    return not extract_http_site_url(fields.get(live_field))
+    return not extract_http_site_url(field_raw(fields, live_field))
 
 
 def _pick_candidate(
@@ -462,7 +466,7 @@ async def _apply_mark_live(
                 config.workflow_base_app_token,
                 config.workflow_progress_table_id,
                 record_id,
-                {config.workflow_status_field: new_status},
+                {field_key(fields, config.workflow_status_field): new_status},
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("mark_live: failed to update Lark status")
@@ -803,7 +807,8 @@ async def resolve_mark_live_site_reply(
         )
 
     live_field = str(
-        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+        getattr(config, "workflow_live_link_field", "")
+        or "已上线链接🔗 Project Website URL"
     ).strip()
     app_id = os.getenv("LARK_APP_ID", "").strip()
     app_secret = os.getenv("LARK_APP_SECRET", "").strip()
@@ -822,7 +827,7 @@ async def resolve_mark_live_site_reply(
             config.workflow_base_app_token,
             config.workflow_progress_table_id,
             record_id,
-            {live_field: {"link": url, "text": url}},
+            {field_key({}, live_field): {"link": url, "text": url}},
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception(

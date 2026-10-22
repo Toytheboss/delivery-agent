@@ -16,6 +16,7 @@ from bot.workflow_form_dispatch import (
     _field_text,
     _normalize_name,
     _parse_chat_id,
+    field_raw,
     is_manual_form_command,
     match_project_to_chat,
 )
@@ -429,7 +430,8 @@ async def capture_pr_tweet(
         return f"Matched {project_name!r} but failed to write the PR link: {exc}"
 
     live_link_field = str(
-        getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+        getattr(config, "workflow_live_link_field", "")
+        or "已上线链接🔗 Project Website URL"
     )
     try:
         log_capture_event(
@@ -437,7 +439,8 @@ async def capture_pr_tweet(
             record_id=record_id,
             project=project_name,
             url=url,
-            site=link_str(_fields.get(live_link_field)) or _field_text(_fields, live_link_field),
+            site=link_str(field_raw(_fields, live_link_field))
+            or _field_text(_fields, live_link_field),
         )
     except Exception:  # noqa: BLE001
         logger.exception("pr_capture: saved KPI 2 but failed to log weekly event")

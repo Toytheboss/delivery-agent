@@ -416,8 +416,14 @@ def audit_kpi3_for_fields(
     )
     url = pick_site_url(
         fields,
-        str(getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"),
-        str(getattr(config, "workflow_project_link_field", "") or "项目链接"),
+        str(
+            getattr(config, "workflow_live_link_field", "")
+            or "已上线链接🔗 Project Website URL"
+        ),
+        str(
+            getattr(config, "workflow_project_link_field", "")
+            or "项目链接 Project Link"
+        ),
     ) or ""
     probe = probe_website(url) if url else None
     verdict = evaluate_kpi3(project_name=name, probe=probe, url=url)

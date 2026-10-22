@@ -157,7 +157,11 @@ async def start_live_webhook_server(
         # Optional status gate from payload
         status = None
         if isinstance(data, dict):
-            status = data.get("status") or data.get("项目状态")
+            status = (
+                data.get("status")
+                or data.get("项目状态 Project Status")
+                or data.get("项目状态")
+            )
         if status and str(status).strip() != config.workflow_trigger_status:
             # Still allow if they only send record_id and status already live in table
             logger.info(

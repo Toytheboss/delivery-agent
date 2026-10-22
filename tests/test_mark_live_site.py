@@ -25,6 +25,14 @@ def test_live_site_missing():
     assert not live_site_missing(
         _Cfg(), {"已上线链接🔗": {"link": "https://live.example/"}}
     )
+    assert not live_site_missing(
+        _Cfg(),
+        {
+            "已上线链接🔗 Project Website URL": {
+                "link": "https://live.example/"
+            }
+        },
+    )
 
 
 def test_missing_site_reminder_is_english():
@@ -86,7 +94,7 @@ def test_resolve_mark_live_site_reply_writes_url(monkeypatch, tmp_path):
         (
             "rec_a",
             {
-                "已上线链接🔗": {
+                "已上线链接🔗 Project Website URL": {
                     "link": "https://alpha.example/app",
                     "text": "https://alpha.example/app",
                 }

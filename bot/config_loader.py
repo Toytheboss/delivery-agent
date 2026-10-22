@@ -739,7 +739,9 @@ def load_config() -> AppConfig:
         workflow_progress_table_id=str(
             workflow.get("progress_table_id", "tbl5wXOwCptng06w")
         ),
-        workflow_status_field=str(workflow.get("status_field", "项目状态")),
+        workflow_status_field=str(
+            workflow.get("status_field", "项目状态 Project Status")
+        ),
         workflow_trigger_status=str(
             workflow.get(
                 "trigger_status",
@@ -820,10 +822,10 @@ def load_config() -> AppConfig:
             workflow.get("logo_link_sync_minutes", 0) or 0
         ),
         workflow_live_link_field=str(
-            workflow.get("live_link_field", "已上线链接🔗")
+            workflow.get("live_link_field", "已上线链接🔗 Project Website URL")
         ),
         workflow_project_link_field=str(
-            workflow.get("project_link_field", "项目链接")
+            workflow.get("project_link_field", "项目链接 Project Link")
         ),
         workflow_live_link_sync_enabled=bool(
             workflow.get("live_link_sync_enabled", True)

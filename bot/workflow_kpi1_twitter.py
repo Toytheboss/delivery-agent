@@ -598,8 +598,14 @@ def maybe_write_kpi2_from_tweets(
     try:
         site = pick_site_url(
             fields,
-            str(getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"),
-            str(getattr(config, "workflow_project_link_field", "") or "项目链接"),
+            str(
+                getattr(config, "workflow_live_link_field", "")
+                or "已上线链接🔗 Project Website URL"
+            ),
+            str(
+                getattr(config, "workflow_project_link_field", "")
+                or "项目链接 Project Link"
+            ),
         )
         log_capture_event(
             config, record_id=rid, project=project_name, url=url, site=site or ""

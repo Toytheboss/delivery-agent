@@ -33,7 +33,7 @@ from bot.weekly_schedule import (
     this_send_at,
     upcoming_send_at,
 )
-from bot.workflow_form_dispatch import _field_text, _normalize_name
+from bot.workflow_form_dispatch import _field_text, _normalize_name, field_raw
 
 logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parent.parent
@@ -339,7 +339,7 @@ def _has_logo(fields: dict[str, Any], logo_field: str) -> bool:
 
 
 def _has_site(fields: dict[str, Any], live_link_field: str) -> bool:
-    return bool(link_str(fields.get(live_link_field)))
+    return bool(link_str(field_raw(fields, live_link_field)))
 
 
 def collect_week_projects(
@@ -359,13 +359,13 @@ def collect_week_projects(
         fields = record.get("fields") or {}
         if not _status_is_live(_field_text(fields, status_field)):
             continue
-        live_at = _ms_to_dt(fields.get(_LIVE_TIME_FIELD))
+        live_at = _ms_to_dt(field_raw(fields, _LIVE_TIME_FIELD))
         if live_at is None or live_at < monday or live_at >= end:
             continue
         name = _field_text(fields, name_field)
         if not name:
             continue
-        site = link_str(fields.get(live_link_field))
+        site = link_str(field_raw(fields, live_link_field))
         has_logo = _has_logo(fields, logo_field)
         if not site or not has_logo:
             logger.info(
@@ -573,13 +573,16 @@ def run_blake_weekly_once(
     projects = collect_week_projects(
         progress,
         monday=monday,
-        status_field=str(getattr(config, "workflow_status_field", "") or "项目状态"),
+        status_field=str(
+            getattr(config, "workflow_status_field", "") or "项目状态 Project Status"
+        ),
         name_field=str(
             getattr(config, "workflow_project_name_field", "")
             or "项目名称 Project Name"
         ),
         live_link_field=str(
-            getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+            getattr(config, "workflow_live_link_field", "")
+            or "已上线链接🔗 Project Website URL"
         ),
         logo_field=str(getattr(config, "workflow_logo_field", "") or "项目logo（文件）"),
         wallet_intros=wallet_intros,

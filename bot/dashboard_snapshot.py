@@ -1143,10 +1143,20 @@ def build_live_project_rows(config: Any) -> dict[str, Any]:
         )
         status_options: list[dict[str, Any]] = []
         try:
+            from bot.workflow_form_dispatch import field_key
+
             field_defs = list_fields(
                 token,
                 str(getattr(config, "workflow_base_app_token", "")),
                 str(getattr(config, "workflow_progress_table_id", "")),
+            )
+            known = {
+                str(field.get("field_name") or "")
+                for field in field_defs
+                if field.get("field_name")
+            }
+            status_field_name = field_key(
+                {name: True for name in known}, status_field_name
             )
             status_field_def = next(
                 (

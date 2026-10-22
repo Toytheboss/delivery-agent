@@ -101,9 +101,11 @@ def pick_site_url(
     Prefer the live-link field; fall back to the project-link field only when
     live-link has no usable URL.
     """
-    urls = extract_urls(link_str(fields.get(live_link_field)))
+    from bot.workflow_form_dispatch import field_raw
+
+    urls = extract_urls(link_str(field_raw(fields, live_link_field)))
     if not urls and project_link_field:
-        urls = extract_urls(link_str(fields.get(project_link_field)))
+        urls = extract_urls(link_str(field_raw(fields, project_link_field)))
     return urls[0] if urls else None
 
 

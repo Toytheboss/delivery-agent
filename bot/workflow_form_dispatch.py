@@ -18,6 +18,45 @@ from typing import TYPE_CHECKING, Any
 
 from bot.lark_bitable import get_tenant_access_token, list_records, update_record
 
+# Progress-table columns renamed to bilingual labels. Reads accept either
+# name; writes prefer the name already on the record, else the new label.
+_PROGRESS_FIELD_NEW = {
+    "项目状态": "项目状态 Project Status",
+    "主网上线时间": "主网上线时间 Mainnet Launch Date",
+    "已上线链接🔗": "已上线链接🔗 Project Website URL",
+    "项目链接": "项目链接 Project Link",
+    "项目简介（1-2句话）": "项目简介（1-2句话）Project Summary (1–2 Sentences)",
+    "项目合作要点": "项目合作要点 Project Cooperation Highlights",
+    "合作类型": "合作类型 Cooperation Type",
+}
+_PROGRESS_FIELD_OLD = {value: key for key, value in _PROGRESS_FIELD_NEW.items()}
+
+
+def field_raw(fields: dict[str, Any] | None, name: str) -> Any:
+    """Cell value for ``name``, falling back to the bilingual rename pair."""
+    blob = fields if isinstance(fields, dict) else {}
+    if name in blob:
+        return blob[name]
+    alt = _PROGRESS_FIELD_NEW.get(name) or _PROGRESS_FIELD_OLD.get(name)
+    if alt in blob:
+        return blob[alt]
+    return None
+
+
+def field_key(fields: dict[str, Any] | None, name: str) -> str:
+    """Field name to write. Keep the key the record already has."""
+    blob = fields if isinstance(fields, dict) else {}
+    if name in blob:
+        return name
+    newer = _PROGRESS_FIELD_NEW.get(name)
+    if newer and newer in blob:
+        return newer
+    older = _PROGRESS_FIELD_OLD.get(name)
+    if older and older in blob:
+        return older
+    return newer or name
+
+
 if TYPE_CHECKING:
     from telethon import TelegramClient
 
@@ -49,7 +88,7 @@ def _save_state(path: Path, sent: set[str]) -> None:
 
 
 def _field_text(fields: dict[str, Any], name: str) -> str:
-    value = fields.get(name)
+    value = field_raw(fields, name)
     if value is None:
         return ""
     if isinstance(value, list):

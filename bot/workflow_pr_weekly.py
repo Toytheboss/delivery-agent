@@ -278,7 +278,9 @@ def build_pr_weekly_ping(
 
 
 def _cell_url(fields: dict[str, Any], name: str) -> str:
-    return link_str(fields.get(name)) or _field_text(fields, name)
+    from bot.workflow_form_dispatch import field_raw
+
+    return link_str(field_raw(fields, name)) or _field_text(fields, name)
 
 
 def collect_week_prs(
@@ -499,7 +501,8 @@ def run_pr_weekly_once(
             or "项目名称 Project Name"
         ),
         live_link_field=str(
-            getattr(config, "workflow_live_link_field", "") or "已上线链接🔗"
+            getattr(config, "workflow_live_link_field", "")
+            or "已上线链接🔗 Project Website URL"
         ),
         pr_field=str(
             getattr(config, "pr_capture_link_field", "") or "KPI 2 - PR Announcement"

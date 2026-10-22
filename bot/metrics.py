@@ -841,7 +841,9 @@ def _progress_table_daily_counts(
                 if rid:
                     live_stock_ids.add(rid)
                 live_stock_names.append(name)
-                live_at = _ms_to_datetime(fields.get(_FIELD_MAINNET_LIVE_TIME))
+                from bot.workflow_form_dispatch import field_raw
+
+                live_at = _judge_datetime(field_raw(fields, _FIELD_MAINNET_LIVE_TIME))
                 if _in_time_window(live_at, since=since):
                     if rid:
                         live_record_ids.add(rid)

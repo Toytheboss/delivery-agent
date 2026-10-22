@@ -14,7 +14,7 @@ import re
 from typing import Any
 
 from bot.lark_bitable import create_record, get_tenant_access_token, list_records, update_record
-from bot.workflow_form_dispatch import _field_text, _normalize_name
+from bot.workflow_form_dispatch import _field_text, _normalize_name, field_key, field_raw
 from bot.workflow_kpi1_twitter import _RESERVED_HANDLES, twitter_handle_from_url
 from bot.workflow_lark_relay import claim_message, unclaim_message
 from bot.workflow_pr_capture import (
@@ -38,7 +38,7 @@ _CONTRACT_FIELD = "Mainnet Contract Addresss"
 _TWITTER_FIELD = "Link of Project X ( Formerly Twitter) Profile Page"
 _DEFAULT_PROGRESS_NAME = "项目名称 Project Name"
 _DEFAULT_KPI2_FIELD = "KPI 2 - PR Announcement"
-_DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗"
+_DEFAULT_LIVE_LINK_FIELD = "已上线链接🔗 Project Website URL"
 _FINAL_FAIL_COORDS = frozenset({"不通过", "KPI未通过"})
 # When BD submits before first check (or while not held), explain the gate.
 _EARLY_FINAL_ONLY_HELD_NOTICE = (
@@ -399,8 +399,8 @@ def write_live_site_url(
             "site": site,
         }
     updated: list[str] = []
-    payload = {live_field: {"link": site, "text": site}}
-    for rid, _row_fields in hits:
+    for rid, row_fields in hits:
+        payload = {field_key(row_fields, live_field): {"link": site, "text": site}}
         update_record(token, app_token, table_id, rid, payload)
         updated.append(rid)
     logger.info(
