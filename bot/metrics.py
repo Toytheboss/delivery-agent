@@ -1892,9 +1892,19 @@ def build_daily_report(
     messages = _message_window_summary(config, since=since, window_days=window_days)
     chase_projects = _read_chase_projects(config)
     form_first_send_names: list[str] | None = None
+    form_received_names: list[str] | None = None
+    form_sent_total: int | None = None
+    form_received_total: int | None = None
     live_without_form_names: list[str] | None = None
     if chase_projects is not None:
         form_first_send_names = _form_first_send_names(chase_projects, since=since)
+        form_received_names = _form_received_names(chase_projects, since=since)
+        form_sent_total = len(
+            _form_first_send_names(chase_projects, since=_BUSINESS_EPOCH)
+        )
+        form_received_total = len(
+            _form_received_names(chase_projects, since=_BUSINESS_EPOCH)
+        )
         if not progress.get("error"):
             live_without_form_names = _live_without_form(progress, chase_projects)
     delivery_funnel = build_delivery_funnel(
@@ -1999,6 +2009,9 @@ def build_daily_report(
         "workflow": workflow,
         "message_mix": messages,
         "form_first_send_names": form_first_send_names,
+        "form_received_names": form_received_names,
+        "form_sent_total": form_sent_total,
+        "form_received_total": form_received_total,
         "live_without_form_names": live_without_form_names,
         "delivery_funnel": delivery_funnel,
     }
@@ -2086,9 +2099,8 @@ def _fmt_stock_delta_line(
         more = max(len(unique) - len(shown), 0)
         tail = f" 等另 {more} 个" if more else ""
         extra = f"：{'、'.join(shown)}{tail}"
-    lines.append(
-        f"· {label}：{stock_word} {int(stock)}（{today_word} {int(today)}{extra}）"
-    )
+    head = f"{stock_word} {int(stock)}".strip() if stock_word else str(int(stock))
+    lines.append(f"· {label}：{head}（{today_word} {int(today)}{extra}）")
 
 
 def _fmt_kind_line(
@@ -2149,13 +2161,19 @@ def split_telegram_text(text: str, *, limit: int = 3500) -> list[str]:
     return chunks or [raw[:cap]]
 
 
-def _append_delivery_funnel(lines: list[str], funnel: dict[str, Any] | None) -> None:
+def _append_delivery_funnel(
+    lines: list[str],
+    funnel: dict[str, Any] | None,
+    *,
+    include_forms: bool = True,
+) -> None:
     """The eight figures operators asked to see on the Telegram daily report."""
     data = funnel or _empty_delivery_funnel()
-    sent = list(data.get("form_sent") or [])
-    received = list(data.get("form_received") or [])
-    _fmt_kind_line(lines, label="上线项目信息表单发出", count=len(sent), names=sent)
-    _fmt_kind_line(lines, label="上线项目信息表单收回", count=len(received), names=received)
+    if include_forms:
+        sent = list(data.get("form_sent") or [])
+        received = list(data.get("form_received") or [])
+        _fmt_kind_line(lines, label="上线项目信息表单发出", count=len(sent), names=sent)
+        _fmt_kind_line(lines, label="上线项目信息表单收回", count=len(received), names=received)
     if data.get("error"):
         lines.append(f"· 初审 / 终审：查询失败（{data['error']}）")
         return
@@ -2312,21 +2330,33 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
         count=kcount("verification_push_onboard"),
         names=knames("verification_push_onboard"),
     )
-    form_names = daily.get("form_first_send_names")
-    if isinstance(form_names, list):
-        _fmt_kind_line(
-            lines,
-            label="表单新发",
-            count=len(form_names),
-            names=form_names,
-        )
+    sent_today = daily.get("form_first_send_names")
+    if not isinstance(sent_today, list):
+        sent_today = knames("form_sent")
+        today_sent_n = int(bm.get("form") or kcount("form_sent") or 0)
     else:
-        _fmt_kind_line(
-            lines,
-            label="表单新发",
-            count=int(bm.get("form") or kcount("form_sent") or 0),
-            names=knames("form_sent"),
-        )
+        today_sent_n = len(sent_today)
+    sent_total = daily.get("form_sent_total")
+    _fmt_stock_delta_line(
+        lines,
+        label="累计表单发出",
+        stock=int(sent_total if sent_total is not None else today_sent_n),
+        stock_word="",
+        today=today_sent_n,
+        today_names=list(sent_today or []),
+    )
+    recv_today = daily.get("form_received_names")
+    if not isinstance(recv_today, list):
+        recv_today = list((daily.get("delivery_funnel") or {}).get("form_received") or [])
+    recv_total = daily.get("form_received_total")
+    _fmt_stock_delta_line(
+        lines,
+        label="累计表单收回",
+        stock=int(recv_total if recv_total is not None else len(recv_today)),
+        stock_word="",
+        today=len(recv_today),
+        today_names=list(recv_today),
+    )
     missing_forms = daily.get("live_without_form_names")
     if isinstance(missing_forms, list) and missing_forms:
         _fmt_kind_line(
@@ -2396,7 +2426,9 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     )
 
     lines.extend(["", "五、KPI 审计"])
-    _append_delivery_funnel(lines, daily.get("delivery_funnel"))
+    _append_delivery_funnel(
+        lines, daily.get("delivery_funnel"), include_forms=False
+    )
     kpi_writes = wf.get("kpi_writes") or {}
     write_total = kcount("kpi_result_written")
     if write_total:
@@ -2427,7 +2459,7 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
     lines.extend(["", "六、协作告警"])
     _fmt_kind_line(
         lines,
-        label="Verify 告警",
+        label="今日主网验证请求",
         count=kcount("verify_alert"),
         names=knames("verify_alert"),
     )
@@ -2488,8 +2520,8 @@ def format_daily_report_zh(daily: dict[str, Any]) -> str:
             window_note,
             "· 八块：群触达 / 部署管道 / 上线漏斗 / 物料与钱包 / KPI 审计 / 协作告警 / 周表例行 / 稳定性。",
             "· 主网上线以进度表「主网上线时间」为准；部署进出以状态监测事件为准。",
-            "· 表单新发按催收跟踪的首次发送计，包含状态监听、代发、轮询和进群补发。",
-            "· 上线项目信息表单发出与表单新发同一口径；收回按表单字段收齐计。",
+            "· 累计表单发出/收回按催收首次发出与字段收齐；今日新增为当天。",
+            "· 今日主网验证请求 = 已发出的「主网上线 Verify 提醒」。",
             "· 初审失败是暂扣整改，不是 KPI failed。终审失败是 KPI failed。同一项目可以先初审再终审。",
             "· 新增合作群 = 窗口内该群首次发出欢迎语（号新进合作群）；按群去重。Logo / Mark live 按项目去重；两个号合并计。",
             "· 入站处理、FAQ、沉默等消息类只统计审核号本号；交付面板总览与本日报同一份数据。",

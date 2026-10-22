@@ -177,9 +177,9 @@ def test_format_daily_report_has_eight_sections() -> None:
     assert "Nexa" in text and "Mandate" in text
     assert "新群归档" not in text
     assert "补交终审" in text
-    assert "Verify 告警：2" in text
+    assert "今日主网验证请求：2" in text
     assert "字段写入：3" in text
-    assert "表单新发：1" in text
+    assert "累计表单发出：1（今日新增 1）" in text
     assert "主网上线：累计 12（今日新增 1：Alpha）" in text
     assert "主网部署中：当前 8（今日新进 2：M1、M2）" in text
     assert "KPI 统筹通过：累计 5（今日新增 1：Alpha）" in text
@@ -194,6 +194,9 @@ def test_format_daily_report_counts_every_form_send() -> None:
             "window_label": "2026-10-12 全天",
             "bot_messages": {"form": 12},
             "form_first_send_names": ["ProofPass", "Parliament", "Engrow"],
+            "form_received_names": ["ProofPass", "Vault"],
+            "form_sent_total": 80,
+            "form_received_total": 50,
             "live_without_form_names": ["Orbit", "Pikachu"],
             "workflow": {"by_kind": {"form_sent": 4}, "names_by_kind": {"form_sent": ["ProofPass"]}},
             "progress": {},
@@ -202,10 +205,11 @@ def test_format_daily_report_counts_every_form_send() -> None:
             "message_mix": {},
         }
     )
-    assert "表单新发：3（ProofPass、Parliament、Engrow）" in text
+    assert "累计表单发出：80（今日新增 3：ProofPass、Parliament、Engrow）" in text
+    assert "累计表单收回：50（今日新增 2：ProofPass、Vault）" in text
     assert "主网上线但没有表单记录：2（Orbit、Pikachu）" in text
-    assert "另" not in text.split("表单新发")[1].split("\n", 1)[0]
-    assert "上线项目信息表单发出" in text
+    assert "另" not in text.split("累计表单发出")[1].split("\n", 1)[0]
+    assert "上线项目信息表单发出" not in text
     assert "初审项目：0" in text
     assert "终审项目：0" in text
 
