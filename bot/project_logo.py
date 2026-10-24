@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 _REJECT_IMAGE_MD5 = {
     "917515db74ea8d1aee6a246cfbcc0b45",  # CRA public/logo512.png React atom
     "33dbdd0177549353eeeb785d02c294af",  # CRA public/logo192.png React atom
+    "7fab958cd02dcb0cf2db62b666f5d311",  # BOT Chain wordmark SVG (botchain-logo.svg)
+    "dc5c8618f121bee1cda2bfbfc2cc9cd8",  # BOT Chain jpeg used as /botchain-logo.jpeg
 }
 
 # Partner-chain marks and starter favicons that are not the project brand.
@@ -316,12 +318,21 @@ def _is_rejected_logo_url(url: str) -> bool:
     return bool(_REJECT_URL_RE.search(url))
 
 
-def _is_botchain_payload(data: bytes) -> bool:
+def _is_botchain_payload(data: bytes, fname: str = "") -> bool:
     """True when downloaded bytes are a BOT Chain mark, not the project brand."""
     if not data:
         return False
-    sample = data[:12000].lower()
-    return b"botchain" in sample or b"bot chain" in sample
+    if hashlib.md5(data).hexdigest() in _REJECT_IMAGE_MD5:
+        return True
+    if "botchain" in (fname or "").lower():
+        return True
+    sample = data[:20000].lower()
+    if b"botchain" in sample or b"bot chain" in sample:
+        return True
+    # Partner wordmark is drawn as paths; no "botchain" string inside the SVG.
+    if b'viewbox="0 0 1031 205"' in sample or b'width="1031" height="205"' in sample:
+        return True
+    return False
 
 
 def _prefer_svg_candidates(candidates: list[str]) -> list[str]:

@@ -61,6 +61,9 @@ def test_svg_file_preferred_over_og_and_apple_touch():
 
 def test_botchain_payload_rejected():
     assert _is_botchain_payload(b'<svg id="botchain-logo"></svg>')
+    assert _is_botchain_payload(
+        b'<svg width="1031" height="205" viewBox="0 0 1031 205" fill="none"></svg>'
+    )
     assert not _is_botchain_payload(b'<svg viewBox="0 0 24 24"><path d="M4 4"/></svg>')
     assert _svg_file_from_markup('<svg id="botchain-logo"><path d="M1 1"/></svg>') is None
 

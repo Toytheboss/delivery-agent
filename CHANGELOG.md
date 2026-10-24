@@ -19,6 +19,7 @@
 
 ### 修复
 - 丢弃页面上的 BOT Chain 合作标、默认 Vite 图标，避免项目 logo 写成公链图
+- 用文件哈希识别 BOT Chain 字标 SVG / 合作 jpeg，换路径托管时也不会当成项目 logo
 
 ---
 
