@@ -26,6 +26,12 @@ _REJECT_IMAGE_MD5 = {
     "33dbdd0177549353eeeb785d02c294af",  # CRA public/logo192.png React atom
 }
 
+# Partner-chain marks and starter favicons that are not the project brand.
+_REJECT_URL_RE = re.compile(
+    r"botchain[-_.]?logo|botchain\.ai|scan\.botchain|/vite\.svg(?:\?|$)",
+    flags=re.I,
+)
+
 API = "https://open.larksuite.com/open-apis"
 UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -303,8 +309,17 @@ def _decode_data_uri(url: str) -> tuple[bytes, str] | None:
     return raw, fname
 
 
+def _is_rejected_logo_url(url: str) -> bool:
+    """True for BOT Chain partner marks and default Vite/CRA starter files."""
+    if not url or url.startswith("data:"):
+        return False
+    return bool(_REJECT_URL_RE.search(url))
+
+
 def download_image(url: str) -> tuple[bytes, str] | None:
     if not url:
+        return None
+    if _is_rejected_logo_url(url):
         return None
     if url.startswith("data:image"):
         return _decode_data_uri(url)
@@ -359,8 +374,11 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
         # Prefer absolute / joined; keep full data URIs intact.
         if url.startswith("data:"):
             scored.append((-score, order, url))
-        else:
-            scored.append((-score, order, urljoin(base_url, url)))
+            return
+        joined = urljoin(base_url, url)
+        if _is_rejected_logo_url(joined):
+            return
+        scored.append((-score, order, joined))
 
     order = 0
     head = html[:20000]
@@ -588,7 +606,9 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   const pickImg = (root) => {
     const imgs = [...root.querySelectorAll('img')].filter(img => {
       const r = img.getBoundingClientRect();
-      return r.width >= 12 && r.height >= 12 && r.top < 200 && r.left < 560;
+      const src = (img.currentSrc || img.src || '').toLowerCase();
+      if (/botchain/.test(src)) return false;
+      return r.width >= 24 && r.height >= 24 && r.top < 200 && r.left < 560;
     });
     imgs.sort((a, b) => {
       const sa = (isLogoish(a) ? 0 : 1) * 1000 + a.getBoundingClientRect().left
@@ -659,6 +679,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                 user_agent=UA,
                 ignore_https_errors=True,
                 viewport={"width": 1280, "height": 800},
+                device_scale_factor=3,
             )
             page = context.new_page()
             page.set_default_timeout(25000)
@@ -698,7 +719,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                         box = loc.bounding_box()
                         if not box:
                             continue
-                        if box["width"] < 12 or box["height"] < 12:
+                        if box["width"] < 40 or box["height"] < 28:
                             continue
                         if box["y"] > 220:
                             continue
@@ -713,7 +734,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                 try:
                     png = page.screenshot(
                         type="png",
-                        clip={"x": 0, "y": 0, "width": 280, "height": 96},
+                        clip={"x": 0, "y": 0, "width": 480, "height": 140},
                     )
                     if png and _image_quality_ok(png, "logo.png"):
                         result = (png, "logo.png")
@@ -886,7 +907,6 @@ def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
             "/images/logo.png",
             "/static/logo.svg",
             "/static/logo.png",
-            "/vite.svg",
         ):
             got = download_image(origin + path)
             if got:
