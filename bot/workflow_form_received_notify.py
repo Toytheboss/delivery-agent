@@ -230,7 +230,7 @@ async def run_form_received_notify_once(config: Any) -> int:
     titles = _load_title_cache()
     notified = _load_notified(path)
     complete_ids: set[str] = set()
-    pending: list[tuple[str, str, str, dict[str, Any]]] = []
+    pending: list[tuple[str, str, str, dict[str, Any], dict[str, Any]]] = []
 
     for record in progress:
         rid = str(record.get("record_id") or "")
@@ -253,7 +253,7 @@ async def run_form_received_notify_once(config: Any) -> int:
         if rid in notified:
             continue
         group = _matched_group_title(name, titles)
-        pending.append((rid, name, group, fields))
+        pending.append((rid, name, group, fields, wallet_fields or {}))
 
     if first_run:
         notified |= complete_ids
@@ -265,12 +265,21 @@ async def run_form_received_notify_once(config: Any) -> int:
         return 0
 
     sent = 0
-    for rid, name, group, fields in pending:
+    for rid, name, group, fields, wallet_fields in pending:
         try:
             result = _send_one(config, project=name, group=group, fields=fields)
         except Exception:
             logger.exception("form-received notify failed project=%r (%s)", name, rid)
             continue
+        try:
+            from bot.workflow_kpi1_twitter import wallet_twitter_url
+            from bot.workflow_logo_fill import apply_twitter_avatar_for_project
+
+            twitter_url = wallet_twitter_url(wallet_fields)
+            if twitter_url:
+                apply_twitter_avatar_for_project(token, config, name, twitter_url)
+        except Exception:
+            logger.exception("form-received twitter-logo failed project=%r", name)
         if result == "sent":
             notified.add(rid)
             sent += 1

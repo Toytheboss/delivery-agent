@@ -376,6 +376,18 @@ async def main() -> None:
                 config.workflow_mark_live_commands,
                 config.workflow_manual_commands,
             )
+            if logo_fill_allowed(config):
+
+                async def _delayed_twitter_logo() -> None:
+                    await asyncio.sleep(90)
+                    await run_logo_fill_once(config)
+                    asyncio.create_task(logo_fill_loop(config))
+
+                asyncio.create_task(_delayed_twitter_logo())
+                logger.info(
+                    "Twitter-logo catch-up enabled (interval=%dm, first run +90s)",
+                    config.workflow_poll_interval_minutes,
+                )
 
         logger.info(
             "Workflow mark-live also_send_form=%s logo_fill=%s",

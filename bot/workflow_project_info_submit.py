@@ -227,6 +227,15 @@ def _name_hits(
     return hits
 
 
+def _fill_twitter_logo(token: str, config: Any, project_name: str, twitter: str) -> None:
+    try:
+        from bot.workflow_logo_fill import apply_twitter_avatar_for_project
+
+        apply_twitter_avatar_for_project(token, config, project_name, twitter)
+    except Exception:  # noqa: BLE001
+        logger.exception("twitter-logo after wallet write failed project=%r", project_name)
+
+
 def upsert_wallet_row(
     token: str,
     config: Any,
@@ -265,7 +274,7 @@ def upsert_wallet_row(
             project_name,
             created,
         )
-        return {
+        result = {
             "ok": True,
             "action": "created",
             "project": project_name,
@@ -273,6 +282,9 @@ def upsert_wallet_row(
             "contract": contract,
             "twitter": twitter,
         }
+        if twitter:
+            _fill_twitter_logo(token, config, project_name, twitter)
+        return result
     updated: list[str] = []
     for rid, _fields in hits:
         update_record(token, app_token, table_id, rid, payload)
@@ -282,7 +294,7 @@ def upsert_wallet_row(
         project_name,
         len(updated),
     )
-    return {
+    result = {
         "ok": True,
         "action": "updated",
         "project": project_name,
@@ -291,6 +303,9 @@ def upsert_wallet_row(
         "twitter": twitter,
         "duplicate_rows": len(updated) > 1,
     }
+    if twitter:
+        _fill_twitter_logo(token, config, project_name, twitter)
+    return result
 
 
 def write_pr_link(

@@ -193,6 +193,14 @@ def fill_wallet_twitter_if_empty(
         profile_url[:80],
     )
     try:
+        from bot.workflow_logo_fill import apply_twitter_avatar_for_project
+
+        apply_twitter_avatar_for_project(token, config, project_name, profile_url)
+    except Exception:  # noqa: BLE001
+        logger.exception(
+            "pr_capture: twitter-logo fill failed project=%r", project_name
+        )
+    try:
         from bot.workflow_events import append_event
 
         append_event(

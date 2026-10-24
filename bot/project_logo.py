@@ -316,6 +316,49 @@ def _is_rejected_logo_url(url: str) -> bool:
     return bool(_REJECT_URL_RE.search(url))
 
 
+def _is_botchain_payload(data: bytes) -> bool:
+    """True when downloaded bytes are a BOT Chain mark, not the project brand."""
+    if not data:
+        return False
+    sample = data[:12000].lower()
+    return b"botchain" in sample or b"bot chain" in sample
+
+
+def _prefer_svg_candidates(candidates: list[str]) -> list[str]:
+    """SVG (and svg data URIs) first; other files keep their relative order."""
+    svgs: list[str] = []
+    rest: list[str] = []
+    for url in candidates:
+        low = (url or "").lower().split("?", 1)[0]
+        if low.endswith(".svg") or url.startswith("data:image/svg"):
+            svgs.append(url)
+        else:
+            rest.append(url)
+    return svgs + rest
+
+
+_WELL_KNOWN_LOGO_PATHS = (
+    "/logo.svg",
+    "/icon.svg",
+    "/favicon.svg",
+    "/brand.svg",
+    "/assets/logo.svg",
+    "/images/logo.svg",
+    "/static/logo.svg",
+    "/logo.png",
+    "/icon.png",
+    "/logo.webp",
+    "/brand.png",
+    "/assets/logo.png",
+    "/images/logo.png",
+    "/static/logo.png",
+    "/favicon.png",
+    "/apple-touch-icon.png",
+    "/apple-touch-icon-precomposed.png",
+    "/favicon.ico",
+)
+
+
 def download_image(url: str) -> tuple[bytes, str] | None:
     if not url:
         return None
@@ -337,6 +380,8 @@ def download_image(url: str) -> tuple[bytes, str] | None:
         return None
     fname = _fname_for(data, url)
     if not _image_quality_ok(data, fname):
+        return None
+    if _is_botchain_payload(data):
         return None
     return data, fname
 
@@ -416,10 +461,11 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
             for k in ("avatar", "icon-user", "profile", "hero", "banner", "bg-", "cover")
         ):
             score -= 35
-        if src and any(
-            src.lower().endswith(e) for e in (".svg", ".png", ".webp", ".jpg", ".jpeg")
-        ):
+        src_path = (src or "").lower().split("?", 1)[0]
+        if src_path.endswith((".svg", ".png", ".webp", ".jpg", ".jpeg")):
             score += 10
+        if src_path.endswith(".svg"):
+            score += 45
         if src and "/_next/image" in src:
             score += 15
         add(src, score, order)
@@ -460,11 +506,6 @@ def logo_candidates_from_html(html: str, base_url: str) -> list[str]:
         order += 1
 
     for pat, score in (
-        (r"""property=["']og:image:secure_url["'][^>]*content=["']([^"']+)["']""", 22),
-        (r"""property=["']og:image["'][^>]*content=["']([^"']+)["']""", 18),
-        (r"""content=["']([^"']+)["'][^>]*property=["']og:image["']""", 18),
-        (r"""name=["']twitter:image["'][^>]*content=["']([^"']+)["']""", 14),
-        (r"""content=["']([^"']+)["'][^>]*name=["']twitter:image["']""", 14),
         (r""""logo"\s*:\s*\{\s*"@type"\s*:\s*"ImageObject"[^}]*"url"\s*:\s*"([^"]+)" """, 45),
         (r""""logo"\s*:\s*"([^"]+)" """, 40),
     ):
@@ -585,6 +626,8 @@ def _svg_file_from_markup(html: str) -> tuple[bytes, str] | None:
             flags=re.I,
         )
     data = raw.encode("utf-8")
+    if _is_botchain_payload(data):
+        return None
     if _image_quality_ok(data, "logo.svg"):
         return data, "logo.svg"
     return None
@@ -610,10 +653,11 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   };
   const rejectSrc = (u) => /botchain/.test((u || '').toLowerCase());
   const tight = (r) => (
-    r.width >= 16 && r.height >= 16 && r.width <= 96 && r.height <= 96
-    && r.width / r.height > 0.55 && r.width / r.height < 1.8
-    && r.top < 160 && r.left < 240
+    r.width >= 16 && r.height >= 16 && r.width <= 128 && r.height <= 128
+    && r.width / r.height >= 0.72 && r.width / r.height <= 1.38
+    && r.top >= 0 && r.top < 160 && r.left >= 0 && r.left < 240
   );
+  const visibleText = (el) => (el.innerText || '').replace(/\\s+/g, '').trim();
   const header = document.querySelector(
     'header, nav, [class*="navbar" i], [class*="header" i], [class*="topbar" i]'
   ) || document.body;
@@ -626,20 +670,25 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
     const src = imgs[0].currentSrc || imgs[0].src || '';
     if (src) return { type: 'url', src: absUrl(src) };
   }
-  const svgs = [...header.querySelectorAll('svg')].filter(el => tight(el.getBoundingClientRect()));
+  const svgs = [...header.querySelectorAll('svg')].filter(el => {
+    if (!tight(el.getBoundingClientRect())) return false;
+    if (/botchain/i.test(el.outerHTML || '')) return false;
+    return visibleText(el).length <= 2;
+  });
   if (svgs[0]) {
     return { type: 'svg', html: svgs[0].outerHTML };
   }
-  const marks = [...header.querySelectorAll('div, span, i, button')].filter(el => {
+  const marks = [...header.querySelectorAll('div, span, i, a, button')].filter(el => {
     const r = el.getBoundingClientRect();
     if (!tight(r) || r.left > 120) return false;
+    if (visibleText(el).length > 2) return false;
     return !!el.querySelector('svg, img') || /logo|brand|icon|mark/i.test(el.className || '');
   });
   if (marks[0]) {
     const r = marks[0].getBoundingClientRect();
     return { type: 'box', x: r.x, y: r.y, w: r.width, h: r.height };
   }
-  const icon = document.querySelector('link[rel*="apple-touch-icon"], link[rel*="icon"]');
+  const icon = document.querySelector('link[rel="icon"][type="image/svg+xml"], link[rel*="icon"]');
   if (icon && icon.href && !rejectSrc(icon.href)) return { type: 'url', src: icon.href };
   return { type: 'none' };
 }
@@ -651,7 +700,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                 user_agent=UA,
                 ignore_https_errors=True,
                 viewport={"width": 1280, "height": 800},
-                device_scale_factor=3,
+                device_scale_factor=4,
             )
             page = context.new_page()
             page.set_default_timeout(25000)
@@ -669,16 +718,20 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
                 result = _svg_file_from_markup(str(info.get("html") or ""))
             if result is None and info.get("type") == "box":
                 try:
-                    x = max(0.0, float(info.get("x") or 0) - 4)
-                    y = max(0.0, float(info.get("y") or 0) - 4)
-                    w = min(96.0, float(info.get("w") or 0) + 8)
-                    h = min(96.0, float(info.get("h") or 0) + 8)
-                    if 16 <= w <= 96 and 16 <= h <= 96:
+                    x = max(0.0, float(info.get("x") or 0))
+                    y = max(0.0, float(info.get("y") or 0))
+                    w = float(info.get("w") or 0)
+                    h = float(info.get("h") or 0)
+                    if 16 <= w <= 128 and 16 <= h <= 128:
                         png = page.screenshot(
                             type="png",
                             clip={"x": x, "y": y, "width": w, "height": h},
                         )
-                        if png and _image_quality_ok(png, "logo.png"):
+                        if (
+                            png
+                            and _image_quality_ok(png, "logo.png")
+                            and not _is_botchain_payload(png)
+                        ):
                             result = (png, "logo.png")
                 except Exception:
                     pass
@@ -809,9 +862,20 @@ def _try_candidates(candidates: list[str]) -> tuple[bytes, str] | None:
 
 
 def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
-    """Downloadable assets first; Playwright if none; CSS brand-mark last."""
+    """Logo files first (SVG preferred); high-DPI icon screenshot if none."""
     pages: list[tuple[str, str]] = []
     tried_pages: set[str] = set()
+    files: list[str] = []
+    seen_files: set[str] = set()
+
+    def add_file(url: str | None) -> None:
+        if not url or url in seen_files:
+            return
+        if _is_rejected_logo_url(url):
+            return
+        seen_files.add(url)
+        files.append(url)
+
     for variant in _site_variants(site):
         page = http_get(variant, timeout=15.0)
         if page is None or page.text is None:
@@ -823,36 +887,19 @@ def fetch_logo_from_site(site: str) -> tuple[bytes, str] | None:
         tried_pages.add(key)
         html = page.text or ""
         pages.append((final_url, html))
-        candidates = logo_candidates_from_html(html, final_url)
-        candidates = _expand_manifest_candidates(candidates, final_url)
-        got = _try_candidates(candidates)
-        if got:
-            return got
+        html_cands = logo_candidates_from_html(html, final_url)
+        for url in html_cands:
+            add_file(url)
+        for url in _expand_manifest_candidates(html_cands, final_url):
+            add_file(url)
         p = urlparse(final_url)
         origin = f"{p.scheme}://{p.netloc}"
-        for path in (
-            "/apple-touch-icon.png",
-            "/apple-touch-icon-precomposed.png",
-            "/favicon.ico",
-            "/favicon.png",
-            "/favicon.svg",
-            "/icon.svg",
-            "/icon.png",
-            "/logo.svg",
-            "/logo.png",
-            "/logo.webp",
-            "/brand.svg",
-            "/brand.png",
-            "/assets/logo.svg",
-            "/assets/logo.png",
-            "/images/logo.svg",
-            "/images/logo.png",
-            "/static/logo.svg",
-            "/static/logo.png",
-        ):
-            got = download_image(origin + path)
-            if got:
-                return got
+        for path in _WELL_KNOWN_LOGO_PATHS:
+            add_file(origin + path)
+
+    got = _try_candidates(_prefer_svg_candidates(files))
+    if got:
+        return got
 
     for variant in _site_variants(site)[:2]:
         got = fetch_logo_via_browser(variant)
@@ -898,23 +945,24 @@ def upload_bitable_image(
     raise RuntimeError(f"upload failed: {last}")
 
 
-def fill_logo_for_record(
+def write_logo_attachment(
     token: str,
     base_app_token: str,
     table_id: str,
     record_id: str,
     project_name: str,
-    site_url: str,
     logo_field: str,
+    data: bytes,
+    fname: str,
+    *,
+    overwrite: bool = False,
 ) -> str:
-    """Fetch logo from site and write attachment. Returns ok:... or error code."""
-    logo = fetch_logo_from_site(site_url)
-    if not logo:
-        return "no_logo"
-    data, fname = logo
+    """Upload bytes and write the progress logo cell. Returns ok:<nbytes>."""
     safe = re.sub(r"[^a-zA-Z0-9._-]+", "_", project_name)[:40] or "project"
     ext = Path(fname).suffix or ".png"
     file_token = upload_bitable_image(token, base_app_token, data, f"{safe}{ext}")
+    if overwrite:
+        update_record(token, base_app_token, table_id, record_id, {logo_field: []})
     update_record(
         token,
         base_app_token,
@@ -923,3 +971,32 @@ def fill_logo_for_record(
         {logo_field: [{"file_token": file_token}]},
     )
     return f"ok:{len(data)}"
+
+
+def fill_logo_for_record(
+    token: str,
+    base_app_token: str,
+    table_id: str,
+    record_id: str,
+    project_name: str,
+    site_url: str,
+    logo_field: str,
+    *,
+    overwrite: bool = False,
+) -> str:
+    """Fetch logo from site and write attachment. Returns ok:... or error code."""
+    logo = fetch_logo_from_site(site_url)
+    if not logo:
+        return "no_logo"
+    data, fname = logo
+    return write_logo_attachment(
+        token,
+        base_app_token,
+        table_id,
+        record_id,
+        project_name,
+        logo_field,
+        data,
+        fname,
+        overwrite=overwrite,
+    )

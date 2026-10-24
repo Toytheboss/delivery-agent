@@ -318,7 +318,19 @@ async def process_live_project(
         try:
             fields = dict(fields)
             fields[config.workflow_status_field] = config.workflow_trigger_status
-            logo_status = await fill_logo_for_fields(config, token, rid, fields)
+            twitter_url = ""
+            try:
+                from bot.workflow_kpi1_twitter import wallet_twitter_url
+                from bot.workflow_kpi_write import find_wallet_row
+
+                wallet = find_wallet_row(token, config, name)
+                if wallet:
+                    twitter_url = wallet_twitter_url(wallet[1])
+            except Exception:  # noqa: BLE001
+                logger.exception("live-trigger twitter lookup failed for %r", name)
+            logo_status = await fill_logo_for_fields(
+                config, token, rid, fields, twitter_url=twitter_url
+            )
             result["logo"] = logo_status
         except Exception as exc:  # noqa: BLE001
             logger.exception("live-trigger logo failed for %r", name)

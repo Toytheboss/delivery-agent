@@ -151,7 +151,7 @@ def test_wallet_create_and_duplicate_update():
 
     with patch("bot.workflow_project_info_submit.create_record", fake_create), patch(
         "bot.workflow_project_info_submit.update_record", fake_update
-    ):
+    ), patch("bot.workflow_project_info_submit._fill_twitter_logo"):
         made = upsert_wallet_row(
             "tok",
             config,
