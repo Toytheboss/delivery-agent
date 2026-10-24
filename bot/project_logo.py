@@ -662,7 +662,7 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   const absUrl = (u) => {
     try { return new URL(u, location.href).href; } catch { return u || ''; }
   };
-  const rejectSrc = (u) => /botchain/.test((u || '').toLowerCase());
+  const rejectSrc = (u) => /botchain[-_.]?logo|botchain\\.ai|scan\\.botchain|\\/vite\\.svg/i.test(u || '');
   const tight = (r) => (
     r.width >= 16 && r.height >= 16 && r.width <= 128 && r.height <= 128
     && r.width / r.height >= 0.72 && r.width / r.height <= 1.38

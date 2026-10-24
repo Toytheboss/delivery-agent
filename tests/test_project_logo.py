@@ -16,6 +16,7 @@ def test_reject_botchain_partner_logo_url():
     assert _is_rejected_logo_url("https://app.example/vite.svg")
     assert not _is_rejected_logo_url("https://www.pocketlm.my.id/icon.svg")
     assert not _is_rejected_logo_url("https://vaultlock-app.vercel.app/logo.png")
+    assert not _is_rejected_logo_url("https://doomtax-botchain.vercel.app/icon.svg")
 
 
 def test_html_candidates_skip_botchain_logo():
