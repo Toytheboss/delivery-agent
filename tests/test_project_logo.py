@@ -69,6 +69,15 @@ def test_botchain_payload_rejected():
     assert _svg_file_from_markup('<svg id="botchain-logo"><path d="M1 1"/></svg>') is None
 
 
+def test_browser_js_captures_header_text_glyph():
+    from bot.project_logo import fetch_logo_via_browser
+
+    src = fetch_logo_via_browser.__code__.co_consts
+    blob = " ".join(str(x) for x in src if isinstance(x, str))
+    assert "a.lg i" in blob
+    assert "squareBox" in blob
+
+
 def test_twitter_avatar_url_upgrades_to_400():
     urls = upgrade_twitter_avatar_url(
         "https://pbs.twimg.com/profile_images/1/foo_normal.jpg"

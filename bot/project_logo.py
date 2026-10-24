@@ -668,6 +668,17 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
     && r.width / r.height >= 0.72 && r.width / r.height <= 1.38
     && r.top >= 0 && r.top < 160 && r.left >= 0 && r.left < 240
   );
+  const squareBox = (r) => {
+    const pad = 6;
+    const side = Math.min(128, Math.max(r.width, r.height, 24) + pad * 2);
+    return {
+      type: 'box',
+      x: Math.max(0, r.x - (side - r.width) / 2),
+      y: Math.max(0, r.y - (side - r.height) / 2),
+      w: side,
+      h: side,
+    };
+  };
   const visibleText = (el) => (el.innerText || '').replace(/\\s+/g, '').trim();
   const header = document.querySelector(
     'header, nav, [class*="navbar" i], [class*="header" i], [class*="topbar" i]'
@@ -689,15 +700,25 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   if (svgs[0]) {
     return { type: 'svg', html: svgs[0].outerHTML };
   }
+  const glyph = header.querySelector(
+    'a.lg i, .lg i, [class*="logo" i] i, [class*="brand" i] i'
+  );
+  if (glyph) {
+    const r = glyph.getBoundingClientRect();
+    if (r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top < 160 && r.left >= 0 && r.left < 240) {
+      return squareBox(r);
+    }
+  }
   const marks = [...header.querySelectorAll('div, span, i, a, button')].filter(el => {
     const r = el.getBoundingClientRect();
     if (!tight(r) || r.left > 120) return false;
-    if (visibleText(el).length > 2) return false;
-    return !!el.querySelector('svg, img') || /logo|brand|icon|mark/i.test(el.className || '');
+    const t = visibleText(el);
+    if (t.length === 0 || t.length > 2) return false;
+    if (/botchain/i.test(el.outerHTML || '')) return false;
+    return true;
   });
   if (marks[0]) {
-    const r = marks[0].getBoundingClientRect();
-    return { type: 'box', x: r.x, y: r.y, w: r.width, h: r.height };
+    return squareBox(marks[0].getBoundingClientRect());
   }
   const icon = document.querySelector('link[rel="icon"][type="image/svg+xml"], link[rel*="icon"]');
   if (icon && icon.href && !rejectSrc(icon.href)) return { type: 'url', src: icon.href };
