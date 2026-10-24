@@ -700,29 +700,26 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
   if (svgs[0]) {
     return { type: 'svg', html: svgs[0].outerHTML };
   }
-  const glyph = header.querySelector(
-    'a.lg i, .lg i, [class*="logo" i] i, [class*="brand" i] i'
-  );
-  if (glyph) {
-    const r = glyph.getBoundingClientRect();
-    if (r.width >= 8 && r.height >= 8 && r.top >= 0 && r.top < 160 && r.left >= 0 && r.left < 240) {
-      return squareBox(r);
-    }
-  }
-  const marks = [...header.querySelectorAll('div, span, i, a, button')].filter(el => {
+  const shots = [];
+  for (const el of header.querySelectorAll('i, svg, img, span, em, b, canvas, div')) {
     const r = el.getBoundingClientRect();
-    if (!tight(r) || r.left > 120) return false;
-    const t = visibleText(el);
-    if (t.length === 0 || t.length > 2) return false;
-    if (/botchain/i.test(el.outerHTML || '')) return false;
-    return true;
-  });
-  if (marks[0]) {
-    return squareBox(marks[0].getBoundingClientRect());
+    if (r.width < 8 || r.height < 8 || r.width > 96 || r.height > 96) continue;
+    if (r.top < 0 || r.top >= 160 || r.left < 0 || r.left >= 220) continue;
+    if (visibleText(el).length > 2) continue;
+    if (/botchain[-_.]?logo/i.test(el.outerHTML || '')) continue;
+    shots.push(r);
   }
-  const icon = document.querySelector('link[rel="icon"][type="image/svg+xml"], link[rel*="icon"]');
-  if (icon && icon.href && !rejectSrc(icon.href)) return { type: 'url', src: icon.href };
-  return { type: 'none' };
+  shots.sort((a, b) => a.left - b.left || a.width * a.height - b.width * b.height);
+  if (shots[0]) return squareBox(shots[0]);
+  const r = header.getBoundingClientRect();
+  const side = 40;
+  return {
+    type: 'box',
+    x: Math.max(0, r.x + 12),
+    y: Math.max(0, r.y + Math.max(0, (r.height - side) / 2)),
+    w: side,
+    h: side,
+  };
 }
 """
     try:
