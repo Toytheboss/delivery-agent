@@ -572,6 +572,24 @@ def _expand_manifest_candidates(candidates: list[str], base_url: str) -> list[st
 _BROWSER_UNAVAILABLE = False
 
 
+def _svg_file_from_markup(html: str) -> tuple[bytes, str] | None:
+    raw = (html or "").strip()
+    if "<svg" not in raw.lower():
+        return None
+    if "xmlns" not in raw:
+        raw = re.sub(
+            r"<svg\b",
+            '<svg xmlns="http://www.w3.org/2000/svg"',
+            raw,
+            count=1,
+            flags=re.I,
+        )
+    data = raw.encode("utf-8")
+    if _image_quality_ok(data, "logo.svg"):
+        return data, "logo.svg"
+    return None
+
+
 def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
     global _BROWSER_UNAVAILABLE
     if _BROWSER_UNAVAILABLE:
@@ -587,89 +605,43 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
 
     js = """
 () => {
-  const isLogoish = (el) => {
-    const blob = [
-      el.alt || '', el.className || '', el.id || '',
-      el.getAttribute('src') || '', el.getAttribute('aria-label') || '',
-      el.getAttribute('data-testid') || ''
-    ].join(' ').toLowerCase();
-    return /logo|brand|navbar-brand|site-title|site-logo/.test(blob);
-  };
   const absUrl = (u) => {
     try { return new URL(u, location.href).href; } catch { return u || ''; }
   };
-  const bgUrl = (el) => {
-    const bg = getComputedStyle(el).backgroundImage || '';
-    const m = bg.match(/url\\(["']?(.*?)["']?\\)/i);
-    return m ? absUrl(m[1]) : '';
-  };
-  const pickImg = (root) => {
-    const imgs = [...root.querySelectorAll('img')].filter(img => {
-      const r = img.getBoundingClientRect();
-      const src = (img.currentSrc || img.src || '').toLowerCase();
-      if (/botchain/.test(src)) return false;
-      return r.width >= 24 && r.height >= 24 && r.top < 200 && r.left < 560;
-    });
-    imgs.sort((a, b) => {
-      const sa = (isLogoish(a) ? 0 : 1) * 1000 + a.getBoundingClientRect().left
-        + a.getBoundingClientRect().top * 0.25;
-      const sb = (isLogoish(b) ? 0 : 1) * 1000 + b.getBoundingClientRect().left
-        + b.getBoundingClientRect().top * 0.25;
-      return sa - sb;
-    });
-    return imgs[0] || null;
-  };
+  const rejectSrc = (u) => /botchain/.test((u || '').toLowerCase());
+  const tight = (r) => (
+    r.width >= 16 && r.height >= 16 && r.width <= 96 && r.height <= 96
+    && r.width / r.height > 0.55 && r.width / r.height < 1.8
+    && r.top < 160 && r.left < 240
+  );
   const header = document.querySelector(
     'header, nav, [class*="navbar" i], [class*="header" i], [class*="topbar" i]'
   ) || document.body;
-  const img = pickImg(header) || pickImg(document.body);
-  if (img) {
+  const imgs = [...header.querySelectorAll('img')].filter(img => {
+    const r = img.getBoundingClientRect();
     const src = img.currentSrc || img.src || '';
+    return !rejectSrc(src) && tight(r);
+  });
+  if (imgs[0]) {
+    const src = imgs[0].currentSrc || imgs[0].src || '';
     if (src) return { type: 'url', src: absUrl(src) };
-    return { type: 'el', selector: 'img' };
   }
-  const brandEl = document.querySelector(
-    'a.brand, .brand-mark, [class*="brand-mark" i], a[class*="brand" i], [class*="logo" i], [id*="logo" i]'
-  );
-  if (brandEl) {
-    const r = brandEl.getBoundingClientRect();
-    if (r.width >= 12 && r.height >= 12 && r.top < 220) {
-      return { type: 'brand' };
-    }
+  const svgs = [...header.querySelectorAll('svg')].filter(el => tight(el.getBoundingClientRect()));
+  if (svgs[0]) {
+    return { type: 'svg', html: svgs[0].outerHTML };
   }
-  // CSS background logos in the header band.
-  const nodes = [...header.querySelectorAll('a, div, span, i, button')].slice(0, 80);
-  for (const el of nodes) {
+  const marks = [...header.querySelectorAll('div, span, i, button')].filter(el => {
     const r = el.getBoundingClientRect();
-    if (r.top > 160 || r.left > 480 || r.width < 14 || r.height < 14) continue;
-    if (r.width > 420 || r.height > 160) continue;
-    const u = bgUrl(el);
-    if (u && /^https?:|^data:image/i.test(u) && !/gradient/i.test(u)) {
-      const logoish = isLogoish(el) || /logo|brand/i.test(u);
-      if (logoish || (r.width <= 220 && r.height <= 100)) {
-        return { type: 'url', src: u };
-      }
-    }
-  }
-  const svg = [...document.querySelectorAll('header svg, nav svg, a svg, [class*="logo" i] svg')]
-    .find(el => {
-      const r = el.getBoundingClientRect();
-      return r.width >= 12 && r.height >= 12 && r.top < 180 && r.left < 480;
-    });
-  if (svg) return { type: 'el', selector: 'svg' };
-  const brand = document.querySelector(
-    '[class*="logo" i], [id*="logo" i], [aria-label*="logo" i], a[class*="brand" i]'
-  );
-  if (brand) {
-    const r = brand.getBoundingClientRect();
-    if (r.width >= 20 && r.height >= 12 && r.top < 200) {
-      return { type: 'brand' };
-    }
+    if (!tight(r) || r.left > 120) return false;
+    return !!el.querySelector('svg, img') || /logo|brand|icon|mark/i.test(el.className || '');
+  });
+  if (marks[0]) {
+    const r = marks[0].getBoundingClientRect();
+    return { type: 'box', x: r.x, y: r.y, w: r.width, h: r.height };
   }
   const icon = document.querySelector('link[rel*="apple-touch-icon"], link[rel*="icon"]');
-  if (icon && icon.href) return { type: 'url', src: icon.href };
-  // Text-only brand sites: signal header clip fallback.
-  return { type: 'clip' };
+  if (icon && icon.href && !rejectSrc(icon.href)) return { type: 'url', src: icon.href };
+  return { type: 'none' };
 }
 """
     try:
@@ -689,55 +661,25 @@ def fetch_logo_via_browser(site: str) -> tuple[bytes, str] | None:
             except Exception:
                 pass
             page.wait_for_timeout(1200)
-            info = page.evaluate(js) or {"type": "clip"}
+            info = page.evaluate(js) or {"type": "none"}
             result: tuple[bytes, str] | None = None
             if info.get("type") == "url" and info.get("src"):
                 result = download_image(info["src"])
-            if result is None:
-                # Element screenshot for svg/img/brand text.
-                selectors = [
-                    "a.brand",
-                    ".brand-mark",
-                    "header a.brand",
-                    "[class*='brand-mark' i]",
-                    "header [class*='logo' i]",
-                    "nav [class*='logo' i]",
-                    "[class*='logo' i]",
-                    "a[class*='brand' i]",
-                    "header svg",
-                    "nav svg",
-                    "header img",
-                    "nav img",
-                    "header a",
-                    "nav a",
-                ]
-                for sel in selectors:
-                    try:
-                        loc = page.locator(sel).first
-                        if not loc.is_visible(timeout=600):
-                            continue
-                        box = loc.bounding_box()
-                        if not box:
-                            continue
-                        if box["width"] < 40 or box["height"] < 28:
-                            continue
-                        if box["y"] > 220:
-                            continue
-                        png = loc.screenshot(type="png")
+            if result is None and info.get("type") == "svg":
+                result = _svg_file_from_markup(str(info.get("html") or ""))
+            if result is None and info.get("type") == "box":
+                try:
+                    x = max(0.0, float(info.get("x") or 0) - 4)
+                    y = max(0.0, float(info.get("y") or 0) - 4)
+                    w = min(96.0, float(info.get("w") or 0) + 8)
+                    h = min(96.0, float(info.get("h") or 0) + 8)
+                    if 16 <= w <= 96 and 16 <= h <= 96:
+                        png = page.screenshot(
+                            type="png",
+                            clip={"x": x, "y": y, "width": w, "height": h},
+                        )
                         if png and _image_quality_ok(png, "logo.png"):
                             result = (png, "logo.png")
-                            break
-                    except Exception:
-                        continue
-            if result is None:
-                # Top-left brand strip — works for text-only SPA headers.
-                try:
-                    png = page.screenshot(
-                        type="png",
-                        clip={"x": 0, "y": 0, "width": 480, "height": 140},
-                    )
-                    if png and _image_quality_ok(png, "logo.png"):
-                        result = (png, "logo.png")
                 except Exception:
                     pass
             browser.close()

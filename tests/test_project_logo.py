@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from bot.project_logo import _is_rejected_logo_url, logo_candidates_from_html
+from bot.project_logo import (
+    _is_rejected_logo_url,
+    _svg_file_from_markup,
+    logo_candidates_from_html,
+)
 
 
 def test_reject_botchain_partner_logo_url():
@@ -24,3 +28,12 @@ def test_html_candidates_skip_botchain_logo():
     cands = logo_candidates_from_html(html, "https://www.pocketlm.my.id/")
     assert any(u.endswith("/icon.svg") for u in cands)
     assert not any("botchain-logo" in u for u in cands)
+
+
+def test_svg_markup_saved_as_vector_file():
+    data, fname = _svg_file_from_markup(
+        '<svg width="24" height="24" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/></svg>'
+    )
+    assert fname == "logo.svg"
+    assert b"<svg" in data
+    assert b"xmlns" in data
