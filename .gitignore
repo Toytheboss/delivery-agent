@@ -21,6 +21,7 @@ config/ignored_groups.yaml
 # Runtime state / logs
 data/
 logs/
+scripts/runtime_one_shot.py
 
 # Optional local knowledge packs & learnings (keep private)
 knowledge/private/

@@ -52,6 +52,7 @@ from bot.workflow_wallet_notify import run_wallet_notify_once, wallet_notify_loo
 from bot.workflow_form_chase import form_chase_loop
 from bot.workflow_kpi_schedule import kpi_schedule_loop, runs_on_this_host
 from bot.workflow_logo_link_sync import logo_link_sync_loop
+from bot.runtime_one_shot import start_if_present
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -480,6 +481,7 @@ async def main() -> None:
                 getattr(config, "pr_weekly_daily_hour", 0),
                 getattr(config, "pr_weekly_hour", 0),
             )
+    start_if_present(client, config)
     logger.info(
         "Bot running. Folders=%s, group_replies=%s, chats=%d, qa_test_groups=%s, "
         "knowledge_chunks=%d, lark_sync=%s, workflow=%s",
